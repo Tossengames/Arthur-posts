@@ -5,19 +5,25 @@ import textwrap
 from datetime import datetime
 
 # --- Configuration (Use Environment Variables for API Keys!) ---
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # Still assumes you've added this secret
-PIXABAY_API_KEY = os.getenv("PIXABAY_KEY") # Updated to use PIXABAY_KEY
-FACEBOOK_PAGE_ID = os.getenv("FB_PAGE_ID") # Updated to use FB_PAGE_ID
-FACEBOOK_ACCESS_TOKEN = os.getenv("FB_PAGE_TOKEN") # Updated to use FB_PAGE_TOKEN
+# These variables will be populated from your GitHub Secrets.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+PIXABAY_API_KEY = os.getenv("PIXABAY_KEY")
+FACEBOOK_PAGE_ID = os.getenv("FB_PAGE_ID")
+FACEBOOK_ACCESS_TOKEN = os.getenv("FB_PAGE_TOKEN")
 
 # --- Gemini API Setup ---
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+# *** IMPORTANT: Ensure this model name matches the Gemini 1.5 model you are using! ***
+# For Gemini 1.5 Flash:
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+# If you are using Gemini 1.5 Pro, change it to:
+# GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent"
+
 
 # --- Pixabay API Setup ---
 PIXABAY_API_URL = "https://pixabay.com/api/"
 
 # --- Paths ---
-CHARACTER_FILE = "arthur_character.json" # Adjust path if in a subfolder, e.g., "data/arthur_character.json"
+CHARACTER_FILE = "arthur_character.json" # Assumes this file is in the same directory as post.py
 IMAGES_DIR = "temp_images" # Directory to save downloaded images temporarily
 
 def load_character_data(file_path):
@@ -42,7 +48,7 @@ def generate_gemini_post(character_data, prompt_type="general_tip"):
     base_prompt = f"You are Arthur 'Art' Peterson, a 62-year-old retired Forest Ranger from Prescott, Arizona. You are wise, patient, and resourceful, with a dry wit and deep love for nature. Your values include respect for nature, self-reliance, and preparation. You have decades of experience in backpacking, fly-fishing, and wilderness survival. You often use catchphrases like '{arthur['personality']['catchphrases'][0]}' or '{arthur['personality']['catchphrases'][2]}'.\n\n"
     
     if prompt_type == "general_tip":
-        topic = "a general camping tip"
+        topic = "a practical general camping tip"
         example_experience = arthur['experiences'][0]['details'] if arthur['experiences'] else "a time you learned something important in the wilderness"
         prompt_suffix = f"Share a practical, actionable tip for beginner campers, perhaps drawing on an experience like '{example_experience}'. Make it encouraging and insightful, around 150-250 words. Include one of your skills, like '{arthur['skills'][0].lower()}'. End with a call to action to enjoy nature responsibly."
     elif prompt_type == "motivation":
@@ -84,7 +90,6 @@ def generate_gemini_post(character_data, prompt_type="general_tip"):
         response_json = response.json()
         if 'candidates' in response_json and response_json['candidates']:
             generated_text = response_json['candidates'][0]['content']['parts'][0]['text']
-            # Clean up potential leading/trailing whitespace or markdown issues
             return generated_text.strip()
         else:
             print(f"Gemini API response did not contain expected 'candidates': {response_json}")
@@ -119,7 +124,6 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
         data = response.json()
         
         image_urls = []
-        # Prioritize 'webformatURL' for general use, or 'largeImageURL' for higher res if needed
         for hit in data.get("hits", []):
             if hit.get("webformatURL"): # Check for a usable URL
                 image_urls.append(hit["webformatURL"])
@@ -149,20 +153,14 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
 def post_to_facebook(page_id, access_token, message, image_paths):
     """
     MOCK FUNCTION: Posts a message and multiple images to a Facebook Page.
-    This is a complex process involving multiple API calls.
-    You'd need to:
-    1. Upload each photo one by one to a user's photos (or page photos) to get a photo ID.
-    2. Then create a page post with the message and attach the photo IDs.
-    
-    See Facebook Graph API documentation for details:
-    - Photo upload: https://developers.facebook.com/docs/graph-api/reference/page/photos/#creating
-    - Page posts with attached photos: https://developers.facebook.com/docs/graph-api/reference/page/feed/#creating
-    
-    This mock function will just print what it *would* do.
+    NOTE: Implementing actual Facebook Graph API posting requires more complex
+    steps (like handling OAuth, getting proper page access tokens, uploading
+    photos sequentially, and then attaching them to a post).
+    This function currently only prints what it would do.
     """
     print("\n--- MOCK FACEBOOK POSTING ---")
     print(f"Attempting to post to Facebook Page ID: {page_id}")
-    print(f"Message:\n{textwrap.fill(message, width=80)}") # Wrap text for readability
+    print(f"Message:\n{textwrap.fill(message, width=80)}")
     print("Images to upload:")
     if image_paths:
         for path in image_paths:
@@ -170,12 +168,6 @@ def post_to_facebook(page_id, access_token, message, image_paths):
     else:
         print("- No images to upload.")
 
-    # In a real scenario, this would involve:
-    # 1. Loop through image_paths, upload each image to Facebook, get its ID.
-    #    requests.post(f"https://graph.facebook.com/{page_id}/photos", files={'source': open(path, 'rb')}, data={'access_token': access_token})
-    # 2. Construct post data with message and attached_media (using the image IDs).
-    #    requests.post(f"https://graph.facebook.com/{page_id}/feed", data={'message': message, 'attached_media': [...], 'access_token': access_token})
-    
     print("\nMOCK: Successfully prepared post data (not actually posted to Facebook).")
     print("-----------------------------\n")
     return True # Simulate success
@@ -191,10 +183,7 @@ if __name__ == "__main__":
     character_data = load_character_data(CHARACTER_FILE)
     
     # --- Determine Post Type and Image Query ---
-    # You could add logic here to randomly select post types,
-    # or make it configurable via an environment variable or argument.
-    
-    # Example: Daily rotation of post types
+    # This logic rotates the post type and image search query based on the current day.
     current_day = datetime.now().day
     if current_day % 4 == 0:
         post_type = "general_tip"
@@ -211,7 +200,7 @@ if __name__ == "__main__":
         
     print(f"Generating a '{post_type}' post for Arthur...")
 
-    # 1. Generate Post Text
+    # 1. Generate Post Text using Gemini
     post_text = generate_gemini_post(character_data, post_type)
 
     if post_text:
@@ -219,7 +208,7 @@ if __name__ == "__main__":
         print(post_text)
         print("---------------------------\n")
 
-        # 2. Search and Download Images
+        # 2. Search and Download Images from Pixabay
         image_paths = search_and_download_pixabay_images(image_query, num_images=5)
 
         if image_paths:
@@ -227,13 +216,13 @@ if __name__ == "__main__":
         else:
             print("No images found or downloaded.")
 
-        # 3. Post to Facebook (MOCK)
+        # 3. Post to Facebook (currently a MOCK function)
         if FACEBOOK_PAGE_ID and FACEBOOK_ACCESS_TOKEN:
             post_to_facebook(FACEBOOK_PAGE_ID, FACEBOOK_ACCESS_TOKEN, post_text, image_paths)
         else:
-            print("Facebook Page ID or Access Token not set. Skipping Facebook post.")
+            print("Facebook Page ID or Access Token not set. Skipping Facebook post (or it's a mock anyway).")
         
-        # 4. Clean up
+        # 4. Clean up downloaded images
         cleanup_images()
     else:
         print("Failed to generate post text. Aborting.")
