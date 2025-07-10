@@ -5,17 +5,12 @@ import textwrap
 from datetime import datetime
 
 # --- Configuration (Use Environment Variables for API Keys!) ---
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
-FACEBOOK_PAGE_ID = os.getenv("FACEBOOK_PAGE_ID")
-FACEBOOK_ACCESS_TOKEN = os.getenv("FACEBOOK_ACCESS_TOKEN") # Long-lived page access token
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # Still assumes you've added this secret
+PIXABAY_API_KEY = os.getenv("PIXABAY_KEY") # Updated to use PIXABAY_KEY
+FACEBOOK_PAGE_ID = os.getenv("FB_PAGE_ID") # Updated to use FB_PAGE_ID
+FACEBOOK_ACCESS_TOKEN = os.getenv("FB_PAGE_TOKEN") # Updated to use FB_PAGE_TOKEN
 
 # --- Gemini API Setup ---
-# You'll need to install the Google Generative AI library: pip install google-generativeai
-# For simplicity, I'll use a direct requests call, but the official client is recommended.
-# You'd typically use: import google.generativeai as genai; genai.configure(api_key=GEMINI_API_KEY)
-# And then: model = genai.GenerativeModel('gemini-pro')
-
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 
 # --- Pixabay API Setup ---
@@ -125,7 +120,6 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
         
         image_urls = []
         # Prioritize 'webformatURL' for general use, or 'largeImageURL' for higher res if needed
-        # We'll take up to num_images, filtering for good quality.
         for hit in data.get("hits", []):
             if hit.get("webformatURL"): # Check for a usable URL
                 image_urls.append(hit["webformatURL"])
