@@ -163,7 +163,9 @@ def generate_gemini_post(character_data, prompt_type):
     params = {"key": GEMINI_API_KEY}
 
     try:
-        response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=data, timeout=45)
+        # --- INCREASED TIMEOUT HERE ---
+        response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=data, timeout=60) 
+        # --- END INCREASED TIMEOUT ---
         response.raise_for_status()
         
         response_json = response.json()
@@ -274,7 +276,7 @@ def post_to_facebook(page_id, access_token, message, image_paths):
     
     post_data = {
         'message': message,
-        'access_token': access_data
+        'access_token': access_token
     }
 
     if uploaded_photo_ids:
