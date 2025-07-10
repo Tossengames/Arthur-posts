@@ -61,15 +61,12 @@ def generate_gemini_post(character_data, prompt_type):
     full_prompt = persona_context + "\n"
     word_count_range = "150-250 words" # Default range
 
-    # --- REVISED CTA and Hashtag Instruction ---
+    # Instructions for including a CTA and Hashtags
     cta_and_hashtags_instruction = (
-        "\n\nConclude the post with a clear, engaging call to action that encourages direct interaction "
-        "like liking, commenting, or sharing. For example: 'What's your best fire-starting tip? Share below!' "
-        "or 'Like if you agree, share with a friend!' "
+        "\n\nConclude the post with a clear, engaging call to action relevant to the post's content. "
         "Immediately after the call to action, include exactly 3 relevant hashtags. "
         "Do NOT include any extra text after the hashtags."
     )
-    # --- END REVISED CTA and Hashtag Instruction ---
 
     if prompt_type == "general_camping_tip":
         example_experience = random.choice(arthur['experiences'])['details'] if arthur['experiences'] else "a time you learned something important in the wilderness"
@@ -163,9 +160,7 @@ def generate_gemini_post(character_data, prompt_type):
     params = {"key": GEMINI_API_KEY}
 
     try:
-        # --- INCREASED TIMEOUT HERE ---
-        response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=data, timeout=60) 
-        # --- END INCREASED TIMEOUT ---
+        response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=data, timeout=45)
         response.raise_for_status()
         
         response_json = response.json()
