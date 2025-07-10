@@ -2,22 +2,18 @@ import os
 import json
 import requests
 import textwrap
-import re # Import regex for cleaning text
+import re
 from datetime import datetime
-import random # For selecting diverse post types
+import random
 
 # --- Configuration (Use Environment Variables for API Keys!) ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-PIXABAY_API_KEY = os.getenv("PIXABAY_KEY") # This should now correctly pick up PIXABAY_KEY
+PIXABAY_API_KEY = os.getenv("PIXABAY_KEY")
 FACEBOOK_PAGE_ID = os.getenv("FB_PAGE_ID")
 FACEBOOK_ACCESS_TOKEN = os.getenv("FB_PAGE_TOKEN")
 
 # --- Gemini API Setup ---
-# IMPORTANT: Ensure this model name matches the Gemini 1.5 model you are using!
-# For Gemini 1.5 Flash:
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-# If you are using Gemini 1.5 Pro, change it to:
-# GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent"
 
 # --- Pixabay API Setup ---
 PIXABAY_API_URL = "https://pixabay.com/api/"
@@ -40,7 +36,7 @@ def load_character_data(file_path):
 
 def clean_markdown_bold(text):
     """Removes Markdown bold formatting (**) from a string."""
-    return re.sub(r'\*\*(.*?)\*\*', r'\1', text) # Replaces **text** with text
+    return re.sub(r'\*\*(.*?)\*\*', r'\1', text)
 
 def generate_gemini_post(character_data, prompt_type):
     """
@@ -48,22 +44,29 @@ def generate_gemini_post(character_data, prompt_type):
     """
     arthur = character_data.get("character", {})
     
-    # Base persona for Arthur
-    # Emphasize consistent age and ranger tenure here.
-    base_persona = (
-        f"You are Arthur 'Art' Peterson, a 62-year-old retired Forest Ranger from Prescott, Arizona. "
-        f"You spent forty years as a Forest Ranger. Your experience as a Wilderness First Responder since '88 "
-        f"and SAR Coordinator is extensive. "
-        f"You are wise, patient, and resourceful, with a dry wit and deep love for nature. "
-        f"Your values include respect for nature, self-reliance, and preparation. "
-        f"You have decades of experience in backpacking, fly-fishing, and wilderness survival. "
-        f"You often use catchphrases like '{arthur['personality']['catchphrases'][0]}' or '{arthur['personality']['catchphrases'][2]}'.\n"
-        f"DO NOT vary your age (62) or years of ranger service (40 years). "
-        f"Start your posts in a natural, varied way. Do not always use the same opening phrase."
+    # Core persona details, presented as initial context for Gemini
+    # Instruct Gemini NOT to repeat these in every post.
+    persona_context = (
+        f"You are Arthur 'Art' Peterson. "
+        f"Your age is 62. You are a retired Forest Ranger from Prescott, Arizona, with exactly 40 years of service. "
+        f"You have been a Wilderness First Responder since 1988 and served as a SAR Coordinator. "
+        f"Your personality is wise, patient, resourceful, with a dry wit and deep love for nature. "
+        f"Your core values are respect for nature, self-reliance, and preparedness. "
+        f"You are experienced in backpacking, fly-fishing, and wilderness survival. "
+        f"Your catchphrases include '{arthur['personality']['catchphrases'][0]}' and '{arthur['personality']['catchphrases'][2]}'.\n\n"
+        f"**IMPORTANT:** Do NOT explicitly state your age, your years of ranger service, or introduce yourself with a full bio in EVERY post. "
+        f"Vary your opening phrases naturally. Only mention these details if they are directly relevant and essential to the post's content itself, not just as an introduction."
     )
 
-    full_prompt = base_persona + "\n\n"
-    word_count_range = "150-250 words" # Default range, can be overridden per type
+    full_prompt = persona_context + "\n"
+    word_count_range = "150-250 words" # Default range
+
+    # Instructions for including a CTA and Hashtags
+    cta_and_hashtags_instruction = (
+        "\n\nConclude the post with a clear, engaging call to action relevant to the post's content. "
+        "Immediately after the call to action, include exactly 3 relevant hashtags. "
+        "Do NOT include any extra text after the hashtags."
+    )
 
     if prompt_type == "general_camping_tip":
         example_experience = random.choice(arthur['experiences'])['details'] if arthur['experiences'] else "a time you learned something important in the wilderness"
@@ -139,7 +142,8 @@ def generate_gemini_post(character_data, prompt_type):
         full_prompt += "Write a short, engaging post about the general beauty of nature and responsible enjoyment."
         word_count_range = "100-150 words"
 
-    full_prompt += f"\n\nStrictly adhere to the word count mentioned, which is {word_count_range}. Do NOT exceed it."
+    full_prompt += f"\n\nStrictly adhere to the word count mentioned, which is {word_count_range}."
+    full_prompt += cta_and_hashtags_instruction # Add the CTA and Hashtag instruction here
 
     headers = {
         "Content-Type": "application/json"
@@ -156,13 +160,13 @@ def generate_gemini_post(character_data, prompt_type):
     params = {"key": GEMINI_API_KEY}
 
     try:
-        response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=data, timeout=45) # Increased timeout
+        response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=data, timeout=45)
         response.raise_for_status()
         
         response_json = response.json()
         if 'candidates' in response_json and response_json['candidates']:
             generated_text = response_json['candidates'][0]['content']['parts'][0]['text']
-            return clean_markdown_bold(generated_text.strip()) # Clean bold formatting here
+            return clean_markdown_bold(generated_text.strip())
         else:
             print(f"Gemini API response did not contain expected 'candidates': {response_json}")
             return None
@@ -191,17 +195,15 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
     }
 
     try:
-        print(f"DEBUG: Pixabay API Key (from os.getenv): {'(set)' if PIXABAY_API_KEY else '(NOT SET)'}") # Debug line
         response = requests.get(PIXABAY_API_URL, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
         
-        # Shuffle hits to pick more randomly, not just the top ones
         hits = data.get("hits", [])
-        random.shuffle(hits) # Shuffle the results before picking
+        random.shuffle(hits)
         
         image_urls = []
-        for hit in hits: # Iterate through shuffled hits
+        for hit in hits:
             if hit.get("webformatURL"):
                 image_urls.append(hit["webformatURL"])
                 if len(image_urls) >= num_images:
@@ -209,7 +211,7 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
         
         downloaded_paths = []
         for i, url in enumerate(image_urls):
-            file_name = f"image_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{i}.jpg" # Added %f for microseconds for more uniqueness
+            file_name = f"image_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{i}.jpg"
             file_path = os.path.join(IMAGES_DIR, file_name)
             try:
                 img_data = requests.get(url, stream=True, timeout=10)
@@ -237,7 +239,6 @@ def post_to_facebook(page_id, access_token, message, image_paths):
 
     uploaded_photo_ids = []
     
-    # 1. Upload each photo individually
     for img_path in image_paths:
         try:
             print(f"Attempting to upload image: {img_path}")
@@ -245,7 +246,6 @@ def post_to_facebook(page_id, access_token, message, image_paths):
             
             with open(img_path, 'rb') as img_file:
                 files = {'source': img_file}
-                # 'published': 'false' means upload to page album but don't create separate post
                 data = {'access_token': access_token, 'published': 'false'} 
                 
                 response = requests.post(upload_url, files=files, data=data, timeout=30)
@@ -259,7 +259,6 @@ def post_to_facebook(page_id, access_token, message, image_paths):
                     print(f"Successfully uploaded {img_path}. Photo ID: {photo_id}")
                 else:
                     print(f"Error: Photo upload response did not contain ID: {photo_data}")
-                    # Continue to try other images even if one fails
         except requests.exceptions.RequestException as e:
             print(f"Error uploading image {img_path} to Facebook: {e}")
         except FileNotFoundError:
@@ -268,7 +267,6 @@ def post_to_facebook(page_id, access_token, message, image_paths):
     if not uploaded_photo_ids:
         print("No images were successfully uploaded. Proceeding with text-only post if possible.")
 
-    # 2. Create the post with attached media (or as a text-only post if no images)
     post_url = f"https://graph.facebook.com/{page_id}/feed"
     
     post_data = {
@@ -296,7 +294,6 @@ def post_to_facebook(page_id, access_token, message, image_paths):
             
     except requests.exceptions.RequestException as e:
         print(f"Error publishing post to Facebook: {e}")
-        # Print the full error response from Facebook if available
         if hasattr(e, 'response') and e.response is not None:
             print(f"Facebook API Error Details: {e.response.text}")
         return False
@@ -311,7 +308,6 @@ def cleanup_images():
 if __name__ == "__main__":
     character_data = load_character_data(CHARACTER_FILE)
     
-    # Define all possible post types
     post_types = [
         "general_camping_tip",
         "motivation_outdoors",
@@ -324,16 +320,12 @@ if __name__ == "__main__":
         "philosophical_reflection"
     ]
     
-    # Randomly select a post type for this run
     selected_post_type = random.choice(post_types)
     
-    # Common image query for nature/wilderness themes
-    # Added more general outdoor terms for variety
-    image_query = "forest, mountains, landscape, wilderness, nature, outdoors, hiking, trails, camping"
+    image_query = "forest, mountains, landscape, wilderness, nature, outdoors, hiking, trails, camping, adventure"
         
     print(f"Generating a '{selected_post_type}' post for Arthur...")
 
-    # 1. Generate Post Text using Gemini
     post_text = generate_gemini_post(character_data, selected_post_type)
 
     if post_text:
@@ -341,7 +333,6 @@ if __name__ == "__main__":
         print(post_text)
         print("---------------------------\n")
 
-        # 2. Search and Download Images from Pixabay
         image_paths = search_and_download_pixabay_images(image_query, num_images=5)
 
         if image_paths:
@@ -349,13 +340,11 @@ if __name__ == "__main__":
         else:
             print("No images found or downloaded from Pixabay.")
 
-        # 3. Post to Facebook
         if FACEBOOK_PAGE_ID and FACEBOOK_ACCESS_TOKEN:
             post_to_facebook(FACEBOOK_PAGE_ID, FACEBOOK_ACCESS_TOKEN, post_text, image_paths)
         else:
             print("Facebook Page ID or Access Token not set. Skipping real Facebook post.")
         
-        # 4. Clean up downloaded images
         cleanup_images()
     else:
         print("Failed to generate post text. Aborting.")
