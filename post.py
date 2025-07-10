@@ -144,7 +144,7 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
                         f.write(chunk)
                 downloaded_paths.append(file_path)
                 print(f"Downloaded: {file_path}")
-            except requests.exceptions.Request_RequestException as e:
+            except requests.exceptions.RequestException as e:
                 print(f"Error downloading image from {url}: {e}")
         return downloaded_paths
 
@@ -154,31 +154,82 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
 
 def post_to_facebook(page_id, access_token, message, image_paths):
     """
-    MOCK FUNCTION: Posts a message and multiple images to a Facebook Page.
-    *** THIS IS A MOCK AND DOES NOT ACTUALLY POST TO FACEBOOK. ***
-    To make real posts, you will need to replace this with actual Facebook Graph API
-    calls, which involve steps like:
-    1. Authenticating your app and obtaining a long-lived Page Access Token.
-    2. Uploading each photo to Facebook's Graph API to get a photo ID.
-    3. Creating a page post and attaching the uploaded photo IDs.
-    
-    Refer to Facebook's Graph API documentation for detailed implementation:
-    - Photo upload: https://developers.facebook.com/docs/graph-api/reference/page/photos/#creating
-    - Page posts with attached photos: https://developers.facebook.com/docs/graph-api/reference/page/feed/#creating
+    Posts a message and multiple images to a Facebook Page using the Graph API.
     """
-    print("\n--- MOCK FACEBOOK POSTING ---")
-    print(f"Attempting to post to Facebook Page ID: {page_id}")
-    print(f"Message:\n{textwrap.fill(message, width=80)}")
-    print("Images to upload:")
-    if image_paths:
-        for path in image_paths:
-            print(f"- {path}")
-    else:
-        print("- No images to upload.")
+    if not page_id or not access_token:
+        print("Facebook Page ID or Access Token not set. Cannot post to Facebook.")
+        return False
 
-    print("\nMOCK: Successfully prepared post data (not actually posted to Facebook).")
-    print("-----------------------------\n")
-    return True # Simulate success
+    uploaded_photo_ids = []
+    
+    # 1. Upload each photo individually
+    for img_path in image_paths:
+        try:
+            print(f"Attempting to upload image: {img_path}")
+            # Facebook Graph API endpoint for photo upload
+            upload_url = f"https://graph.facebook.com/{page_id}/photos"
+            
+            with open(img_path, 'rb') as img_file:
+                files = {'source': img_file}
+                data = {'access_token': access_token, 'published': 'false'} # Upload but don't publish yet
+                
+                response = requests.post(upload_url, files=files, data=data, timeout=30)
+                response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                
+                photo_data = response.json()
+                photo_id = photo_data.get('id')
+                
+                if photo_id:
+                    uploaded_photo_ids.append(photo_id)
+                    print(f"Successfully uploaded {img_path}. Photo ID: {photo_id}")
+                else:
+                    print(f"Error: Photo upload response did not contain ID: {photo_data}")
+                    return False # Abort if an image upload fails
+        except requests.exceptions.RequestException as e:
+            print(f"Error uploading image {img_path} to Facebook: {e}")
+            return False
+        except FileNotFoundError:
+            print(f"Error: Image file not found at {img_path}. Skipping.")
+            return False
+
+    if not uploaded_photo_ids and image_paths: # If we tried to upload images but none succeeded
+        print("No images were successfully uploaded. Cannot create a multi-photo post.")
+        return False
+
+    # 2. Create the post with attached media
+    post_url = f"https://graph.facebook.com/{page_id}/feed"
+    
+    # Prepare attached media for the post
+    attached_media = []
+    for photo_id in uploaded_photo_ids:
+        attached_media.append({'media_fbid': photo_id}) # Use 'media_fbid' for attaching existing photos
+    
+    post_data = {
+        'message': message,
+        'access_token': access_token
+    }
+
+    if attached_media:
+        # Facebook expects attached_media as a JSON string for multiple items
+        post_data['attached_media'] = json.dumps(attached_media)
+    
+    try:
+        print("\nAttempting to publish Facebook post...")
+        response = requests.post(post_url, data=post_data, timeout=30)
+        response.raise_for_status()
+        
+        post_response = response.json()
+        if 'id' in post_response:
+            print(f"Successfully posted to Facebook! Post ID: {post_response['id']}")
+            print(f"View post: https://www.facebook.com/{post_response['id'].replace('_', '/posts/')}")
+            return True
+        else:
+            print(f"Error: Post creation response did not contain ID: {post_response}")
+            return False
+            
+    except requests.exceptions.RequestException as e:
+        print(f"Error publishing post to Facebook: {e}")
+        return False
 
 def cleanup_images():
     """Removes downloaded images after use."""
@@ -191,8 +242,6 @@ if __name__ == "__main__":
     character_data = load_character_data(CHARACTER_FILE)
     
     # --- Determine Post Type and Image Query ---
-    # This logic rotates the post type and image search query based on the current day.
-    # You can customize this logic for more diverse posting.
     current_day = datetime.now().day
     if current_day % 4 == 0:
         post_type = "general_tip"
@@ -223,13 +272,13 @@ if __name__ == "__main__":
         if image_paths:
             print(f"Found and downloaded {len(image_paths)} images.")
         else:
-            print("No images found or downloaded.")
+            print("No images found or downloaded from Pixabay.")
 
-        # 3. Post to Facebook (currently a MOCK function)
+        # 3. Post to Facebook (NOW REAL!)
         if FACEBOOK_PAGE_ID and FACEBOOK_ACCESS_TOKEN:
             post_to_facebook(FACEBOOK_PAGE_ID, FACEBOOK_ACCESS_TOKEN, post_text, image_paths)
         else:
-            print("Facebook Page ID or Access Token not set. Skipping Facebook post (or it's a mock anyway).")
+            print("Facebook Page ID or Access Token not set. Skipping real Facebook post.")
         
         # 4. Clean up downloaded images
         cleanup_images()
