@@ -5,7 +5,7 @@ on:
     # Runs every day at 07:00 UTC.
     # This time can be adjusted using cron syntax.
     # Example: '0 7 * * *' means at 07:00 AM UTC daily.
-    # To convert to your local time (New Cairo is UTC+3), 07:00 UTC is 10:00 AM EEST.
+    # For New Cairo (EEST is UTC+3), 07:00 UTC is 10:00 AM EEST.
     # Use crontab.guru to help set your desired schedule.
     - cron: '0 7 * * *' 
   workflow_dispatch:
@@ -42,9 +42,10 @@ jobs:
       # Environment variables are securely passed from your GitHub Secrets.
       env:
         # These names must exactly match the names of the secrets you set in GitHub.
+        # The PIXABAY_KEY environment variable name now matches the secret name directly.
         FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
         FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-        PIXABAY_API_KEY: ${{ secrets.PIXABAY_KEY }}
+        PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }} # Corrected environment variable name
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} 
       run: |
         python post.py
