@@ -61,12 +61,15 @@ def generate_gemini_post(character_data, prompt_type):
     full_prompt = persona_context + "\n"
     word_count_range = "150-250 words" # Default range
 
-    # Instructions for including a CTA and Hashtags
+    # --- REVISED CTA and Hashtag Instruction ---
     cta_and_hashtags_instruction = (
-        "\n\nConclude the post with a clear, engaging call to action relevant to the post's content. "
+        "\n\nConclude the post with a clear, engaging call to action that encourages direct interaction "
+        "like liking, commenting, or sharing. For example: 'What's your best fire-starting tip? Share below!' "
+        "or 'Like if you agree, share with a friend!' "
         "Immediately after the call to action, include exactly 3 relevant hashtags. "
         "Do NOT include any extra text after the hashtags."
     )
+    # --- END REVISED CTA and Hashtag Instruction ---
 
     if prompt_type == "general_camping_tip":
         example_experience = random.choice(arthur['experiences'])['details'] if arthur['experiences'] else "a time you learned something important in the wilderness"
@@ -271,7 +274,7 @@ def post_to_facebook(page_id, access_token, message, image_paths):
     
     post_data = {
         'message': message,
-        'access_token': access_token
+        'access_token': access_data
     }
 
     if uploaded_photo_ids:
