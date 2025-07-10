@@ -1,27 +1,13 @@
-name: Arthur's Daily Camping Post (USA Audience)
+name: Daily Arthur Post
 
 on:
   schedule:
-    # Schedule to run four times a day, aiming for USA audiences (all times are UTC).
-    #
-    # Conversions (approximate, adjust for Daylight Saving Time if needed):
-    #
-    # 1. 13:00 UTC =  9 AM EST /  8 AM CST /  7 AM MST /  6 AM PST
-    #    (Good for a morning post across the US)
-    #
-    # 2. 18:00 UTC =  2 PM EST /  1 PM CST / 12 PM MST / 11 AM PST
-    #    (Good for an early afternoon post)
-    #
-    # 3. 22:00 UTC =  6 PM EST /  5 PM CST /  4 PM MST /  3 PM PST
-    #    (Good for an evening post after work)
-    #
-    # 4. 02:00 UTC (next day) = 10 PM EST /  9 PM CST /  8 PM MST /  7 PM PST
-    #    (Good for a late evening recap or thought)
-    #
-    - cron: '0 13 * * *' # First daily post (e.g., US Morning)
-    - cron: '0 18 * * *' # Second daily post (e.g., US Early Afternoon)
-    - cron: '0 22 * * *' # Third daily post (e.g., US Evening)
-    - cron: '0 2 * * *'  # Fourth daily post (e.g., US Late Evening / next UTC day)
+    # Runs four times a day, optimized for USA audience engagement:
+    # 13:00 UTC (9 AM ET / 6 AM PT)
+    # 17:00 UTC (1 PM ET / 10 AM PT)
+    # 21:00 UTC (5 PM ET / 2 PM PT)
+    # 01:00 UTC (9 PM ET / 6 PM PT - next day's UTC)
+    - cron: '0 13,17,21,1 * * *'
   workflow_dispatch:
     # Allows you to manually trigger the workflow from the GitHub UI
 
@@ -30,34 +16,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.9'
+        python-version: '3.x' # Use the latest Python 3.x version
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install requests
 
-    - name: Create temporary images directory
-      run: |
-        mkdir -p temp_images 
-
-    - name: Generate and Post with Arthur
+    - name: Run python post.py
+      run: python post.py
       env:
+        # These are your secrets, stored in GitHub Repository Secrets
+        # Make sure these are set up in your repository settings:
+        # Settings -> Secrets and variables -> Actions -> New repository secret
         FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
         FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
         PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} 
-      run: |
-        python post.py
-
-    - name: Cleanup temporary images
-      run: |
-        if [ -d "temp_images" ]; then
-          rm -rf temp_images
-        fi
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
