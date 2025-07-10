@@ -1,1 +1,55 @@
+name: Arthur's Daily Camping Post
+
+on:
+  schedule:
+    # Runs every day at 08:00 UTC.
+    # This time can be adjusted. For example, '0 8 * * *' means at 08:00 AM UTC.
+    # If you want it closer to New Cairo's morning (EEST is UTC+3), 05:00 UTC would be 08:00 EEST.
+    # For 10:00 AM EEST, you'd set it to 07:00 UTC ('0 7 * * *').
+    - cron: '0 7 * * *' 
+  workflow_dispatch:
+    # Allows you to manually trigger the workflow from the GitHub UI
+
+jobs:
+  post_to_facebook:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9' # You can change this to '3.10', '3.11', or '3.12' if preferred
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests # 'requests' is used for API calls to Gemini and Pixabay
+
+    - name: Create temporary images directory
+      # This ensures the directory exists before the Python script tries to save images.
+      run: |
+        mkdir -p temp_images 
+
+    - name: Generate and Post with Arthur
+      env:
+        # These environment variables will securely receive values from your GitHub Secrets.
+        # Ensure that you have secrets named FB_PAGE_ID, FB_PAGE_TOKEN, PIXABAY_KEY,
+        # and GEMINI_API_KEY in your repository's settings.
+        FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+        FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+        PIXABAY_API_KEY: ${{ secrets.PIXABAY_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} 
+      run: |
+        python post.py
+
+    - name: Cleanup temporary images
+      # This step removes the downloaded images after the post is (mock) created.
+      # It's good practice to clean up temporary files created during a workflow run.
+      run: |
+        if [ -d "temp_images" ]; then
+          rm -rf temp_images
+        fi
 
