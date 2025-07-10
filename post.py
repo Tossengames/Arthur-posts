@@ -6,6 +6,7 @@ from datetime import datetime
 
 # --- Configuration (Use Environment Variables for API Keys!) ---
 # These variables will be populated from your GitHub Secrets.
+# Ensure your GitHub Secrets are named: GEMINI_API_KEY, PIXABAY_KEY, FB_PAGE_ID, FB_PAGE_TOKEN
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PIXABAY_API_KEY = os.getenv("PIXABAY_KEY")
 FACEBOOK_PAGE_ID = os.getenv("FB_PAGE_ID")
@@ -23,7 +24,8 @@ GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini
 PIXABAY_API_URL = "https://pixabay.com/api/"
 
 # --- Paths ---
-CHARACTER_FILE = "arthur_character.json" # Assumes this file is in the same directory as post.py
+# Assumes 'arthur_character.json' is in the same directory as 'post.py'
+CHARACTER_FILE = "arthur_character.json" 
 IMAGES_DIR = "temp_images" # Directory to save downloaded images temporarily
 
 def load_character_data(file_path):
@@ -32,7 +34,7 @@ def load_character_data(file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"Error: Character file '{file_path}' not found.")
+        print(f"Error: Character file '{file_path}' not found. Make sure it's in the same directory.")
         exit(1)
     except json.JSONDecodeError:
         print(f"Error: Could not decode JSON from '{file_path}'. Check file format.")
@@ -85,7 +87,7 @@ def generate_gemini_post(character_data, prompt_type="general_tip"):
 
     try:
         response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=data, timeout=30)
-        response.raise_for_status() # Raise an exception for HTTP errors
+        response.raise_for_status() # Raise an exception for HTTP errors (e.g., 404, 500)
         
         response_json = response.json()
         if 'candidates' in response_json and response_json['candidates']:
@@ -142,7 +144,7 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
                         f.write(chunk)
                 downloaded_paths.append(file_path)
                 print(f"Downloaded: {file_path}")
-            except requests.exceptions.RequestException as e:
+            except requests.exceptions.Request_RequestException as e:
                 print(f"Error downloading image from {url}: {e}")
         return downloaded_paths
 
@@ -153,10 +155,16 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
 def post_to_facebook(page_id, access_token, message, image_paths):
     """
     MOCK FUNCTION: Posts a message and multiple images to a Facebook Page.
-    NOTE: Implementing actual Facebook Graph API posting requires more complex
-    steps (like handling OAuth, getting proper page access tokens, uploading
-    photos sequentially, and then attaching them to a post).
-    This function currently only prints what it would do.
+    *** THIS IS A MOCK AND DOES NOT ACTUALLY POST TO FACEBOOK. ***
+    To make real posts, you will need to replace this with actual Facebook Graph API
+    calls, which involve steps like:
+    1. Authenticating your app and obtaining a long-lived Page Access Token.
+    2. Uploading each photo to Facebook's Graph API to get a photo ID.
+    3. Creating a page post and attaching the uploaded photo IDs.
+    
+    Refer to Facebook's Graph API documentation for detailed implementation:
+    - Photo upload: https://developers.facebook.com/docs/graph-api/reference/page/photos/#creating
+    - Page posts with attached photos: https://developers.facebook.com/docs/graph-api/reference/page/feed/#creating
     """
     print("\n--- MOCK FACEBOOK POSTING ---")
     print(f"Attempting to post to Facebook Page ID: {page_id}")
@@ -184,6 +192,7 @@ if __name__ == "__main__":
     
     # --- Determine Post Type and Image Query ---
     # This logic rotates the post type and image search query based on the current day.
+    # You can customize this logic for more diverse posting.
     current_day = datetime.now().day
     if current_day % 4 == 0:
         post_type = "general_tip"
