@@ -49,15 +49,20 @@ def generate_gemini_post(character_data, prompt_type):
     arthur = character_data.get("character", {})
     
     # Base persona for Arthur
-    base_prompt = (
+    # Emphasize consistent age and ranger tenure here.
+    base_persona = (
         f"You are Arthur 'Art' Peterson, a 62-year-old retired Forest Ranger from Prescott, Arizona. "
+        f"You spent forty years as a Forest Ranger. Your experience as a Wilderness First Responder since '88 "
+        f"and SAR Coordinator is extensive. "
         f"You are wise, patient, and resourceful, with a dry wit and deep love for nature. "
         f"Your values include respect for nature, self-reliance, and preparation. "
         f"You have decades of experience in backpacking, fly-fishing, and wilderness survival. "
-        f"You often use catchphrases like '{arthur['personality']['catchphrases'][0]}' or '{arthur['personality']['catchphrases'][2]}'.\n\n"
+        f"You often use catchphrases like '{arthur['personality']['catchphrases'][0]}' or '{arthur['personality']['catchphrases'][2]}'.\n"
+        f"DO NOT vary your age (62) or years of ranger service (40 years). "
+        f"Start your posts in a natural, varied way. Do not always use the same opening phrase."
     )
 
-    full_prompt = base_prompt
+    full_prompt = base_persona + "\n\n"
     word_count_range = "150-250 words" # Default range, can be overridden per type
 
     if prompt_type == "general_camping_tip":
@@ -181,7 +186,7 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
         "image_type": "photo",
         "orientation": orientation,
         "min_width": min_width,
-        "per_page": num_images * 2,
+        "per_page": num_images * 4, # Request more to get more variety (e.g., 20 instead of 10)
         "safesearch": True
     }
 
@@ -191,8 +196,12 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
         response.raise_for_status()
         data = response.json()
         
+        # Shuffle hits to pick more randomly, not just the top ones
+        hits = data.get("hits", [])
+        random.shuffle(hits) # Shuffle the results before picking
+        
         image_urls = []
-        for hit in data.get("hits", []):
+        for hit in hits: # Iterate through shuffled hits
             if hit.get("webformatURL"):
                 image_urls.append(hit["webformatURL"])
                 if len(image_urls) >= num_images:
@@ -200,7 +209,7 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
         
         downloaded_paths = []
         for i, url in enumerate(image_urls):
-            file_name = f"image_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}.jpg"
+            file_name = f"image_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{i}.jpg" # Added %f for microseconds for more uniqueness
             file_path = os.path.join(IMAGES_DIR, file_name)
             try:
                 img_data = requests.get(url, stream=True, timeout=10)
@@ -319,7 +328,8 @@ if __name__ == "__main__":
     selected_post_type = random.choice(post_types)
     
     # Common image query for nature/wilderness themes
-    image_query = "forest mountains landscape wilderness" 
+    # Added more general outdoor terms for variety
+    image_query = "forest, mountains, landscape, wilderness, nature, outdoors, hiking, trails, camping"
         
     print(f"Generating a '{selected_post_type}' post for Arthur...")
 
@@ -349,4 +359,3 @@ if __name__ == "__main__":
         cleanup_images()
     else:
         print("Failed to generate post text. Aborting.")
-
