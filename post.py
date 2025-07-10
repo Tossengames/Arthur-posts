@@ -2,31 +2,29 @@ import os
 import json
 import requests
 import textwrap
+import re # Import regex for cleaning text
 from datetime import datetime
+import random # For selecting diverse post types
 
 # --- Configuration (Use Environment Variables for API Keys!) ---
-# These variables will be populated from your GitHub Secrets.
-# Ensure your GitHub Secrets are named: GEMINI_API_KEY, PIXABAY_KEY, FB_PAGE_ID, FB_PAGE_TOKEN
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-PIXABAY_API_KEY = os.getenv("PIXABAY_KEY")
+PIXABAY_API_KEY = os.getenv("PIXABAY_KEY") # This should now correctly pick up PIXABAY_KEY
 FACEBOOK_PAGE_ID = os.getenv("FB_PAGE_ID")
 FACEBOOK_ACCESS_TOKEN = os.getenv("FB_PAGE_TOKEN")
 
 # --- Gemini API Setup ---
-# *** IMPORTANT: Ensure this model name matches the Gemini 1.5 model you are using! ***
+# IMPORTANT: Ensure this model name matches the Gemini 1.5 model you are using!
 # For Gemini 1.5 Flash:
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 # If you are using Gemini 1.5 Pro, change it to:
 # GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent"
 
-
 # --- Pixabay API Setup ---
 PIXABAY_API_URL = "https://pixabay.com/api/"
 
 # --- Paths ---
-# Assumes 'arthur_character.json' is in the same directory as 'post.py'
 CHARACTER_FILE = "arthur_character.json" 
-IMAGES_DIR = "temp_images" # Directory to save downloaded images temporarily
+IMAGES_DIR = "temp_images"
 
 def load_character_data(file_path):
     """Loads Arthur's character data from a JSON file."""
@@ -40,36 +38,103 @@ def load_character_data(file_path):
         print(f"Error: Could not decode JSON from '{file_path}'. Check file format.")
         exit(1)
 
-def generate_gemini_post(character_data, prompt_type="general_tip"):
+def clean_markdown_bold(text):
+    """Removes Markdown bold formatting (**) from a string."""
+    return re.sub(r'\*\*(.*?)\*\*', r'\1', text) # Replaces **text** with text
+
+def generate_gemini_post(character_data, prompt_type):
     """
     Generates a post using Gemini based on Arthur's character data and a prompt type.
     """
     arthur = character_data.get("character", {})
     
-    # Construct a rich prompt using various aspects of Arthur's character
-    base_prompt = f"You are Arthur 'Art' Peterson, a 62-year-old retired Forest Ranger from Prescott, Arizona. You are wise, patient, and resourceful, with a dry wit and deep love for nature. Your values include respect for nature, self-reliance, and preparation. You have decades of experience in backpacking, fly-fishing, and wilderness survival. You often use catchphrases like '{arthur['personality']['catchphrases'][0]}' or '{arthur['personality']['catchphrases'][2]}'.\n\n"
-    
-    if prompt_type == "general_tip":
-        topic = "a practical general camping tip"
-        example_experience = arthur['experiences'][0]['details'] if arthur['experiences'] else "a time you learned something important in the wilderness"
-        prompt_suffix = f"Share a practical, actionable tip for beginner campers, perhaps drawing on an experience like '{example_experience}'. Make it encouraging and insightful, around 150-250 words. Include one of your skills, like '{arthur['skills'][0].lower()}'. End with a call to action to enjoy nature responsibly."
-    elif prompt_type == "motivation":
-        topic = "an encouraging message"
-        example_value = arthur['personality']['values'][0]
-        prompt_suffix = f"Write an encouraging post about overcoming challenges in the outdoors, relating it to the value of '{example_value}'. Mention your loyal dog Scout. Aim for 100-200 words. Conclude with a thought-provoking question."
-    elif prompt_type == "how_to":
-        topic = "a 'how-to' guide"
-        skill_to_teach = arthur['skills'][4] # Example: Wilderness first aid
-        prompt_suffix = f"Create a short 'how-to' guide on '{skill_to_teach}'. Break it down into 3-4 simple, crucial steps. Keep it practical and concise (150-250 words). Reference your experience as a SAR Coordinator if relevant."
-    elif prompt_type == "anecdote":
-        topic = "a personal anecdote"
-        memory = arthur['experiences'][4]['details'] if len(arthur['experiences']) > 4 else arthur['experiences'][0]['details']
-        prompt_suffix = f"Share a brief, heartwarming personal anecdote, perhaps like '{memory}', involving your family (e.g., grandchildren Lily and Ben). Connect it to the joy of sharing the outdoors. Keep it around 100-180 words, with a warm and reflective tone."
-    else:
-        topic = "a message"
-        prompt_suffix = "Write a short, engaging post about the beauty of nature."
+    # Base persona for Arthur
+    base_prompt = (
+        f"You are Arthur 'Art' Peterson, a 62-year-old retired Forest Ranger from Prescott, Arizona. "
+        f"You are wise, patient, and resourceful, with a dry wit and deep love for nature. "
+        f"Your values include respect for nature, self-reliance, and preparation. "
+        f"You have decades of experience in backpacking, fly-fishing, and wilderness survival. "
+        f"You often use catchphrases like '{arthur['personality']['catchphrases'][0]}' or '{arthur['personality']['catchphrases'][2]}'.\n\n"
+    )
 
-    full_prompt = base_prompt + f"Today, you want to share {topic}. {prompt_suffix}\n\nStrictly adhere to the word count mentioned. Do NOT exceed it."
+    full_prompt = base_prompt
+    word_count_range = "150-250 words" # Default range, can be overridden per type
+
+    if prompt_type == "general_camping_tip":
+        example_experience = random.choice(arthur['experiences'])['details'] if arthur['experiences'] else "a time you learned something important in the wilderness"
+        skill_example = random.choice(arthur['skills']).lower()
+        full_prompt += (
+            f"Share a practical, actionable tip for beginner campers, perhaps drawing on an experience like '{example_experience}'. "
+            f"Make it encouraging and insightful, focusing on a skill like '{skill_example}'. "
+            f"End with a call to action to enjoy nature responsibly. Aim for {word_count_range}."
+        )
+    elif prompt_type == "motivation_outdoors":
+        example_value = random.choice(arthur['personality']['values'])
+        full_prompt += (
+            f"Write an encouraging post about overcoming challenges in the outdoors, relating it to the value of '{example_value}'. "
+            f"Mention your loyal dog Scout. Aim for 100-200 words. Conclude with a thought-provoking question."
+        )
+    elif prompt_type == "how_to_wilderness_skill":
+        skill_to_teach = random.choice([
+            "knot tying", "fire starting in damp conditions", "basic map and compass navigation",
+            "wilderness first aid for minor cuts", "identifying safe water sources"
+        ])
+        full_prompt += (
+            f"Create a short 'how-to' guide on '{skill_to_teach}'. Break it down into 3-4 simple, crucial steps. "
+            f"Keep it practical and concise ({word_count_range}). "
+            f"Reference your experience as a SAR Coordinator if relevant. "
+            f"End with a reminder about preparedness."
+        )
+    elif prompt_type == "personal_anecdote":
+        memory = random.choice(arthur['experiences'])['details']
+        full_prompt += (
+            f"Share a brief, heartwarming personal anecdote, perhaps like '{memory}', involving your family (e.g., grandchildren Lily and Ben) or your dog Scout. "
+            f"Connect it to the joy of sharing the outdoors or a lesson learned from nature. "
+            f"Keep it around 100-180 words, with a warm and reflective tone."
+        )
+    elif prompt_type == "advice_for_youth":
+        topic = random.choice(["resilience", "patience", "observing the world", "finding your path"])
+        full_prompt += (
+            f"Offer a piece of life advice for young people, drawing from your decades of experience as a ranger. "
+            f"Focus on the value of '{topic}' and how the outdoors taught you about it. "
+            f"Around 150-220 words. End with an encouraging thought."
+        )
+    elif prompt_type == "nature_facts":
+        topic = random.choice(["local flora of Arizona", "common desert animals and their adaptations", "reading animal tracks", "the importance of native plants"])
+        full_prompt += (
+            f"Share some interesting information or facts about '{topic}'. "
+            f"Make it informative but accessible, as if you're talking to a new camper. "
+            f"Keep it around 160-240 words. Encourage people to observe their surroundings."
+        )
+    elif prompt_type == "what_to_do_situation":
+        situation = random.choice([
+            "getting lost on a trail", "encountering a venomous snake", "dealing with a minor injury far from help",
+            "unexpected change in weather (e.g., sudden storm)", "how to properly store food to avoid attracting wildlife"
+        ])
+        full_prompt += (
+            f"Write a practical guide on 'what to do if {situation}'. "
+            f"Break it down into key steps and essential mindset. Emphasize calm and resourcefulness. "
+            f"Aim for {word_count_range}. Conclude with a safety reminder."
+        )
+    elif prompt_type == "gear_essentials":
+        gear_item = random.choice(["a good multi-tool", "reliable hiking boots", "a quality first-aid kit", "a map and compass"])
+        full_prompt += (
+            f"Discuss the importance of a '{gear_item}' for any outdoor enthusiast. "
+            f"Explain why it's essential and share a brief example of when it's proven its worth. "
+            f"Focus on practical advice. Around 120-200 words."
+        )
+    elif prompt_type == "philosophical_reflection":
+        concept = random.choice(["solitude in nature", "the balance of ecosystems", "the healing power of the wilderness", "finding peace outdoors"])
+        full_prompt += (
+            f"Share a short reflection on the concept of '{concept}' from your perspective as a long-time ranger. "
+            f"What does it mean to you? How has nature shaped your understanding of it? "
+            f"Aim for 100-180 words, with a thoughtful and gentle tone."
+        )
+    else: # Fallback
+        full_prompt += "Write a short, engaging post about the general beauty of nature and responsible enjoyment."
+        word_count_range = "100-150 words"
+
+    full_prompt += f"\n\nStrictly adhere to the word count mentioned, which is {word_count_range}. Do NOT exceed it."
 
     headers = {
         "Content-Type": "application/json"
@@ -86,13 +151,13 @@ def generate_gemini_post(character_data, prompt_type="general_tip"):
     params = {"key": GEMINI_API_KEY}
 
     try:
-        response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=data, timeout=30)
-        response.raise_for_status() # Raise an exception for HTTP errors (e.g., 404, 500)
+        response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=data, timeout=45) # Increased timeout
+        response.raise_for_status()
         
         response_json = response.json()
         if 'candidates' in response_json and response_json['candidates']:
             generated_text = response_json['candidates'][0]['content']['parts'][0]['text']
-            return generated_text.strip()
+            return clean_markdown_bold(generated_text.strip()) # Clean bold formatting here
         else:
             print(f"Gemini API response did not contain expected 'candidates': {response_json}")
             return None
@@ -116,18 +181,19 @@ def search_and_download_pixabay_images(query, num_images=5, orientation="horizon
         "image_type": "photo",
         "orientation": orientation,
         "min_width": min_width,
-        "per_page": num_images * 2, # Request more to ensure enough high-quality hits
+        "per_page": num_images * 2,
         "safesearch": True
     }
 
     try:
+        print(f"DEBUG: Pixabay API Key (from os.getenv): {'(set)' if PIXABAY_API_KEY else '(NOT SET)'}") # Debug line
         response = requests.get(PIXABAY_API_URL, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
         
         image_urls = []
         for hit in data.get("hits", []):
-            if hit.get("webformatURL"): # Check for a usable URL
+            if hit.get("webformatURL"):
                 image_urls.append(hit["webformatURL"])
                 if len(image_urls) >= num_images:
                     break
@@ -166,15 +232,15 @@ def post_to_facebook(page_id, access_token, message, image_paths):
     for img_path in image_paths:
         try:
             print(f"Attempting to upload image: {img_path}")
-            # Facebook Graph API endpoint for photo upload
             upload_url = f"https://graph.facebook.com/{page_id}/photos"
             
             with open(img_path, 'rb') as img_file:
                 files = {'source': img_file}
-                data = {'access_token': access_token, 'published': 'false'} # Upload but don't publish yet
+                # 'published': 'false' means upload to page album but don't create separate post
+                data = {'access_token': access_token, 'published': 'false'} 
                 
                 response = requests.post(upload_url, files=files, data=data, timeout=30)
-                response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                response.raise_for_status()
                 
                 photo_data = response.json()
                 photo_id = photo_data.get('id')
@@ -184,33 +250,25 @@ def post_to_facebook(page_id, access_token, message, image_paths):
                     print(f"Successfully uploaded {img_path}. Photo ID: {photo_id}")
                 else:
                     print(f"Error: Photo upload response did not contain ID: {photo_data}")
-                    return False # Abort if an image upload fails
+                    # Continue to try other images even if one fails
         except requests.exceptions.RequestException as e:
             print(f"Error uploading image {img_path} to Facebook: {e}")
-            return False
         except FileNotFoundError:
-            print(f"Error: Image file not found at {img_path}. Skipping.")
-            return False
+            print(f"Error: Image file not found at {img_path}. Skipping upload.")
 
-    if not uploaded_photo_ids and image_paths: # If we tried to upload images but none succeeded
-        print("No images were successfully uploaded. Cannot create a multi-photo post.")
-        return False
+    if not uploaded_photo_ids:
+        print("No images were successfully uploaded. Proceeding with text-only post if possible.")
 
-    # 2. Create the post with attached media
+    # 2. Create the post with attached media (or as a text-only post if no images)
     post_url = f"https://graph.facebook.com/{page_id}/feed"
-    
-    # Prepare attached media for the post
-    attached_media = []
-    for photo_id in uploaded_photo_ids:
-        attached_media.append({'media_fbid': photo_id}) # Use 'media_fbid' for attaching existing photos
     
     post_data = {
         'message': message,
         'access_token': access_token
     }
 
-    if attached_media:
-        # Facebook expects attached_media as a JSON string for multiple items
+    if uploaded_photo_ids:
+        attached_media = [{'media_fbid': photo_id} for photo_id in uploaded_photo_ids]
         post_data['attached_media'] = json.dumps(attached_media)
     
     try:
@@ -229,6 +287,9 @@ def post_to_facebook(page_id, access_token, message, image_paths):
             
     except requests.exceptions.RequestException as e:
         print(f"Error publishing post to Facebook: {e}")
+        # Print the full error response from Facebook if available
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Facebook API Error Details: {e.response.text}")
         return False
 
 def cleanup_images():
@@ -241,25 +302,29 @@ def cleanup_images():
 if __name__ == "__main__":
     character_data = load_character_data(CHARACTER_FILE)
     
-    # --- Determine Post Type and Image Query ---
-    current_day = datetime.now().day
-    if current_day % 4 == 0:
-        post_type = "general_tip"
-        image_query = "forest camping landscape"
-    elif current_day % 4 == 1:
-        post_type = "motivation"
-        image_query = "mountain view inspiring"
-    elif current_day % 4 == 2:
-        post_type = "how_to"
-        image_query = "survival skills nature"
-    else:
-        post_type = "anecdote"
-        image_query = "camp campfire family"
+    # Define all possible post types
+    post_types = [
+        "general_camping_tip",
+        "motivation_outdoors",
+        "how_to_wilderness_skill",
+        "personal_anecdote",
+        "advice_for_youth",
+        "nature_facts",
+        "what_to_do_situation",
+        "gear_essentials",
+        "philosophical_reflection"
+    ]
+    
+    # Randomly select a post type for this run
+    selected_post_type = random.choice(post_types)
+    
+    # Common image query for nature/wilderness themes
+    image_query = "forest mountains landscape wilderness" 
         
-    print(f"Generating a '{post_type}' post for Arthur...")
+    print(f"Generating a '{selected_post_type}' post for Arthur...")
 
     # 1. Generate Post Text using Gemini
-    post_text = generate_gemini_post(character_data, post_type)
+    post_text = generate_gemini_post(character_data, selected_post_type)
 
     if post_text:
         print("\n--- Generated Post Text ---")
@@ -274,7 +339,7 @@ if __name__ == "__main__":
         else:
             print("No images found or downloaded from Pixabay.")
 
-        # 3. Post to Facebook (NOW REAL!)
+        # 3. Post to Facebook
         if FACEBOOK_PAGE_ID and FACEBOOK_ACCESS_TOKEN:
             post_to_facebook(FACEBOOK_PAGE_ID, FACEBOOK_ACCESS_TOKEN, post_text, image_paths)
         else:
