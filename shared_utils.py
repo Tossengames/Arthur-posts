@@ -1,13 +1,20 @@
 import os
-import feedparser
 import requests
 import random
-from datetime import datetime
+import logging
 import google.generativeai as genai
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Configure Gemini AI
-genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-model = genai.GenerativeModel('gemini-pro')
+try:
+    genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+    model = genai.GenerativeModel('gemini-pro')
+except Exception as e:
+    logger.error(f"Gemini AI setup failed: {str(e)}")
+    model = None
 
 # Hashtag pool for anime/manga posts
 HASHTAGS = [
@@ -20,6 +27,10 @@ def get_random_hashtags():
     return ' '.join(random.sample(HASHTAGS, 4))
 
 def generate_ai_summary(content):
+    if not model:
+        logger.error("Gemini AI not initialized")
+        return None
+        
     prompt = f"""
     Act as an enthusiastic anime and manga content creator. Summarize this in an engaging way for Facebook fans:
     {content}
@@ -37,15 +48,19 @@ def generate_ai_summary(content):
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        print(f"AI generation error: {str(e)}")
+        logger.error(f"AI generation error: {str(e)}")
         return None
 
 def post_to_facebook(title, summary, image_url=None):
+    if not summary:
+        logger.error("Skipping post - no summary generated")
+        return False
+        
     fb_token = os.getenv('FB_PAGE_TOKEN')
     fb_page_id = os.getenv('FB_PAGE_ID')
     
-    if not summary:
-        print("Skipping post - no summary generated")
+    if not all([fb_token, fb_page_id]):
+        logger.error("Missing Facebook credentials")
         return False
     
     message = f"{title}\n\n{summary}\n\n{get_random_hashtags()}"
@@ -61,11 +76,12 @@ def post_to_facebook(title, summary, image_url=None):
     try:
         response = requests.post(
             f'https://graph.facebook.com/{fb_page_id}/feed',
-            data=payload
+            data=payload,
+            timeout=10
         )
         response.raise_for_status()
-        print("Posted successfully to Facebook")
+        logger.info("Posted successfully to Facebook")
         return True
     except Exception as e:
-        print(f"Facebook post error: {str(e)}")
+        logger.error(f"Facebook post error: {str(e)}")
         return False
