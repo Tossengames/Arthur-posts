@@ -10,36 +10,44 @@ def get_crunchyroll_news():
     try:
         url = "https://www.crunchyroll.com/news"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept-Language': 'en-US,en;q=0.9'
         }
         
         logger.info("Fetching Crunchyroll news page...")
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')
-        articles = soup.select('article.news-item')  # Updated selector
+        
+        # Try multiple selectors for articles
+        articles = []
+        for selector in ['article.news-item', 'div.news-item', 'div.news-card', 'article.news-card']:
+            articles = soup.select(selector)
+            if articles:
+                break
         
         if not articles:
-            logger.error("No articles found on news page")
+            logger.error(f"No articles found. Page title: {soup.title.string if soup.title else 'No title'}")
             return None
             
         latest_article = articles[0]
         
-        # Extract data with error handling for each element
-        title_elem = latest_article.select_one('h2.title, h1.title')  # Multiple possible selectors
-        desc_elem = latest_article.select_one('div.description, p.excerpt')
-        img_elem = latest_article.select_one('img.thumbnail, img.news-image')
+        # Extract data with multiple fallback selectors
+        title = (latest_article.select_one('h2.title') or 
+                latest_article.select_one('h1.title') or
+                latest_article.select_one('h3.title')).get_text(strip=True)
+                
+        description = (latest_article.select_one('div.description') or
+                     latest_article.select_one('p.excerpt') or
+                     latest_article.select_one('div.excerpt')).get_text(strip=True)
         
-        if not all([title_elem, desc_elem, img_elem]):
-            logger.error("Missing required elements in article")
-            return None
-            
-        title = title_elem.get_text(strip=True)
-        description = desc_elem.get_text(strip=True)
-        image_url = img_elem.get('src', img_elem.get('data-src', ''))
+        img_elem = (latest_article.select_one('img.thumbnail') or
+                   latest_article.select_one('img.news-image') or
+                   latest_article.select_one('img'))
+        image_url = img_elem['src'] if img_elem else None
         
-        if not image_url.startswith('http'):
+        if image_url and not image_url.startswith('http'):
             image_url = f"https:{image_url}" if image_url.startswith('//') else f"https://www.crunchyroll.com{image_url}"
             
         return {
