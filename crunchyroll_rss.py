@@ -1,14 +1,14 @@
 from shared_utils import *
 import feedparser
 
-MANGAUPDATES_RSS = "https://www.mangaupdates.com/rss.php"
+CRUNCHYROLL_RSS = "https://www.crunchyroll.com/newsrss?lang=enUS"
 
-def process_mangaupdates_feed():
-    print("Fetching MangaUpdates RSS feed...")
-    feed = feedparser.parse(MANGAUPDATES_RSS)
+def process_crunchyroll_feed():
+    print("Fetching Crunchyroll RSS feed...")
+    feed = feedparser.parse(CRUNCHYROLL_RSS)
     
     if not feed.entries:
-        print("No entries found in MangaUpdates RSS feed")
+        print("No entries found in Crunchyroll RSS feed")
         return False
     
     # Get the latest entry
@@ -16,11 +16,8 @@ def process_mangaupdates_feed():
     
     # Extract image if available
     image_url = None
-    if 'links' in entry:
-        for link in entry.links:
-            if link.type == 'image/jpeg':
-                image_url = link.href
-                break
+    if 'media_content' in entry and entry.media_content:
+        image_url = entry.media_content[0]['url']
     
     # Generate AI summary
     content = f"{entry.title}\n\n{entry.description}"
@@ -30,7 +27,7 @@ def process_mangaupdates_feed():
         return False
     
     # Post to Facebook
-    return post_to_facebook("📖 Manga News Flash!", summary, image_url)
+    return post_to_facebook("🎬 Crunchyroll Update!", summary, image_url)
 
 if __name__ == "__main__":
-    process_mangaupdates_feed()
+    process_crunchyroll_feed()
