@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Configure Gemini AI
 try:
     genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-1.5-flash')  # Updated model name
 except Exception as e:
     logger.error(f"Gemini AI setup failed: {str(e)}")
     model = None
@@ -42,6 +42,7 @@ def generate_ai_summary(content):
     - Keep it under 200 characters
     - Highlight why fans should care
     - Never mention that you're summarizing
+    - Use casual, friendly language like a real fan
     """
     
     try:
@@ -77,7 +78,7 @@ def post_to_facebook(title, summary, image_url=None):
         response = requests.post(
             f'https://graph.facebook.com/{fb_page_id}/feed',
             data=payload,
-            timeout=10
+            timeout=15
         )
         response.raise_for_status()
         logger.info("Posted successfully to Facebook")
