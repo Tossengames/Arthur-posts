@@ -104,14 +104,12 @@ def generate_story(gemini_model):
 def extract_json_from_text(text):
     """Extract JSON from Gemini response text"""
     try:
-        # Try to find JSON in the text
         json_match = re.search(r'\{.*\}', text, re.DOTALL)
         if json_match:
             return json.loads(json_match.group())
     except:
         pass
     
-    # Fallback: create a simple story structure
     return {
         "title": "The Determined Hero",
         "anime_inspiration": "Naruto",
@@ -142,7 +140,6 @@ def generate_images(story_data):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     for scene in story_data["scenes"]:
-        # Generate complete scene with characters
         scene_prompt = f"{scene['image_prompt']}, {CONFIG['anime_style']}, high quality, complete scene"
         scene_url = f"https://image.pollinations.ai/prompt/{scene_prompt}?width=1024&height=576&nologo=true"
         
@@ -157,7 +154,6 @@ def generate_images(story_data):
             print(f"Generated image for scene {scene['scene_number']}")
         except Exception as e:
             print(f"Error generating image for scene {scene['scene_number']}: {e}")
-            # Use a fallback image
             scene_path = create_fallback_image(scene, timestamp)
             image_paths.append(scene_path)
     
@@ -168,17 +164,14 @@ def create_fallback_image(scene, timestamp):
     try:
         from PIL import Image, ImageDraw, ImageFont
         
-        # Create a simple image with text
         img = Image.new('RGB', (1024, 576), color=(73, 109, 137))
         d = ImageDraw.Draw(img)
         
-        # Try to use a font
         try:
             font = ImageFont.truetype("Arial", 30)
         except:
             font = ImageFont.load_default()
         
-        # Add text
         d.text((100, 100), f"Scene: {scene['description'][:50]}...", fill=(255, 255, 255), font=font)
         d.text((100, 150), f"Inspired by: {CONFIG['anime_style']}", fill=(255, 255, 255), font=font)
         
@@ -186,7 +179,6 @@ def create_fallback_image(scene, timestamp):
         img.save(scene_path)
         return scene_path
     except:
-        # Ultimate fallback - just return a path
         return f"{CONFIG['output_dir']}/images/fallback.png"
 
 async def generate_voiceover(story_data):
@@ -194,38 +186,14 @@ async def generate_voiceover(story_data):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     audio_files = []
     
-    # Map emotions to TTS parameters
-    emotion_params = {
-        "happy": {"rate": "+10%", "pitch": "+10%"},
-        "sad": {"rate": "-10%", "pitch": "-10%"},
-        "angry": {"rate": "+15%", "volume": "+20%"},
-        "excited": {"rate": "+20%", "pitch": "+15%"},
-        "calm": {"rate": "-5%", "volume": "-5%"},
-        "inspiring": {"rate": "+5%", "pitch": "+5%"},
-        "determined": {"rate": "+5%", "volume": "+5%"},
-        "default": {"rate": "+0%", "pitch": "+0%", "volume": "+0%"}
-    }
-    
     all_text = []
-    
     for scene in story_data["scenes"]:
-        # Add narration
-        narration = scene["narration"]
-        emotion = narration["emotion"].lower()
-        params = emotion_params.get(emotion, emotion_params["default"])
-        
-        narration_text = narration["text"]
-        all_text.append(narration_text)
-        
-        # Add dialogue
+        all_text.append(scene["narration"]["text"])
         for dialogue in scene["dialogue"]:
-            dialogue_text = dialogue["text"]
-            all_text.append(dialogue_text)
+            all_text.append(dialogue["text"])
     
-    # Combine all text
     full_script = " ".join(all_text)
     
-    # Generate audio
     try:
         communicate = edge_tts.Communicate(
             full_script,
@@ -247,54 +215,46 @@ def create_video(story_data, image_paths, audio_files):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = f"{CONFIG['output_dir']}/video_{timestamp}.mp4"
     
-    # Calculate duration per scene (total video duration / number of scenes)
     scene_duration = CONFIG["video_duration"] / len(story_data["scenes"])
     
     try:
-        # Create video from images using a different approach
-        if image_paths:
-            # Use a different approach - create video directly without concat demuxer
-            filter_complex = ""
-            for i, image_path in enumerate(image_paths):
-                # Use absolute paths to avoid permission issues
-                abs_path = os.path.abspath(image_path)
-                filter_complex += f"movie={abs_path}:duration={scene_duration}[v{i}];"
+        inputs = []
+        filter_complex = ""
+        for i, image_path in enumerate(image_paths):
+            inputs.extend(["-loop", "1", "-t", str(scene_duration), "-i", image_path])
+            filter_complex += f"[{i}:v]scale=1024:576,setsar=1[v{i}];"
+        
+        filter_complex += "".join([f"[v{i}]" for i in range(len(image_paths))])
+        filter_complex += f"concat=n={len(image_paths)}:v=1:a=0[outv]"
+        
+        cmd = [
+            "ffmpeg", "-y",
+            *inputs,
+            "-filter_complex", filter_complex,
+            "-map", "[outv]",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30",
+            output_path
+        ]
+        
+        subprocess.run(cmd, check=True, timeout=300)
+        
+        if audio_files:
+            temp_video = output_path
+            final_output = output_path.replace(".mp4", "_with_audio.mp4")
             
-            # Add the concat part
-            filter_complex += f"{''.join([f'[v{i}]' for i in range(len(image_paths))])}concat=n={len(image_paths)}:v=1:a=0[outv]"
+            subprocess.run([
+                "ffmpeg", "-y", "-i", temp_video,
+                "-i", audio_files[0],
+                "-c:v", "copy", "-c:a", "aac", "-shortest",
+                final_output
+            ], check=True, timeout=300)
             
-            # Build the FFmpeg command
-            cmd = [
-                "ffmpeg", "-y",
-                "-filter_complex", filter_complex,
-                "-map", "[outv]",
-                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30",
-                "-vf", "scale=1024:576",
-                output_path
-            ]
-            
-            # Run the command
-            subprocess.run(cmd, check=True, timeout=300, capture_output=True)
-            
-            # Add audio if available
-            if audio_files:
-                temp_video = output_path
-                final_output = output_path.replace(".mp4", "_with_audio.mp4")
-                
-                subprocess.run([
-                    "ffmpeg", "-y", "-i", temp_video,
-                    "-i", audio_files[0],
-                    "-c:v", "copy", "-c:a", "aac", "-shortest",
-                    final_output
-                ], check=True, timeout=300, capture_output=True)
-                
-                # Remove the temporary video without audio
-                os.remove(temp_video)
-                output_path = final_output
-            
-            print(f"Created video: {output_path}")
-            return output_path
-            
+            os.remove(temp_video)
+            output_path = final_output
+        
+        print(f"Created video: {output_path}")
+        return output_path
+    
     except subprocess.CalledProcessError as e:
         print(f"FFmpeg error (exit code {e.returncode}): {e.stderr.decode() if e.stderr else 'No error details'}")
         return None
@@ -303,18 +263,14 @@ def create_video(story_data, image_paths, audio_files):
         return None
 
 async def main():
-    """Main function to run the video generation pipeline"""
     parser = argparse.ArgumentParser(description="Generate anime story videos")
     parser.add_argument("--gemini-key", required=True, help="Google Gemini API key")
     args = parser.parse_args()
     
-    # Setup directories
     setup_directories()
     
-    # Initialize Gemini
     gemini_model = init_gemini(args.gemini_key)
     
-    # Generate story
     story_data = generate_story(gemini_model)
     if not story_data:
         print("Failed to generate story")
@@ -323,15 +279,12 @@ async def main():
     print(f"Generated story: {story_data['title']}")
     print(f"Inspired by: {story_data['anime_inspiration']}")
     
-    # Generate images
     image_paths = generate_images(story_data)
     print(f"Generated {len(image_paths)} images")
     
-    # Generate voiceover
     audio_files = await generate_voiceover(story_data)
     print(f"Generated {len(audio_files)} audio files")
     
-    # Create video
     video_path = create_video(story_data, image_paths, audio_files)
     if not video_path:
         print("Failed to create video")
