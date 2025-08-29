@@ -167,7 +167,6 @@ def create_fallback_image(scene, timestamp):
     """Create a simple fallback image using PIL"""
     try:
         from PIL import Image, ImageDraw, ImageFont
-        import numpy as np
         
         # Create a simple image with text
         img = Image.new('RGB', (1024, 576), color=(73, 109, 137))
@@ -252,38 +251,53 @@ def create_video(story_data, image_paths, audio_files):
     scene_duration = CONFIG["video_duration"] / len(story_data["scenes"])
     
     try:
-        # Create video from images
+        # Create video from images using a different approach
         if image_paths:
-            # Create input file for FFmpeg
-            input_file = f"{CONFIG['output_dir']}/ffmpeg_input.txt"
-            with open(input_file, "w") as f:
-                for image_path in image_paths:
-                    f.write(f"file '{os.path.abspath(image_path)}'\n")
-                    f.write(f"duration {scene_duration}\n")
+            # Use a different approach - create video directly without concat demuxer
+            filter_complex = ""
+            for i, image_path in enumerate(image_paths):
+                # Use absolute paths to avoid permission issues
+                abs_path = os.path.abspath(image_path)
+                filter_complex += f"movie={abs_path}:duration={scene_duration}[v{i}];"
             
-            # Generate video from images
-            temp_video = f"{CONFIG['output_dir']}/temp_video.mp4"
-            subprocess.run([
-                "ffmpeg", "-y", "-f", "concat", "-i", input_file,
+            # Add the concat part
+            filter_complex += f"{''.join([f'[v{i}]' for i in range(len(image_paths))])}concat=n={len(image_paths)}:v=1:a=0[outv]"
+            
+            # Build the FFmpeg command
+            cmd = [
+                "ffmpeg", "-y",
+                "-filter_complex", filter_complex,
+                "-map", "[outv]",
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30",
-                "-vf", "scale=1024:576", temp_video
-            ], check=True, timeout=300)
+                "-vf", "scale=1024:576",
+                output_path
+            ]
+            
+            # Run the command
+            subprocess.run(cmd, check=True, timeout=300, capture_output=True)
             
             # Add audio if available
             if audio_files:
+                temp_video = output_path
+                final_output = output_path.replace(".mp4", "_with_audio.mp4")
+                
                 subprocess.run([
                     "ffmpeg", "-y", "-i", temp_video,
                     "-i", audio_files[0],
                     "-c:v", "copy", "-c:a", "aac", "-shortest",
-                    output_path
-                ], check=True, timeout=300)
+                    final_output
+                ], check=True, timeout=300, capture_output=True)
+                
+                # Remove the temporary video without audio
                 os.remove(temp_video)
-            else:
-                os.rename(temp_video, output_path)
+                output_path = final_output
             
             print(f"Created video: {output_path}")
             return output_path
             
+    except subprocess.CalledProcessError as e:
+        print(f"FFmpeg error (exit code {e.returncode}): {e.stderr.decode() if e.stderr else 'No error details'}")
+        return None
     except Exception as e:
         print(f"Error creating video: {e}")
         return None
