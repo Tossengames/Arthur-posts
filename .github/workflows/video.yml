@@ -22,7 +22,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg
+        sudo apt-get install -y ffmpeg libimage-exiftool-perl
 
     - name: Install Python dependencies
       run: |
@@ -36,6 +36,8 @@ jobs:
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: |
+        # Set safe paths for FFmpeg
+        export FFMPEG_SAFE_PATHS=1
         python generate_video.py --gemini-key "$GEMINI_API_KEY"
 
     - name: Upload generated video
