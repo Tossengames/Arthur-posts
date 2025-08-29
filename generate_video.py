@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Extended Anime Short Story Video Generator
+Simplified Anime Short Story Video Generator
 Uses Gemini AI, Pollinations.ai, Edge-TTS, and FFmpeg
-Now supports longer videos with multiple scenes and emotional narration
 """
 
 import os
@@ -20,12 +19,12 @@ import asyncio
 
 # Configuration
 CONFIG = {
-    "video_duration": 120,  # increased from 10 to 120 seconds
+    "video_duration": 60,  # increased from 10 to 60 seconds
     "output_dir": "generated_videos",
     "gemini_model": "gemini-2.0-flash",
-    "tts_voice": "en-US-AriaNeural",  # One consistent voice
+    "tts_voice": "en-US-AriaNeural",
     "anime_style": "anime style, vibrant colors, detailed background",
-    "max_scenes": 6  # increased from 3 to 6 for longer videos
+    "max_scenes": 3  # Reduced for 10-second video
 }
 
 # Anime inspirations list
@@ -52,16 +51,14 @@ def generate_story(gemini_model):
     selected_anime = random.choice(ANIME_INSPIRATIONS)
     
     prompt = f"""
-    Create a ~2-minute anime-style short story inspired by {selected_anime} 
-    that has a meaningful lesson for teenagers. The story should include:
-    1. A clear moral lesson or value.
-    2. Emotional depth appropriate for the source material.
-    3. Exactly {CONFIG['max_scenes']} distinct scenes with descriptions.
-    4. 1-2 main characters.
-    5. Narration and brief dialogues for each scene.
-    6. Each narration/dialogue should include an emotion label 
-       (e.g., "inspiring", "sad", "angry", "hopeful", "joyful").
-
+    Create a very short 10-second story inspired by {selected_anime} that has value and lesson for teenagers.
+    The story should include:
+    1. A clear moral lesson or value
+    2. Emotional depth appropriate for the source material
+    3. Only {CONFIG['max_scenes']} distinct scenes with descriptions
+    4. 1-2 main characters
+    5. Brief dialogue and narration
+    
     Format the output as JSON with the following structure:
     {{
         "title": "Story title",
@@ -75,11 +72,11 @@ def generate_story(gemini_model):
                     {{
                         "character": "Character name",
                         "emotion": "Emotion for this line",
-                        "text": "Dialogue text"
+                        "text": "Very brief dialogue text"
                     }}
                 ],
                 "narration": {{
-                    "text": "Narration text",
+                    "text": "Very brief narration text",
                     "emotion": "Narration emotion"
                 }}
             }}
@@ -185,58 +182,33 @@ def create_fallback_image(scene, timestamp):
         return f"{CONFIG['output_dir']}/images/fallback.png"
 
 async def generate_voiceover(story_data):
-    """Generate voiceover using Edge-TTS with emotional delivery"""
+    """Generate voiceover using Edge-TTS"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    audio_path = f"{CONFIG['output_dir']}/audio/voiceover_{timestamp}.mp3"
+    audio_files = []
     
-    # Map emotions to small pitch/rate adjustments
-    emotion_settings = {
-        "inspiring": {"rate": "+5%", "pitch": "+2Hz"},
-        "sad": {"rate": "-5%", "pitch": "-3Hz"},
-        "angry": {"rate": "+10%", "pitch": "+3Hz"},
-        "hopeful": {"rate": "+3%", "pitch": "+1Hz"},
-        "joyful": {"rate": "+8%", "pitch": "+2Hz"},
-        "determined": {"rate": "+5%", "pitch": "+2Hz"},
-        "neutral": {"rate": "0%", "pitch": "0Hz"}
-    }
+    all_text = []
+    for scene in story_data["scenes"]:
+        all_text.append(scene["narration"]["text"])
+        for dialogue in scene["dialogue"]:
+            all_text.append(dialogue["text"])
     
-    communicate = edge_tts.Communicate()
+    full_script = " ".join(all_text)
     
     try:
-        # Build SSML script
-        ssml_parts = []
-        for scene in story_data["scenes"]:
-            # Narration
-            narr = scene["narration"]
-            emo = narr.get("emotion", "neutral").lower()
-            settings = emotion_settings.get(emo, emotion_settings["neutral"])
-            ssml_parts.append(
-                f'<prosody rate="{settings["rate"]}" pitch="{settings["pitch"]}">{narr["text"]}</prosody>'
-            )
-            
-            # Dialogue
-            for dialogue in scene["dialogue"]:
-                emo = dialogue.get("emotion", "neutral").lower()
-                settings = emotion_settings.get(emo, emotion_settings["neutral"])
-                ssml_parts.append(
-                    f'{dialogue["character"]} says: '
-                    f'<prosody rate="{settings["rate"]}" pitch="{settings["pitch"]}">{dialogue["text"]}</prosody>'
-                )
-        
-        ssml_script = f"<speak>{' '.join(ssml_parts)}</speak>"
-        
-        # Save TTS output
-        tts = edge_tts.Communicate(
-            ssml_script, 
-            CONFIG["tts_voice"]
+        communicate = edge_tts.Communicate(
+            full_script,
+            CONFIG["tts_voice"],
+            rate="+0%"
         )
-        await tts.save(audio_path)
-        print("Generated voiceover with emotions")
+        
+        audio_path = f"{CONFIG['output_dir']}/audio/voiceover_{timestamp}.mp3"
+        await communicate.save(audio_path)
+        audio_files.append(audio_path)
+        print("Generated voiceover")
     except Exception as e:
         print(f"Error generating voiceover: {e}")
-        return []
     
-    return [audio_path]
+    return audio_files
 
 def create_video(story_data, image_paths, audio_files):
     """Create the final video using FFmpeg"""
@@ -264,7 +236,7 @@ def create_video(story_data, image_paths, audio_files):
             output_path
         ]
         
-        subprocess.run(cmd, check=True, timeout=600)
+        subprocess.run(cmd, check=True, timeout=300)
         
         if audio_files:
             temp_video = output_path
@@ -275,7 +247,7 @@ def create_video(story_data, image_paths, audio_files):
                 "-i", audio_files[0],
                 "-c:v", "copy", "-c:a", "aac", "-shortest",
                 final_output
-            ], check=True, timeout=600)
+            ], check=True, timeout=300)
             
             os.remove(temp_video)
             output_path = final_output
