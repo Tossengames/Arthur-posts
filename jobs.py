@@ -320,8 +320,8 @@ def create_career_image(tip_data):
     bbox = draw.textbbox((0, 0), wrapped_tip, font=tip_font)
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
-    x = (width - text_width) // 2
-    y = (height - text_height) // 2
+    x = (width - text_width) >> 1
+    y = (height - text_height) >> 1
     
     # Generate random background color for text box 
     random_bg_color = (
@@ -438,6 +438,7 @@ def main():
     
     if missing_vars:
         print(f"❌ Missing environment variables: {', '.join(missing_vars)}")
+        print("💡 Please add PIXABAY_KEY to your GitHub Secrets")
         return
     
     # Load existing history to check functionality
