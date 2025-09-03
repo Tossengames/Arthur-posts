@@ -154,7 +154,7 @@ def generate_career_tip():
 def get_pixabay_image():
     """Get a random landscape image from Pixabay API"""
     try:
-        api_key = os.environ["PIXABAY_API_KEY"]
+        api_key = os.environ["PIXABAY_KEY"]
         categories = ["sky", "mountains", "landscape", "flowers", "nature"]
         category = random.choice(categories)
         
