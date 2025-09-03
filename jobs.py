@@ -16,35 +16,53 @@ from google import genai
 from io import BytesIO
 
 # File to store posted tips for duplication check
-POST_HISTORY_FILE = "posted_tips.json"
+POST_HISTORY_FILE = "posted_quotes.json"  # Changed to match your existing file
 
 def load_posted_tips():
     """Load history of posted tips to avoid duplicates"""
-    if Path(POST_HISTORY_FILE).exists():
-        with open(POST_HISTORY_FILE, 'r') as f:
-            return json.load(f)
-    return []
+    try:
+        if Path(POST_HISTORY_FILE).exists():
+            with open(POST_HISTORY_FILE, 'r') as f:
+                return json.load(f)
+        return []
+    except (json.JSONDecodeError, FileNotFoundError):
+        # If file is corrupted or doesn't exist, return empty list
+        return []
 
 def save_posted_tip(tip_data):
     """Save a posted tip to history"""
-    posted_tips = load_posted_tips()
-    
-    # Create a unique hash of the main tip to identify duplicates
-    tip_hash = hashlib.md5(tip_data['main_tip'].encode()).hexdigest()
-    
-    # Add to history if not already there
-    if tip_hash not in posted_tips:
-        posted_tips.append(tip_hash)
-        with open(POST_HISTORY_FILE, 'w') as f:
-            json.dump(posted_tips, f)
-        return True
-    return False
+    try:
+        posted_tips = load_posted_tips()
+        
+        # Create a unique hash of the main tip to identify duplicates
+        tip_hash = hashlib.md5(tip_data['main_tip'].encode()).hexdigest()
+        
+        # Add to history if not already there
+        if tip_hash not in posted_tips:
+            posted_tips.append(tip_hash)
+            # Ensure directory exists
+            Path(POST_HISTORY_FILE).parent.mkdir(parents=True, exist_ok=True)
+            with open(POST_HISTORY_FILE, 'w') as f:
+                json.dump(posted_tips, f)
+            print(f"Saved tip to history: {tip_data['main_tip'][:50]}...")
+            return True
+        return False
+    except Exception as e:
+        print(f"Error saving to history: {e}")
+        return False
 
 def is_duplicate_tip(tip_data):
     """Check if a tip has already been posted"""
-    posted_tips = load_posted_tips()
-    tip_hash = hashlib.md5(tip_data['main_tip'].encode()).hexdigest()
-    return tip_hash in posted_tips
+    try:
+        posted_tips = load_posted_tips()
+        tip_hash = hashlib.md5(tip_data['main_tip'].encode()).hexdigest()
+        is_dup = tip_hash in posted_tips
+        if is_dup:
+            print(f"Duplicate detected: {tip_data['main_tip'][:50]}...")
+        return is_dup
+    except Exception as e:
+        print(f"Error checking duplicate: {e}")
+        return False
 
 def generate_career_tip():
     """Generate a practical job search/career advice tip using Gemini 2.0 Flash"""
@@ -136,6 +154,21 @@ def generate_career_tip():
                 'main_tip': 'Practice answering common interview questions out loud.',
                 'explanation': 'Verbal practice builds confidence and helps you articulate your thoughts more clearly during actual interviews.',
                 'hashtags': '#InterviewPrep #JobSearch #CareerTips #Practice'
+            },
+            {
+                'main_tip': 'Use the STAR method for behavioral interview questions.',
+                'explanation': 'STAR (Situation, Task, Action, Result) helps structure compelling answers that showcase your skills.',
+                'hashtags': '#InterviewTips #STARMethod #CareerAdvice'
+            },
+            {
+                'main_tip': 'Tailor your cover letter for each job application.',
+                'explanation': 'Customized cover letters show genuine interest and increase your chances of getting an interview.',
+                'hashtags': '#CoverLetter #JobApplication #CareerTips'
+            },
+            {
+                'main_tip': 'Build your professional network before you need it.',
+                'explanation': 'Strong networks provide support, advice, and job opportunities throughout your career.',
+                'hashtags': '#Networking #CareerGrowth #ProfessionalDevelopment'
             }
         ]
         
@@ -149,12 +182,13 @@ def generate_career_tip():
             return random.choice(non_duplicate_tips)
         else:
             # If all fallbacks are duplicates, return a random one anyway
+            print("All fallback tips are duplicates, using random one")
             return random.choice(fallback_tips)
 
 def get_pixabay_image():
     """Get a random landscape image from Pixabay API"""
     try:
-        api_key = os.environ["PIXABAY_KEY"]  # Changed to PIXABAY_KEY
+        api_key = os.environ["PIXABAY_KEY"]
         categories = ["sky", "mountains", "landscape", "flowers", "nature", "sunset", "forest", "ocean"]
         category = random.choice(categories)
         
@@ -273,7 +307,7 @@ def create_career_image(tip_data):
     return output_buffer.getvalue()
 
 def create_facebook_caption(tip_data):
-    """Create Facebook caption with career advice"""
+    """Create Facebook caption with career advice and CTA"""
     # Random header options
     headers = [
         "Career Advice",
@@ -288,17 +322,30 @@ def create_facebook_caption(tip_data):
     
     header = random.choice(headers)
     
+    # Random CTA options
+    cta_options = [
+        "👍 Like and share if you found this helpful! Follow for daily career tips!",
+        "💼 Want more career advice? Follow for daily job search tips!",
+        "🚀 Share this with someone who's job hunting! Follow for more career insights!",
+        "📈 Found this useful? Share and follow for daily professional growth tips!",
+        "👥 Tag a friend who needs this advice! Follow for more career strategies!"
+    ]
+    
+    cta = random.choice(cta_options)
+    
     caption = f"""{header}:
 
 {tip_data['main_tip']}
 
 💡 {tip_data['explanation']}
 
-Share your thoughts in the comments!
+💬 What's your best career tip? Share in the comments!
+
+{cta}
 
 {tip_data['hashtags']}
 
-#CareerTips #JobSearch #ProfessionalAdvice"""
+#CareerTips #JobSearch #ProfessionalAdvice #CareerGrowth"""
     
     return caption
 
