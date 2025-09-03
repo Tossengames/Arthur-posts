@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Career Wisdom: Generate job/career-themed inspirational content with Gemini AI,
+Career Coach: Generate practical job search and career advice with Gemini AI,
 create images with text overlay, and post to Facebook Page.
 """
 
@@ -15,60 +15,75 @@ from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 from google import genai
 from io import BytesIO
 
-# File to store posted quotes for duplication check
-POST_HISTORY_FILE = "posted_quotes.json"
+# File to store posted tips for duplication check
+POST_HISTORY_FILE = "posted_tips.json"
 
-def load_posted_quotes():
-    """Load history of posted quotes to avoid duplicates"""
+def load_posted_tips():
+    """Load history of posted tips to avoid duplicates"""
     if Path(POST_HISTORY_FILE).exists():
         with open(POST_HISTORY_FILE, 'r') as f:
             return json.load(f)
     return []
 
-def save_posted_quote(quote_data):
-    """Save a posted quote to history"""
-    posted_quotes = load_posted_quotes()
+def save_posted_tip(tip_data):
+    """Save a posted tip to history"""
+    posted_tips = load_posted_tips()
     
-    # Create a unique hash of the quote to identify duplicates
-    quote_hash = hashlib.md5(quote_data['quote'].encode()).hexdigest()
+    # Create a unique hash of the tip to identify duplicates
+    tip_hash = hashlib.md5(tip_data['tip'].encode()).hexdigest()
     
     # Add to history if not already there
-    if quote_hash not in posted_quotes:
-        posted_quotes.append(quote_hash)
+    if tip_hash not in posted_tips:
+        posted_tips.append(tip_hash)
         with open(POST_HISTORY_FILE, 'w') as f:
-            json.dump(posted_quotes, f)
+            json.dump(posted_tips, f)
         return True
     return False
 
-def is_duplicate_quote(quote_data):
-    """Check if a quote has already been posted"""
-    posted_quotes = load_posted_quotes()
-    quote_hash = hashlib.md5(quote_data['quote'].encode()).hexdigest()
-    return quote_hash in posted_quotes
+def is_duplicate_tip(tip_data):
+    """Check if a tip has already been posted"""
+    posted_tips = load_posted_tips()
+    tip_hash = hashlib.md5(tip_data['tip'].encode()).hexdigest()
+    return tip_hash in posted_tips
 
-def generate_career_quote():
-    """Generate a job/career-themed inspirational quote using Gemini 2.0 Flash"""
+def generate_career_tip():
+    """Generate a practical job search/career advice tip using Gemini 2.0 Flash"""
     try:
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
         
         prompt = """
-        Create a SHORT job search, career development, or professional growth tip. 
-        Keep it under 15 words maximum. Make it practical, actionable, and motivational.
-        Focus on topics like: resume tips, interview preparation, networking, skills development, or career advancement.
+        Create a SHORT, practical, actionable job search or career development tip. 
+        Keep it under 15 words maximum. Make it specific and useful.
         
-        Include 3-4 relevant hashtags at the end (e.g., #CareerTips #JobSearch #ProfessionalGrowth).
+        Focus on practical advice for:
+        - Resume writing and optimization
+        - Cover letter strategies
+        - Interview preparation techniques
+        - LinkedIn profile optimization
+        - Networking strategies
+        - Salary negotiation
+        - Job search tactics
+        - Skills development
+        - Career advancement
+        
+        Include 3-4 relevant hashtags at the end.
         
         Format the response exactly like this:
         
-        QUOTE: [The career tip text here] #Hashtag1 #Hashtag2 #Hashtag3
+        TIP: [The practical career tip text here] #Hashtag1 #Hashtag2 #Hashtag3
         
         Examples:
         
-        QUOTE: Tailor your resume for each job application to stand out. #ResumeTips #JobSearch #CareerAdvice
-        QUOTE: Network before you need it - build genuine connections. #Networking #CareerGrowth #ProfessionalDevelopment
-        QUOTE: Learn one new skill each month to stay relevant. #SkillsDevelopment #CareerTips #ContinuousLearning
-        QUOTE: Prepare 3 questions to ask at every interview. #InterviewTips #JobSearch #CareerAdvice
-        QUOTE: Your online presence is your digital resume - keep it professional. #PersonalBranding #CareerTips #JobSearch
+        TIP: Use action verbs and metrics in your resume bullet points. #ResumeTips #JobSearch #CareerAdvice
+        TIP: Research company culture before interviews to ask better questions. #InterviewPrep #CareerTips #JobSearch
+        TIP: Customize your LinkedIn headline with keywords from target jobs. #LinkedInTips #JobSearch #CareerDevelopment
+        TIP: Send follow-up emails within 24 hours after interviews. #InterviewTips #Networking #CareerAdvice
+        TIP: Practice answering common interview questions out loud. #InterviewPrep #JobSearch #CareerTips
+        TIP: Use the STAR method for behavioral interview questions. #InterviewTips #CareerAdvice #JobSearch
+        TIP: Optimize your resume with keywords from the job description. #ResumeTips #ATS #JobSearch
+        TIP: Connect with hiring managers on LinkedIn before applying. #Networking #LinkedInTips #JobSearch
+        TIP: Prepare 3-5 questions to ask interviewers about the role. #InterviewPrep #CareerTips #JobSearch
+        TIP: Use a professional email address on job applications. #JobSearchTips #CareerAdvice #Resume
         """
         
         response = client.models.generate_content(
@@ -80,78 +95,88 @@ def generate_career_quote():
         print(f"Gemini response:\n{response_text}")
         
         # Parse the response
-        if 'QUOTE:' in response_text:
-            quote_line = response_text.split('QUOTE:')[1].strip()
-            quote_data = {
-                'quote': quote_line,
-                'hashtags': extract_hashtags(quote_line)
+        if 'TIP:' in response_text:
+            tip_line = response_text.split('TIP:')[1].strip()
+            tip_data = {
+                'tip': tip_line,
+                'hashtags': extract_hashtags(tip_line)
             }
             
-            # Remove hashtags from the main quote text for image overlay
-            clean_quote = quote_line
-            for tag in quote_data['hashtags']:
-                clean_quote = clean_quote.replace(tag, '')
-            quote_data['clean_quote'] = clean_quote.strip()
+            # Remove hashtags from the main tip text for image overlay
+            clean_tip = tip_line
+            for tag in tip_data['hashtags']:
+                clean_tip = clean_tip.replace(tag, '')
+            tip_data['clean_tip'] = clean_tip.strip()
             
             # Check if this is a duplicate before returning
-            if is_duplicate_quote(quote_data):
-                print("Generated quote is a duplicate, trying again...")
-                return generate_career_quote()  # Recursively try again
+            if is_duplicate_tip(tip_data):
+                print("Generated tip is a duplicate, trying again...")
+                return generate_career_tip()  # Recursively try again
             
-            return quote_data
+            return tip_data
         else:
             raise Exception("Invalid response format from Gemini")
         
     except Exception as e:
-        print(f"Error generating career quote: {e}")
-        # Fallback career quotes
-        fallback_quotes = [
+        print(f"Error generating career tip: {e}")
+        # Fallback practical career tips
+        fallback_tips = [
             {
-                'quote': 'Tailor your resume for each job application to stand out. #ResumeTips #JobSearch #CareerAdvice',
+                'tip': 'Use action verbs and metrics in your resume bullet points. #ResumeTips #JobSearch #CareerAdvice',
                 'hashtags': ['#ResumeTips', '#JobSearch', '#CareerAdvice'],
-                'clean_quote': 'Tailor your resume for each job application to stand out.'
+                'clean_tip': 'Use action verbs and metrics in your resume bullet points.'
             },
             {
-                'quote': 'Network before you need it - build genuine connections. #Networking #CareerGrowth #ProfessionalDevelopment',
-                'hashtags': ['#Networking', '#CareerGrowth', '#ProfessionalDevelopment'],
-                'clean_quote': 'Network before you need it - build genuine connections.'
+                'tip': 'Research company culture before interviews to ask better questions. #InterviewPrep #CareerTips #JobSearch',
+                'hashtags': ['#InterviewPrep', '#CareerTips', '#JobSearch'],
+                'clean_tip': 'Research company culture before interviews to ask better questions.'
             },
             {
-                'quote': 'Learn one new skill each month to stay relevant. #SkillsDevelopment #CareerTips #ContinuousLearning',
-                'hashtags': ['#SkillsDevelopment', '#CareerTips', '#ContinuousLearning'],
-                'clean_quote': 'Learn one new skill each month to stay relevant.'
+                'tip': 'Customize your LinkedIn headline with keywords from target jobs. #LinkedInTips #JobSearch #CareerDevelopment',
+                'hashtags': ['#LinkedInTips', '#JobSearch', '#CareerDevelopment'],
+                'clean_tip': 'Customize your LinkedIn headline with keywords from target jobs.'
             },
             {
-                'quote': 'Prepare 3 questions to ask at every interview. #InterviewTips #JobSearch #CareerAdvice',
-                'hashtags': ['#InterviewTips', '#JobSearch', '#CareerAdvice'],
-                'clean_quote': 'Prepare 3 questions to ask at every interview.'
+                'tip': 'Send follow-up emails within 24 hours after interviews. #InterviewTips #Networking #CareerAdvice',
+                'hashtags': ['#InterviewTips', '#Networking', '#CareerAdvice'],
+                'clean_tip': 'Send follow-up emails within 24 hours after interviews.'
             },
             {
-                'quote': 'Your online presence is your digital resume - keep it professional. #PersonalBranding #CareerTips #JobSearch',
-                'hashtags': ['#PersonalBranding', '#CareerTips', '#JobSearch'],
-                'clean_quote': 'Your online presence is your digital resume - keep it professional.'
+                'tip': 'Practice answering common interview questions out loud. #InterviewPrep #JobSearch #CareerTips',
+                'hashtags': ['#InterviewPrep', '#JobSearch', '#CareerTips'],
+                'clean_tip': 'Practice answering common interview questions out loud.'
+            },
+            {
+                'tip': 'Use the STAR method for behavioral interview questions. #InterviewTips #CareerAdvice #JobSearch',
+                'hashtags': ['#InterviewTips', '#CareerAdvice', '#JobSearch'],
+                'clean_tip': 'Use the STAR method for behavioral interview questions.'
+            },
+            {
+                'tip': 'Optimize your resume with keywords from the job description. #ResumeTips #ATS #JobSearch',
+                'hashtags': ['#ResumeTips', '#ATS', '#JobSearch'],
+                'clean_tip': 'Optimize your resume with keywords from the job description.'
             }
         ]
         
-        # Filter out duplicates from fallback quotes
-        non_duplicate_quotes = [
-            q for q in fallback_quotes 
-            if not is_duplicate_quote(q)
+        # Filter out duplicates from fallback tips
+        non_duplicate_tips = [
+            t for t in fallback_tips 
+            if not is_duplicate_tip(t)
         ]
         
-        if non_duplicate_quotes:
-            return random.choice(non_duplicate_quotes)
+        if non_duplicate_tips:
+            return random.choice(non_duplicate_tips)
         else:
             # If all fallbacks are duplicates, return a random one anyway
-            return random.choice(fallback_quotes)
+            return random.choice(fallback_tips)
 
 def extract_hashtags(text):
     """Extract hashtags from text"""
     import re
     return re.findall(r'#\w+', text)
 
-def create_career_image(quote_data):
-    """Create career-themed image with text overlay"""
+def create_career_image(tip_data):
+    """Create career-themed image with practical advice text overlay"""
     width, height = 1200, 1200
     
     # Professional color palette (blues, greens, grays)
@@ -165,53 +190,67 @@ def create_career_image(quote_data):
     image = Image.new('RGB', (width, height), color=bg_color)
     draw = ImageDraw.Draw(image)
     
-    # Add subtle professional pattern
-    for i in range(20):
+    # Add subtle professional pattern (document-like elements)
+    for i in range(15):
         x = random.randint(0, width)
         y = random.randint(0, height)
-        size = random.randint(5, 15)
+        size = random.randint(10, 25)
+        # Create document/page-like rectangles
         draw.rectangle([x, y, x+size, y+size], 
-                      fill=(255, 255, 255, 30),  # Semi-transparent white
-                      outline=None)
+                      fill=(255, 255, 255, 40),  # Semi-transparent white
+                      outline=(255, 255, 255, 60))
     
-    # Try to load font (using DejaVu which is available on GitHub Actions)
+    # Try to load font
     try:
         font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        quote_font = ImageFont.truetype(font_path, 60)
+        tip_font = ImageFont.truetype(font_path, 58)
     except (IOError, OSError):
         try:
-            quote_font = ImageFont.truetype("arial.ttf", 60)
+            tip_font = ImageFont.truetype("arial.ttf", 58)
         except (IOError, OSError):
-            quote_font = ImageFont.load_default()
+            tip_font = ImageFont.load_default()
     
-    # Wrap the quote text
+    # Wrap the tip text
     max_chars_per_line = 25
-    wrapped_quote = textwrap.fill(quote_data['clean_quote'], width=max_chars_per_line)
+    wrapped_tip = textwrap.fill(tip_data['clean_tip'], width=max_chars_per_line)
     
     # Calculate text position
-    bbox = draw.textbbox((0, 0), wrapped_quote, font=quote_font)
+    bbox = draw.textbbox((0, 0), wrapped_tip, font=tip_font)
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
     x = (width - text_width) // 2
     y = (height - text_height) // 2
     
     # Add semi-transparent background for better readability
-    padding = 30
+    padding = 40
     draw.rectangle([
         x - padding, y - padding,
         x + text_width + padding, y + text_height + padding
-    ], fill=(0, 0, 0, 100))  # Semi-transparent black
+    ], fill=(0, 0, 0, 120))  # Semi-transparent black
     
-    # Draw quote text
-    draw.text((x, y), wrapped_quote, fill=(255, 255, 255), font=quote_font, align='center')
+    # Draw tip text
+    draw.text((x, y), wrapped_tip, fill=(255, 255, 255), font=tip_font, align='center')
+    
+    # Add a "Career Coach Tip" header
+    try:
+        header_font = ImageFont.truetype(font_path, 36)
+    except (IOError, OSError):
+        header_font = tip_font
+    
+    header_text = "Career Coach Tip:"
+    header_bbox = draw.textbbox((0, 0), header_text, font=header_font)
+    header_x = (width - (header_bbox[2] - header_bbox[0])) // 2
+    header_y = y - 70
+    
+    draw.text((header_x, header_y), header_text, fill=(255, 255, 255), font=header_font)
     
     # Convert to bytes
     output_buffer = BytesIO()
     image.save(output_buffer, format="JPEG", quality=95)
     return output_buffer.getvalue()
 
-def post_to_facebook(image_data, quote_data):
-    """Post the image to Facebook Page with career-themed caption"""
+def post_to_facebook(image_data, tip_data):
+    """Post the image to Facebook Page with practical career advice caption"""
     try:
         page_id = os.environ["FB_PAGE_ID"]
         access_token = os.environ["FB_PAGE_TOKEN"]
@@ -220,7 +259,7 @@ def post_to_facebook(image_data, quote_data):
         url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
         
         # Create engaging caption with hashtags
-        caption = f"{quote_data['quote']}"
+        caption = f"{tip_data['tip']}\n\n💼 Practical career advice to help you in your job search! What's your best job search tip? Share in the comments! 👇"
         
         files = {'source': ('career_tip.jpg', image_data, 'image/jpeg')}
         data = {'message': caption, 'access_token': access_token}
@@ -229,8 +268,8 @@ def post_to_facebook(image_data, quote_data):
         
         if response.status_code == 200:
             result = response.json()
-            # Save to posted quotes history to prevent duplicates
-            save_posted_quote(quote_data)
+            # Save to posted tips history to prevent duplicates
+            save_posted_tip(tip_data)
             print(f"Successfully posted to Facebook! Post ID: {result.get('id')}")
             return True
         else:
@@ -244,18 +283,18 @@ def post_to_facebook(image_data, quote_data):
 
 def main():
     """Main function to run the entire process"""
-    print("Starting career wisdom generation and posting process...")
+    print("Starting career coach tip generation and posting process...")
     
-    # Generate quote content
-    quote_data = generate_career_quote()
-    print(f"Career Tip: {quote_data['quote']}")
+    # Generate practical career tip
+    tip_data = generate_career_tip()
+    print(f"Career Tip: {tip_data['tip']}")
     
     # Create image with text overlay
-    final_image = create_career_image(quote_data)
-    print("Career image with text overlay created")
+    final_image = create_career_image(tip_data)
+    print("Career advice image created")
     
     # Post to Facebook
-    success = post_to_facebook(final_image, quote_data)
+    success = post_to_facebook(final_image, tip_data)
     
     if success:
         print("Process completed successfully! The career tip has been shared.")
