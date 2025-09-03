@@ -16,7 +16,7 @@ from google import genai
 from io import BytesIO
 
 # File to store posted tips for duplication check
-POST_HISTORY_FILE = "posted_quotes.json"  # Changed to match your existing file
+POST_HISTORY_FILE = "posted_quotes.json"
 
 def load_posted_tips():
     """Load history of posted tips to avoid duplicates"""
@@ -185,38 +185,34 @@ def generate_career_tip():
             print("All fallback tips are duplicates, using random one")
             return random.choice(fallback_tips)
 
-def get_pixabay_image():
-    """Get a random landscape image from Pixabay API"""
+def get_pixabay_images():
+    """Get images from Pixabay API - using the working function from your script"""
     try:
-        api_key = os.environ["PIXABAY_KEY"]
-        categories = ["sky", "mountains", "landscape", "flowers", "nature", "sunset", "forest", "ocean"]
-        category = random.choice(categories)
+        response = requests.get(
+            "https://pixabay.com/api/",
+            params={
+                "key": os.environ["PIXABAY_KEY"],
+                "q": random.choice(["nature", "landscape", "sky", "mountains", "flowers", "sunset", "forest", "ocean"]),
+                "per_page": 20,
+                "orientation": "horizontal",
+                "editors_choice": "true"
+            },
+            timeout=10
+        )
         
-        url = f"https://pixabay.com/api/"
-        params = {
-            'key': api_key,
-            'q': category,
-            'image_type': 'photo',
-            'orientation': 'horizontal',
-            'category': 'nature',
-            'per_page': 50,
-            'safesearch': 'true'
-        }
+        if response.status_code == 200:
+            images = response.json()["hits"]
+            if images:
+                # Return a random image URL
+                image_data = random.choice(images)
+                image_url = image_data["largeImageURL"]
+                
+                # Download the image
+                img_response = requests.get(image_url, timeout=10)
+                return BytesIO(img_response.content)
         
-        response = requests.get(url, params=params, timeout=30)
-        data = response.json()
-        
-        if data['hits']:
-            # Select a random image from the results
-            image_data = random.choice(data['hits'])
-            image_url = image_data['largeImageURL']
-            
-            # Download the image
-            img_response = requests.get(image_url, timeout=30)
-            return BytesIO(img_response.content)
-        else:
-            print(f"No images found for category: {category}")
-            return None
+        print("No images found from Pixabay")
+        return None
             
     except Exception as e:
         print(f"Error fetching image from Pixabay: {e}")
@@ -227,7 +223,7 @@ def create_career_image(tip_data):
     width, height = 1200, 1200
     
     # Try to get a Pixabay image first
-    image_bytes = get_pixabay_image()
+    image_bytes = get_pixabay_images()
     
     if image_bytes:
         try:
