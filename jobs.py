@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Career Coach: Generate practical job search and career advice with Gemini AI,
-create images with text overlay, and post to Facebook Page.
+create images with text overlay using Pixabay backgrounds, and post to Facebook Page.
 """
 
 import os
@@ -151,29 +151,82 @@ def generate_career_tip():
             # If all fallbacks are duplicates, return a random one anyway
             return random.choice(fallback_tips)
 
+def get_pixabay_image():
+    """Get a random landscape image from Pixabay API"""
+    try:
+        api_key = os.environ["PIXABAY_API_KEY"]
+        categories = ["sky", "mountains", "landscape", "flowers", "nature"]
+        category = random.choice(categories)
+        
+        url = f"https://pixabay.com/api/"
+        params = {
+            'key': api_key,
+            'q': category,
+            'image_type': 'photo',
+            'orientation': 'horizontal',
+            'category': 'nature',
+            'per_page': 50,
+            'safesearch': 'true'
+        }
+        
+        response = requests.get(url, params=params, timeout=30)
+        data = response.json()
+        
+        if data['hits']:
+            # Select a random image from the results
+            image_data = random.choice(data['hits'])
+            image_url = image_data['largeImageURL']
+            
+            # Download the image
+            img_response = requests.get(image_url, timeout=30)
+            return BytesIO(img_response.content)
+        else:
+            print(f"No images found for category: {category}")
+            return None
+            
+    except Exception as e:
+        print(f"Error fetching image from Pixabay: {e}")
+        return None
+
 def create_career_image(tip_data):
-    """Create career-themed image with only the main tip text (no header)"""
+    """Create career-themed image with Pixabay background and text overlay"""
     width, height = 1200, 1200
     
-    # Professional color palette (blues, greens, grays)
-    professional_colors = [
-        '#1a4b8c', '#2c5aa0', '#3d69b4', '#4f78c8', '#6187dc',  # Blues
-        '#2d6a4f', '#3e7c61', '#4f8e73', '#60a085', '#71b297',  # Greens
-        '#495057', '#5c636a', '#6f777e', '#828a91', '#959da4'   # Grays
-    ]
+    # Try to get a Pixabay image first
+    image_bytes = get_pixabay_image()
     
-    bg_color = random.choice(professional_colors)
-    image = Image.new('RGB', (width, height), color=bg_color)
-    draw = ImageDraw.Draw(image)
+    if image_bytes:
+        try:
+            # Open and process the Pixabay image
+            background = Image.open(image_bytes)
+            background = background.resize((width, height), Image.LANCZOS)
+            
+            # Apply a slight darkening filter for better text readability
+            enhancer = ImageEnhance.Brightness(background)
+            background = enhancer.enhance(0.7)  # Darken slightly
+            
+        except Exception as e:
+            print(f"Error processing Pixabay image: {e}")
+            # Fallback to solid color background
+            professional_colors = [
+                '#1a4b8c', '#2c5aa0', '#3d69b4', '#4f78c8', '#6187dc',
+                '#2d6a4f', '#3e7c61', '#4f8e73', '#60a085', '#71b297',
+                '#495057', '#5c636a', '#6f777e', '#828a91', '#959da4'
+            ]
+            bg_color = random.choice(professional_colors)
+            background = Image.new('RGB', (width, height), color=bg_color)
+    else:
+        # Fallback to solid color background
+        professional_colors = [
+            '#1a4b8c', '#2c5aa0', '#3d69b4', '#4f78c8', '#6187dc',
+            '#2d6a4f', '#3e7c61', '#4f8e73', '#60a085', '#71b297',
+            '#495057', '#5c636a', '#6f777e', '#828a91', '#959da4'
+        ]
+        bg_color = random.choice(professional_colors)
+        background = Image.new('RGB', (width, height), color=bg_color)
     
-    # Add subtle professional pattern
-    for i in range(15):
-        x = random.randint(0, width)
-        y = random.randint(0, height)
-        size = random.randint(10, 25)
-        draw.rectangle([x, y, x+size, y+size], 
-                      fill=(255, 255, 255, 40),
-                      outline=(255, 255, 255, 60))
+    # Create drawing context
+    draw = ImageDraw.Draw(background)
     
     # Try to load font
     try:
@@ -185,7 +238,7 @@ def create_career_image(tip_data):
         except (IOError, OSError):
             tip_font = ImageFont.load_default()
     
-    # Wrap the main tip text only (no header)
+    # Wrap the main tip text
     max_chars_per_line = 22
     wrapped_tip = textwrap.fill(tip_data['main_tip'], width=max_chars_per_line)
     
@@ -196,41 +249,61 @@ def create_career_image(tip_data):
     x = (width - text_width) // 2
     y = (height - text_height) // 2
     
-    # Add semi-transparent background for better readability
+    # Generate random background color for text box [citation:1][citation:7]
+    random_bg_color = (
+        random.randint(0, 255),
+        random.randint(0, 255),
+        random.randint(0, 255),
+        180  # Alpha value for transparency
+    )
+    
+    # Add semi-transparent background with random color for better readability
     padding = 40
     draw.rectangle([
         x - padding, y - padding,
         x + text_width + padding, y + text_height + padding
-    ], fill=(0, 0, 0, 120))
+    ], fill=random_bg_color)
     
-    # Draw main tip text only (no header)
+    # Draw main tip text
     draw.text((x, y), wrapped_tip, fill=(255, 255, 255), font=tip_font, align='center')
     
     # Convert to bytes
     output_buffer = BytesIO()
-    image.save(output_buffer, format="JPEG", quality=95)
+    background.save(output_buffer, format="JPEG", quality=95)
     return output_buffer.getvalue()
 
 def create_facebook_caption(tip_data):
-    """Create comprehensive Facebook caption with header, explanation, and CTA"""
-    caption = f"""🎯 Career Coach Tip of the Day! 🎯
+    """Create Facebook caption with career advice"""
+    # Random header options
+    headers = [
+        "Career Advice",
+        "Job Search Tips",
+        "Resume Tip",
+        "Interview Strategy",
+        "Career Development",
+        "Professional Growth Tip",
+        "LinkedIn Advice",
+        "Networking Strategy"
+    ]
+    
+    header = random.choice(headers)
+    
+    caption = f"""{header}:
 
-📌 {tip_data['main_tip']}
+{tip_data['main_tip']}
 
-💡 Why this works: {tip_data['explanation']}
+💡 {tip_data['explanation']}
 
-👇 Your turn! Share your best job search tip in the comments below!
-
-💼 Looking for more career advice? Follow for daily tips!
+Share your thoughts in the comments!
 
 {tip_data['hashtags']}
 
-#CareerCoach #JobSearchTips #CareerDevelopment #ProfessionalGrowth"""
+#CareerTips #JobSearch #ProfessionalAdvice"""
     
     return caption
 
 def post_to_facebook(image_data, tip_data):
-    """Post the image to Facebook Page with comprehensive career advice caption"""
+    """Post the image to Facebook Page with career advice caption"""
     try:
         page_id = os.environ["FB_PAGE_ID"]
         access_token = os.environ["FB_PAGE_TOKEN"]
@@ -238,7 +311,7 @@ def post_to_facebook(image_data, tip_data):
         # Upload image to Facebook
         url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
         
-        # Create comprehensive caption
+        # Create caption
         caption = create_facebook_caption(tip_data)
         
         files = {'source': ('career_tip.jpg', image_data, 'image/jpeg')}
@@ -273,7 +346,7 @@ def main():
     
     # Create image with main tip text only
     final_image = create_career_image(tip_data)
-    print("Career advice image created (main tip only)")
+    print("Career advice image created with Pixabay background")
     
     # Post to Facebook
     success = post_to_facebook(final_image, tip_data)
