@@ -29,4 +29,4 @@ jobs:
         # Ensure the correct package is installed; note: 'facebook_business' is the package name [citation:2][citation:5]
 
     - name: Run Facebook AI Poster
-      run: python facebook_ai_poster.py
+      run: python jobs.py
