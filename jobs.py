@@ -12,9 +12,27 @@ import json
 import hashlib
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
-from google import genai
 from io import BytesIO
 import time
+
+# Try the new Google GenAI SDK import first
+try:
+    from google import genai
+    print("✅ Using new Google GenAI SDK")
+    SDK_TYPE = "new"
+except ImportError:
+    try:
+        # Fallback to old import style
+        import google.generativeai as genai
+        print("✅ Using old Google Generative AI SDK")
+        SDK_TYPE = "old"
+    except ImportError as e:
+        print(f"❌ Failed to import Google AI libraries: {e}")
+        print("💡 Please install the required package:")
+        print("   pip install google-genai  # For new SDK")
+        print("   or")
+        print("   pip install google-generativeai  # For old SDK")
+        exit(1)
 
 # File to store posted tips for duplication check - using absolute path
 POST_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "posted_quotes.json")
@@ -75,13 +93,17 @@ def is_duplicate_tip(tip_data):
         return False
 
 def generate_career_tip():
-    """Generate a practical job search/career advice tip using Gemini 2.0 Flash"""
+    """Generate a practical job search/career advice tip using Gemini"""
     max_retries = 3
     retry_count = 0
     
     while retry_count < max_retries:
         try:
-            client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+            # Initialize client based on available SDK
+            if SDK_TYPE == "new":
+                client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+            else:
+                genai.configure(api_key=os.environ["GEMINI_API_KEY"])
             
             prompt = """
             Create ONE comprehensive career coaching post with these components:
@@ -113,12 +135,19 @@ def generate_career_tip():
             Return only ONE post in this exact format.
             """
             
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt,
-            )
+            # Generate content based on available SDK
+            if SDK_TYPE == "new":
+                response = client.models.generate_content(
+                    model='gemini-2.0-flash',
+                    contents=prompt,
+                )
+                response_text = response.text
+            else:
+                model = genai.GenerativeModel('gemini-pro')
+                response = model.generate_content(prompt)
+                response_text = response.text
             
-            response_text = response.text.strip()
+            response_text = response_text.strip()
             print(f"Gemini response:\n{response_text}")
             
             # Parse the response
@@ -320,8 +349,8 @@ def create_career_image(tip_data):
     bbox = draw.textbbox((0, 0), wrapped_tip, font=tip_font)
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
-    x = (width - text_width) >> 1
-    y = (height - text_height) >> 1
+    x = (width - text_width) // 2
+    y = (height - text_height) // 2
     
     # Generate random background color for text box 
     random_bg_color = (
@@ -438,7 +467,7 @@ def main():
     
     if missing_vars:
         print(f"❌ Missing environment variables: {', '.join(missing_vars)}")
-        print("💡 Please add PIXABAY_KEY to your GitHub Secrets")
+        print("💡 Please add missing variables to your GitHub Secrets")
         return
     
     # Load existing history to check functionality
