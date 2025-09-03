@@ -154,8 +154,8 @@ def generate_career_tip():
 def get_pixabay_image():
     """Get a random landscape image from Pixabay API"""
     try:
-        api_key = os.environ["PIXABAY_KEY"]
-        categories = ["sky", "mountains", "landscape", "flowers", "nature"]
+        api_key = os.environ["PIXABAY_KEY"]  # Changed to PIXABAY_KEY
+        categories = ["sky", "mountains", "landscape", "flowers", "nature", "sunset", "forest", "ocean"]
         category = random.choice(categories)
         
         url = f"https://pixabay.com/api/"
@@ -249,7 +249,7 @@ def create_career_image(tip_data):
     x = (width - text_width) // 2
     y = (height - text_height) // 2
     
-    # Generate random background color for text box [citation:1][citation:7]
+    # Generate random background color for text box 
     random_bg_color = (
         random.randint(0, 255),
         random.randint(0, 255),
