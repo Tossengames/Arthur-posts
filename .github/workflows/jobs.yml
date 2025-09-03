@@ -1,32 +1,41 @@
-name: Facebook AI Poster
+name: Career Tips Poster
 
 on:
   schedule:
-    - cron: '0 14,17,22 * * *'  # 9 AM, 12 PM, 5 PM US Central Time (UTC-5)
-  workflow_dispatch:  # Allow manual triggers
+    - cron: '0 14 * * *'  # 9:00 AM US Central Time
+    - cron: '0 17 * * *'  # 12:00 PM US Central Time  
+    - cron: '0 22 * * *'  # 5:00 PM US Central Time
+  workflow_dispatch:       # Manual trigger
 
 jobs:
-  post-to-facebook:
+  generate-and-post:
     runs-on: ubuntu-latest
-    env:
-      FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-      FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    timeout-minutes: 10
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
-
+      uses: actions/checkout@v4
+    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
-
+        python-version: '3.10'
+    
     - name: Install dependencies
       run: |
-        pip install --upgrade pip
-        pip install facebook-business google-genai pillow
-        # Ensure the correct package is installed; note: 'facebook_business' is the package name [citation:2][citation:5]
-
-    - name: Run Facebook AI Poster
-      run: python jobs.py
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Install fonts
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y fonts-dejavu
+        sudo fc-cache -fv
+    
+    - name: Run career posting script
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+        FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+      run: |
+        python jobs.py
