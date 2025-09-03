@@ -29,8 +29,8 @@ def save_posted_tip(tip_data):
     """Save a posted tip to history"""
     posted_tips = load_posted_tips()
     
-    # Create a unique hash of the tip to identify duplicates
-    tip_hash = hashlib.md5(tip_data['tip'].encode()).hexdigest()
+    # Create a unique hash of the main tip to identify duplicates
+    tip_hash = hashlib.md5(tip_data['main_tip'].encode()).hexdigest()
     
     # Add to history if not already there
     if tip_hash not in posted_tips:
@@ -43,7 +43,7 @@ def save_posted_tip(tip_data):
 def is_duplicate_tip(tip_data):
     """Check if a tip has already been posted"""
     posted_tips = load_posted_tips()
-    tip_hash = hashlib.md5(tip_data['tip'].encode()).hexdigest()
+    tip_hash = hashlib.md5(tip_data['main_tip'].encode()).hexdigest()
     return tip_hash in posted_tips
 
 def generate_career_tip():
@@ -52,7 +52,7 @@ def generate_career_tip():
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
         
         prompt = """
-        Create a comprehensive career coaching post with these components:
+        Create ONE comprehensive career coaching post with these components:
 
         MAIN_TIP: [A short, practical, actionable job search tip - under 15 words]
         EXPLANATION: [1-2 sentences explaining why this tip works or how to implement it]
@@ -75,15 +75,7 @@ def generate_career_tip():
         EXPLANATION: This makes your accomplishments more impactful and helps your resume stand out to both ATS systems and hiring managers.
         HASHTAGS: #ResumeTips #JobSearch #CareerAdvice #ATS
 
-        Examples:
-
-        MAIN_TIP: Research company culture before interviews to ask better questions.
-        EXPLANATION: Understanding company values helps you tailor your answers and shows genuine interest in the organization.
-        HASHTAGS: #InterviewPrep #CareerTips #JobSearch #CompanyResearch
-
-        MAIN_TIP: Customize your LinkedIn headline with keywords from target jobs.
-        EXPLANATION: Recruiters search for keywords, so including relevant terms makes your profile more discoverable.
-        HASHTAGS: #LinkedInTips #JobSearch #CareerDevelopment #PersonalBranding
+        Return only ONE post in this exact format.
         """
         
         response = client.models.generate_content(
@@ -158,11 +150,6 @@ def generate_career_tip():
         else:
             # If all fallbacks are duplicates, return a random one anyway
             return random.choice(fallback_tips)
-
-def extract_hashtags(text):
-    """Extract hashtags from text"""
-    import re
-    return re.findall(r'#\w+', text)
 
 def create_career_image(tip_data):
     """Create career-themed image with only the main tip text (no header)"""
