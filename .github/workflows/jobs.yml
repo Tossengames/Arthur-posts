@@ -1,4 +1,4 @@
-name: Facebook jobs
+name: Facebook AI Poster
 
 on:
   schedule:
@@ -26,6 +26,7 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install facebook-business google-genai pillow
+        # Ensure the correct package is installed; note: 'facebook_business' is the package name [citation:2][citation:5]
 
     - name: Run Facebook AI Poster
-      run: python jobs.py
+      run: python facebook_ai_poster.py
