@@ -14,19 +14,25 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 from google import genai
 from io import BytesIO
+import time
 
-# File to store posted tips for duplication check
-POST_HISTORY_FILE = "posted_quotes.json"
+# File to store posted tips for duplication check - using absolute path
+POST_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "posted_quotes.json")
 
 def load_posted_tips():
     """Load history of posted tips to avoid duplicates"""
     try:
-        if Path(POST_HISTORY_FILE).exists():
+        print(f"Looking for history file at: {POST_HISTORY_FILE}")
+        if os.path.exists(POST_HISTORY_FILE):
             with open(POST_HISTORY_FILE, 'r') as f:
-                return json.load(f)
+                content = f.read().strip()
+                if content:
+                    return json.loads(content)
+                else:
+                    return []
         return []
-    except (json.JSONDecodeError, FileNotFoundError):
-        # If file is corrupted or doesn't exist, return empty list
+    except (json.JSONDecodeError, FileNotFoundError) as e:
+        print(f"Error loading history file: {e}")
         return []
 
 def save_posted_tip(tip_data):
@@ -41,14 +47,16 @@ def save_posted_tip(tip_data):
         if tip_hash not in posted_tips:
             posted_tips.append(tip_hash)
             # Ensure directory exists
-            Path(POST_HISTORY_FILE).parent.mkdir(parents=True, exist_ok=True)
+            os.makedirs(os.path.dirname(POST_HISTORY_FILE), exist_ok=True)
             with open(POST_HISTORY_FILE, 'w') as f:
                 json.dump(posted_tips, f)
-            print(f"Saved tip to history: {tip_data['main_tip'][:50]}...")
+            print(f"✅ Saved tip to history: {tip_data['main_tip'][:50]}...")
             return True
-        return False
+        else:
+            print(f"❌ Tip already exists in history: {tip_data['main_tip'][:50]}...")
+            return False
     except Exception as e:
-        print(f"Error saving to history: {e}")
+        print(f"❌ Error saving to history: {e}")
         return False
 
 def is_duplicate_tip(tip_data):
@@ -58,164 +66,196 @@ def is_duplicate_tip(tip_data):
         tip_hash = hashlib.md5(tip_data['main_tip'].encode()).hexdigest()
         is_dup = tip_hash in posted_tips
         if is_dup:
-            print(f"Duplicate detected: {tip_data['main_tip'][:50]}...")
+            print(f"❌ Duplicate detected: {tip_data['main_tip'][:50]}...")
+        else:
+            print(f"✅ New tip: {tip_data['main_tip'][:50]}...")
         return is_dup
     except Exception as e:
-        print(f"Error checking duplicate: {e}")
+        print(f"❌ Error checking duplicate: {e}")
         return False
 
 def generate_career_tip():
     """Generate a practical job search/career advice tip using Gemini 2.0 Flash"""
-    try:
-        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-        
-        prompt = """
-        Create ONE comprehensive career coaching post with these components:
-
-        MAIN_TIP: [A short, practical, actionable job search tip - under 15 words]
-        EXPLANATION: [1-2 sentences explaining why this tip works or how to implement it]
-        HASHTAGS: [3-4 relevant hashtags]
-
-        Focus on practical advice for:
-        - Resume writing and optimization
-        - Cover letter strategies
-        - Interview preparation techniques
-        - LinkedIn profile optimization
-        - Networking strategies
-        - Salary negotiation
-        - Job search tactics
-        - Skills development
-        - Career advancement
-
-        Format the response exactly like this:
-
-        MAIN_TIP: Use action verbs and metrics in your resume bullet points.
-        EXPLANATION: This makes your accomplishments more impactful and helps your resume stand out to both ATS systems and hiring managers.
-        HASHTAGS: #ResumeTips #JobSearch #CareerAdvice #ATS
-
-        Return only ONE post in this exact format.
-        """
-        
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-        )
-        
-        response_text = response.text.strip()
-        print(f"Gemini response:\n{response_text}")
-        
-        # Parse the response
-        tip_data = {}
-        lines = response_text.split('\n')
-        
-        for line in lines:
-            if line.startswith('MAIN_TIP:'):
-                tip_data['main_tip'] = line.replace('MAIN_TIP:', '').strip()
-            elif line.startswith('EXPLANATION:'):
-                tip_data['explanation'] = line.replace('EXPLANATION:', '').strip()
-            elif line.startswith('HASHTAGS:'):
-                tip_data['hashtags'] = line.replace('HASHTAGS:', '').strip()
-        
-        if 'main_tip' in tip_data:
-            # Check if this is a duplicate before returning
-            if is_duplicate_tip(tip_data):
-                print("Generated tip is a duplicate, trying again...")
-                return generate_career_tip()  # Recursively try again
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
             
-            return tip_data
-        else:
-            raise Exception("Invalid response format from Gemini")
-        
-    except Exception as e:
-        print(f"Error generating career tip: {e}")
-        # Fallback practical career tips
-        fallback_tips = [
-            {
-                'main_tip': 'Use action verbs and metrics in your resume bullet points.',
-                'explanation': 'This makes your accomplishments more impactful and helps your resume stand out to both ATS systems and hiring managers.',
-                'hashtags': '#ResumeTips #JobSearch #CareerAdvice #ATS'
-            },
-            {
-                'main_tip': 'Research company culture before interviews to ask better questions.',
-                'explanation': 'Understanding company values helps you tailor your answers and shows genuine interest in the organization.',
-                'hashtags': '#InterviewPrep #CareerTips #JobSearch #CompanyResearch'
-            },
-            {
-                'main_tip': 'Customize your LinkedIn headline with keywords from target jobs.',
-                'explanation': 'Recruiters search for keywords, so including relevant terms makes your profile more discoverable.',
-                'hashtags': '#LinkedInTips #JobSearch #CareerDevelopment #PersonalBranding'
-            },
-            {
-                'main_tip': 'Send follow-up emails within 24 hours after interviews.',
-                'explanation': 'Timely follow-ups demonstrate professionalism and keep you fresh in the interviewer\'s mind.',
-                'hashtags': '#InterviewTips #Networking #CareerAdvice #FollowUp'
-            },
-            {
-                'main_tip': 'Practice answering common interview questions out loud.',
-                'explanation': 'Verbal practice builds confidence and helps you articulate your thoughts more clearly during actual interviews.',
-                'hashtags': '#InterviewPrep #JobSearch #CareerTips #Practice'
-            },
-            {
-                'main_tip': 'Use the STAR method for behavioral interview questions.',
-                'explanation': 'STAR (Situation, Task, Action, Result) helps structure compelling answers that showcase your skills.',
-                'hashtags': '#InterviewTips #STARMethod #CareerAdvice'
-            },
-            {
-                'main_tip': 'Tailor your cover letter for each job application.',
-                'explanation': 'Customized cover letters show genuine interest and increase your chances of getting an interview.',
-                'hashtags': '#CoverLetter #JobApplication #CareerTips'
-            },
-            {
-                'main_tip': 'Build your professional network before you need it.',
-                'explanation': 'Strong networks provide support, advice, and job opportunities throughout your career.',
-                'hashtags': '#Networking #CareerGrowth #ProfessionalDevelopment'
-            }
-        ]
-        
-        # Filter out duplicates from fallback tips
-        non_duplicate_tips = [
-            t for t in fallback_tips 
-            if not is_duplicate_tip(t)
-        ]
-        
-        if non_duplicate_tips:
-            return random.choice(non_duplicate_tips)
-        else:
-            # If all fallbacks are duplicates, return a random one anyway
-            print("All fallback tips are duplicates, using random one")
-            return random.choice(fallback_tips)
+            prompt = """
+            Create ONE comprehensive career coaching post with these components:
 
-def get_pixabay_images():
-    """Get images from Pixabay API - using the working function from your script"""
+            MAIN_TIP: [A short, practical, actionable job search tip - under 15 words]
+            EXPLANATION: [1-2 sentences explaining why this tip works or how to implement it]
+            HASHTAGS: [3-4 relevant hashtags]
+
+            Focus on practical advice for:
+            - Resume writing and optimization
+            - Cover letter strategies
+            - Interview preparation techniques
+            - LinkedIn profile optimization
+            - Networking strategies
+            - Salary negotiation
+            - Job search tactics
+            - Skills development
+            - Career advancement
+
+            IMPORTANT: Avoid repeating the STAR method or similar interview techniques that have been overused.
+            Focus on fresh, diverse career advice that hasn't been covered recently.
+
+            Format the response exactly like this:
+
+            MAIN_TIP: Use action verbs and metrics in your resume bullet points.
+            EXPLANATION: This makes your accomplishments more impactful and helps your resume stand out to both ATS systems and hiring managers.
+            HASHTAGS: #ResumeTips #JobSearch #CareerAdvice #ATS
+
+            Return only ONE post in this exact format.
+            """
+            
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt,
+            )
+            
+            response_text = response.text.strip()
+            print(f"Gemini response:\n{response_text}")
+            
+            # Parse the response
+            tip_data = {}
+            lines = response_text.split('\n')
+            
+            for line in lines:
+                if line.startswith('MAIN_TIP:'):
+                    tip_data['main_tip'] = line.replace('MAIN_TIP:', '').strip()
+                elif line.startswith('EXPLANATION:'):
+                    tip_data['explanation'] = line.replace('EXPLANATION:', '').strip()
+                elif line.startswith('HASHTAGS:'):
+                    tip_data['hashtags'] = line.replace('HASHTAGS:', '').strip()
+            
+            if 'main_tip' in tip_data:
+                # Check if this is a duplicate before returning
+                if is_duplicate_tip(tip_data):
+                    print(f"🔄 Generated tip is a duplicate, trying again... (Attempt {retry_count + 1}/{max_retries})")
+                    retry_count += 1
+                    continue
+                
+                return tip_data
+            else:
+                raise Exception("Invalid response format from Gemini")
+            
+        except Exception as e:
+            print(f"❌ Error generating career tip: {e}")
+            retry_count += 1
+            if retry_count >= max_retries:
+                break
+            time.sleep(2)  # Wait before retrying
+    
+    # Fallback practical career tips
+    print("🔄 Using fallback tips after Gemini failures...")
+    fallback_tips = [
+        {
+            'main_tip': 'Use action verbs and metrics in your resume bullet points.',
+            'explanation': 'This makes your accomplishments more impactful and helps your resume stand out to both ATS systems and hiring managers.',
+            'hashtags': '#ResumeTips #JobSearch #CareerAdvice #ATS'
+        },
+        {
+            'main_tip': 'Research company culture before interviews to ask better questions.',
+            'explanation': 'Understanding company values helps you tailor your answers and shows genuine interest in the organization.',
+            'hashtags': '#InterviewPrep #CareerTips #JobSearch #CompanyResearch'
+        },
+        {
+            'main_tip': 'Customize your LinkedIn headline with keywords from target jobs.',
+            'explanation': 'Recruiters search for keywords, so including relevant terms makes your profile more discoverable.',
+            'hashtags': '#LinkedInTips #JobSearch #CareerDevelopment #PersonalBranding'
+        },
+        {
+            'main_tip': 'Send follow-up emails within 24 hours after interviews.',
+            'explanation': 'Timely follow-ups demonstrate professionalism and keep you fresh in the interviewer\'s mind.',
+            'hashtags': '#InterviewTips #Networking #CareerAdvice #FollowUp'
+        },
+        {
+            'main_tip': 'Practice answering common interview questions out loud.',
+            'explanation': 'Verbal practice builds confidence and helps you articulate your thoughts more clearly during actual interviews.',
+            'hashtags': '#InterviewPrep #JobSearch #CareerTips #Practice'
+        },
+        {
+            'main_tip': 'Create a skills-based resume if you\'re changing careers.',
+            'explanation': 'Focusing on transferable skills rather than chronological experience can better showcase your qualifications.',
+            'hashtags': '#ResumeTips #CareerChange #SkillsBasedResume'
+        },
+        {
+            'main_tip': 'Use LinkedIn to research interviewers before meetings.',
+            'explanation': 'Understanding their background helps you establish rapport and ask more personalized questions.',
+            'hashtags': '#InterviewPrep #LinkedInResearch #Networking'
+        },
+        {
+            'main_tip': 'Quantify your achievements with specific numbers and metrics.',
+            'explanation': 'Numbers provide concrete evidence of your impact and make your accomplishments more credible.',
+            'hashtags': '#ResumeTips #CareerAdvice #QuantifyAchievements'
+        }
+    ]
+    
+    # Filter out duplicates from fallback tips
+    non_duplicate_tips = [
+        t for t in fallback_tips 
+        if not is_duplicate_tip(t)
+    ]
+    
+    if non_duplicate_tips:
+        return random.choice(non_duplicate_tips)
+    else:
+        # If all fallbacks are duplicates, return a random one anyway
+        print("⚠️ All fallback tips are duplicates, using random one")
+        return random.choice(fallback_tips)
+
+def get_pixabay_image():
+    """Get a random landscape image from Pixabay API"""
     try:
-        response = requests.get(
-            "https://pixabay.com/api/",
-            params={
-                "key": os.environ["PIXABAY_KEY"],
-                "q": random.choice(["nature", "landscape", "sky", "mountains", "flowers", "sunset", "forest", "ocean"]),
-                "per_page": 20,
-                "orientation": "horizontal",
-                "editors_choice": "true"
-            },
-            timeout=10
-        )
+        api_key = os.environ.get("PIXABAY_KEY")
+        if not api_key:
+            print("❌ PIXABAY_KEY not found in environment variables")
+            return None
+            
+        categories = ["nature", "landscape", "sky", "mountains", "flowers", "sunset", "forest", "ocean", "business", "office"]
+        category = random.choice(categories)
+        
+        print(f"🌄 Searching Pixabay for: {category}")
+        
+        url = "https://pixabay.com/api/"
+        params = {
+            "key": api_key,
+            "q": category,
+            "image_type": "photo",
+            "orientation": "horizontal",
+            "per_page": 20,
+            "safesearch": "true",
+            "editors_choice": "true"
+        }
+        
+        response = requests.get(url, params=params, timeout=15)
         
         if response.status_code == 200:
-            images = response.json()["hits"]
-            if images:
-                # Return a random image URL
-                image_data = random.choice(images)
+            data = response.json()
+            if data['hits']:
+                # Select a random image from the results
+                image_data = random.choice(data['hits'])
                 image_url = image_data["largeImageURL"]
                 
+                print(f"✅ Found Pixabay image: {image_url}")
+                
                 # Download the image
-                img_response = requests.get(image_url, timeout=10)
+                img_response = requests.get(image_url, timeout=15)
                 return BytesIO(img_response.content)
-        
-        print("No images found from Pixabay")
-        return None
+            else:
+                print(f"❌ No images found for category: {category}")
+                return None
+        else:
+            print(f"❌ Pixabay API error: {response.status_code}")
+            return None
             
     except Exception as e:
-        print(f"Error fetching image from Pixabay: {e}")
+        print(f"❌ Error fetching image from Pixabay: {e}")
         return None
 
 def create_career_image(tip_data):
@@ -223,7 +263,7 @@ def create_career_image(tip_data):
     width, height = 1200, 1200
     
     # Try to get a Pixabay image first
-    image_bytes = get_pixabay_images()
+    image_bytes = get_pixabay_image()
     
     if image_bytes:
         try:
@@ -235,8 +275,10 @@ def create_career_image(tip_data):
             enhancer = ImageEnhance.Brightness(background)
             background = enhancer.enhance(0.7)  # Darken slightly
             
+            print("✅ Using Pixabay background image")
+            
         except Exception as e:
-            print(f"Error processing Pixabay image: {e}")
+            print(f"❌ Error processing Pixabay image: {e}")
             # Fallback to solid color background
             professional_colors = [
                 '#1a4b8c', '#2c5aa0', '#3d69b4', '#4f78c8', '#6187dc',
@@ -245,6 +287,7 @@ def create_career_image(tip_data):
             ]
             bg_color = random.choice(professional_colors)
             background = Image.new('RGB', (width, height), color=bg_color)
+            print("✅ Using fallback solid color background")
     else:
         # Fallback to solid color background
         professional_colors = [
@@ -254,6 +297,7 @@ def create_career_image(tip_data):
         ]
         bg_color = random.choice(professional_colors)
         background = Image.new('RGB', (width, height), color=bg_color)
+        print("✅ Using fallback solid color background")
     
     # Create drawing context
     draw = ImageDraw.Draw(background)
@@ -348,8 +392,12 @@ def create_facebook_caption(tip_data):
 def post_to_facebook(image_data, tip_data):
     """Post the image to Facebook Page with career advice caption"""
     try:
-        page_id = os.environ["FB_PAGE_ID"]
-        access_token = os.environ["FB_PAGE_TOKEN"]
+        page_id = os.environ.get("FB_PAGE_ID")
+        access_token = os.environ.get("FB_PAGE_TOKEN")
+        
+        if not page_id or not access_token:
+            print("❌ Facebook credentials not found in environment variables")
+            return False
         
         # Upload image to Facebook
         url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
@@ -365,39 +413,54 @@ def post_to_facebook(image_data, tip_data):
         if response.status_code == 200:
             result = response.json()
             # Save to posted tips history to prevent duplicates
-            save_posted_tip(tip_data)
-            print(f"Successfully posted to Facebook! Post ID: {result.get('id')}")
+            if save_posted_tip(tip_data):
+                print(f"✅ Successfully posted to Facebook! Post ID: {result.get('id')}")
+            else:
+                print(f"⚠️ Posted to Facebook but failed to save to history: {result.get('id')}")
             return True
         else:
-            print(f"Facebook API error: {response.status_code}")
+            print(f"❌ Facebook API error: {response.status_code}")
             print(f"Response: {response.text}")
             return False
             
     except Exception as e:
-        print(f"Error posting to Facebook: {e}")
+        print(f"❌ Error posting to Facebook: {e}")
         return False
 
 def main():
     """Main function to run the entire process"""
-    print("Starting career coach tip generation and posting process...")
+    print("🚀 Starting career coach tip generation and posting process...")
+    print(f"📁 History file location: {POST_HISTORY_FILE}")
+    
+    # Check environment variables
+    required_env_vars = ["GEMINI_API_KEY", "PIXABAY_KEY", "FB_PAGE_ID", "FB_PAGE_TOKEN"]
+    missing_vars = [var for var in required_env_vars if not os.environ.get(var)]
+    
+    if missing_vars:
+        print(f"❌ Missing environment variables: {', '.join(missing_vars)}")
+        return
+    
+    # Load existing history to check functionality
+    posted_tips = load_posted_tips()
+    print(f"📊 Existing tips in history: {len(posted_tips)}")
     
     # Generate practical career tip
     tip_data = generate_career_tip()
-    print(f"Main Tip: {tip_data['main_tip']}")
-    print(f"Explanation: {tip_data['explanation']}")
-    print(f"Hashtags: {tip_data['hashtags']}")
+    print(f"💡 Main Tip: {tip_data['main_tip']}")
+    print(f"📝 Explanation: {tip_data['explanation']}")
+    print(f"🏷️ Hashtags: {tip_data['hashtags']}")
     
     # Create image with main tip text only
     final_image = create_career_image(tip_data)
-    print("Career advice image created with Pixabay background")
+    print("🎨 Career advice image created")
     
     # Post to Facebook
     success = post_to_facebook(final_image, tip_data)
     
     if success:
-        print("Process completed successfully! The career tip has been shared.")
+        print("✅ Process completed successfully! The career tip has been shared.")
     else:
-        print("Process completed with errors")
+        print("❌ Process completed with errors")
 
 if __name__ == "__main__":
     main()
