@@ -52,9 +52,12 @@ def generate_career_tip():
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
         
         prompt = """
-        Create a SHORT, practical, actionable job search or career development tip. 
-        Keep it under 15 words maximum. Make it specific and useful.
-        
+        Create a comprehensive career coaching post with these components:
+
+        MAIN_TIP: [A short, practical, actionable job search tip - under 15 words]
+        EXPLANATION: [1-2 sentences explaining why this tip works or how to implement it]
+        HASHTAGS: [3-4 relevant hashtags]
+
         Focus on practical advice for:
         - Resume writing and optimization
         - Cover letter strategies
@@ -65,25 +68,22 @@ def generate_career_tip():
         - Job search tactics
         - Skills development
         - Career advancement
-        
-        Include 3-4 relevant hashtags at the end.
-        
+
         Format the response exactly like this:
-        
-        TIP: [The practical career tip text here] #Hashtag1 #Hashtag2 #Hashtag3
-        
+
+        MAIN_TIP: Use action verbs and metrics in your resume bullet points.
+        EXPLANATION: This makes your accomplishments more impactful and helps your resume stand out to both ATS systems and hiring managers.
+        HASHTAGS: #ResumeTips #JobSearch #CareerAdvice #ATS
+
         Examples:
-        
-        TIP: Use action verbs and metrics in your resume bullet points. #ResumeTips #JobSearch #CareerAdvice
-        TIP: Research company culture before interviews to ask better questions. #InterviewPrep #CareerTips #JobSearch
-        TIP: Customize your LinkedIn headline with keywords from target jobs. #LinkedInTips #JobSearch #CareerDevelopment
-        TIP: Send follow-up emails within 24 hours after interviews. #InterviewTips #Networking #CareerAdvice
-        TIP: Practice answering common interview questions out loud. #InterviewPrep #JobSearch #CareerTips
-        TIP: Use the STAR method for behavioral interview questions. #InterviewTips #CareerAdvice #JobSearch
-        TIP: Optimize your resume with keywords from the job description. #ResumeTips #ATS #JobSearch
-        TIP: Connect with hiring managers on LinkedIn before applying. #Networking #LinkedInTips #JobSearch
-        TIP: Prepare 3-5 questions to ask interviewers about the role. #InterviewPrep #CareerTips #JobSearch
-        TIP: Use a professional email address on job applications. #JobSearchTips #CareerAdvice #Resume
+
+        MAIN_TIP: Research company culture before interviews to ask better questions.
+        EXPLANATION: Understanding company values helps you tailor your answers and shows genuine interest in the organization.
+        HASHTAGS: #InterviewPrep #CareerTips #JobSearch #CompanyResearch
+
+        MAIN_TIP: Customize your LinkedIn headline with keywords from target jobs.
+        EXPLANATION: Recruiters search for keywords, so including relevant terms makes your profile more discoverable.
+        HASHTAGS: #LinkedInTips #JobSearch #CareerDevelopment #PersonalBranding
         """
         
         response = client.models.generate_content(
@@ -95,19 +95,18 @@ def generate_career_tip():
         print(f"Gemini response:\n{response_text}")
         
         # Parse the response
-        if 'TIP:' in response_text:
-            tip_line = response_text.split('TIP:')[1].strip()
-            tip_data = {
-                'tip': tip_line,
-                'hashtags': extract_hashtags(tip_line)
-            }
-            
-            # Remove hashtags from the main tip text for image overlay
-            clean_tip = tip_line
-            for tag in tip_data['hashtags']:
-                clean_tip = clean_tip.replace(tag, '')
-            tip_data['clean_tip'] = clean_tip.strip()
-            
+        tip_data = {}
+        lines = response_text.split('\n')
+        
+        for line in lines:
+            if line.startswith('MAIN_TIP:'):
+                tip_data['main_tip'] = line.replace('MAIN_TIP:', '').strip()
+            elif line.startswith('EXPLANATION:'):
+                tip_data['explanation'] = line.replace('EXPLANATION:', '').strip()
+            elif line.startswith('HASHTAGS:'):
+                tip_data['hashtags'] = line.replace('HASHTAGS:', '').strip()
+        
+        if 'main_tip' in tip_data:
             # Check if this is a duplicate before returning
             if is_duplicate_tip(tip_data):
                 print("Generated tip is a duplicate, trying again...")
@@ -122,39 +121,29 @@ def generate_career_tip():
         # Fallback practical career tips
         fallback_tips = [
             {
-                'tip': 'Use action verbs and metrics in your resume bullet points. #ResumeTips #JobSearch #CareerAdvice',
-                'hashtags': ['#ResumeTips', '#JobSearch', '#CareerAdvice'],
-                'clean_tip': 'Use action verbs and metrics in your resume bullet points.'
+                'main_tip': 'Use action verbs and metrics in your resume bullet points.',
+                'explanation': 'This makes your accomplishments more impactful and helps your resume stand out to both ATS systems and hiring managers.',
+                'hashtags': '#ResumeTips #JobSearch #CareerAdvice #ATS'
             },
             {
-                'tip': 'Research company culture before interviews to ask better questions. #InterviewPrep #CareerTips #JobSearch',
-                'hashtags': ['#InterviewPrep', '#CareerTips', '#JobSearch'],
-                'clean_tip': 'Research company culture before interviews to ask better questions.'
+                'main_tip': 'Research company culture before interviews to ask better questions.',
+                'explanation': 'Understanding company values helps you tailor your answers and shows genuine interest in the organization.',
+                'hashtags': '#InterviewPrep #CareerTips #JobSearch #CompanyResearch'
             },
             {
-                'tip': 'Customize your LinkedIn headline with keywords from target jobs. #LinkedInTips #JobSearch #CareerDevelopment',
-                'hashtags': ['#LinkedInTips', '#JobSearch', '#CareerDevelopment'],
-                'clean_tip': 'Customize your LinkedIn headline with keywords from target jobs.'
+                'main_tip': 'Customize your LinkedIn headline with keywords from target jobs.',
+                'explanation': 'Recruiters search for keywords, so including relevant terms makes your profile more discoverable.',
+                'hashtags': '#LinkedInTips #JobSearch #CareerDevelopment #PersonalBranding'
             },
             {
-                'tip': 'Send follow-up emails within 24 hours after interviews. #InterviewTips #Networking #CareerAdvice',
-                'hashtags': ['#InterviewTips', '#Networking', '#CareerAdvice'],
-                'clean_tip': 'Send follow-up emails within 24 hours after interviews.'
+                'main_tip': 'Send follow-up emails within 24 hours after interviews.',
+                'explanation': 'Timely follow-ups demonstrate professionalism and keep you fresh in the interviewer\'s mind.',
+                'hashtags': '#InterviewTips #Networking #CareerAdvice #FollowUp'
             },
             {
-                'tip': 'Practice answering common interview questions out loud. #InterviewPrep #JobSearch #CareerTips',
-                'hashtags': ['#InterviewPrep', '#JobSearch', '#CareerTips'],
-                'clean_tip': 'Practice answering common interview questions out loud.'
-            },
-            {
-                'tip': 'Use the STAR method for behavioral interview questions. #InterviewTips #CareerAdvice #JobSearch',
-                'hashtags': ['#InterviewTips', '#CareerAdvice', '#JobSearch'],
-                'clean_tip': 'Use the STAR method for behavioral interview questions.'
-            },
-            {
-                'tip': 'Optimize your resume with keywords from the job description. #ResumeTips #ATS #JobSearch',
-                'hashtags': ['#ResumeTips', '#ATS', '#JobSearch'],
-                'clean_tip': 'Optimize your resume with keywords from the job description.'
+                'main_tip': 'Practice answering common interview questions out loud.',
+                'explanation': 'Verbal practice builds confidence and helps you articulate your thoughts more clearly during actual interviews.',
+                'hashtags': '#InterviewPrep #JobSearch #CareerTips #Practice'
             }
         ]
         
@@ -176,7 +165,7 @@ def extract_hashtags(text):
     return re.findall(r'#\w+', text)
 
 def create_career_image(tip_data):
-    """Create career-themed image with practical advice text overlay"""
+    """Create career-themed image with only the main tip text (no header)"""
     width, height = 1200, 1200
     
     # Professional color palette (blues, greens, grays)
@@ -190,29 +179,28 @@ def create_career_image(tip_data):
     image = Image.new('RGB', (width, height), color=bg_color)
     draw = ImageDraw.Draw(image)
     
-    # Add subtle professional pattern (document-like elements)
+    # Add subtle professional pattern
     for i in range(15):
         x = random.randint(0, width)
         y = random.randint(0, height)
         size = random.randint(10, 25)
-        # Create document/page-like rectangles
         draw.rectangle([x, y, x+size, y+size], 
-                      fill=(255, 255, 255, 40),  # Semi-transparent white
+                      fill=(255, 255, 255, 40),
                       outline=(255, 255, 255, 60))
     
     # Try to load font
     try:
         font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        tip_font = ImageFont.truetype(font_path, 58)
+        tip_font = ImageFont.truetype(font_path, 62)
     except (IOError, OSError):
         try:
-            tip_font = ImageFont.truetype("arial.ttf", 58)
+            tip_font = ImageFont.truetype("arial.ttf", 62)
         except (IOError, OSError):
             tip_font = ImageFont.load_default()
     
-    # Wrap the tip text
-    max_chars_per_line = 25
-    wrapped_tip = textwrap.fill(tip_data['clean_tip'], width=max_chars_per_line)
+    # Wrap the main tip text only (no header)
+    max_chars_per_line = 22
+    wrapped_tip = textwrap.fill(tip_data['main_tip'], width=max_chars_per_line)
     
     # Calculate text position
     bbox = draw.textbbox((0, 0), wrapped_tip, font=tip_font)
@@ -226,31 +214,36 @@ def create_career_image(tip_data):
     draw.rectangle([
         x - padding, y - padding,
         x + text_width + padding, y + text_height + padding
-    ], fill=(0, 0, 0, 120))  # Semi-transparent black
+    ], fill=(0, 0, 0, 120))
     
-    # Draw tip text
+    # Draw main tip text only (no header)
     draw.text((x, y), wrapped_tip, fill=(255, 255, 255), font=tip_font, align='center')
-    
-    # Add a "Career Coach Tip" header
-    try:
-        header_font = ImageFont.truetype(font_path, 36)
-    except (IOError, OSError):
-        header_font = tip_font
-    
-    header_text = "Career Coach Tip:"
-    header_bbox = draw.textbbox((0, 0), header_text, font=header_font)
-    header_x = (width - (header_bbox[2] - header_bbox[0])) // 2
-    header_y = y - 70
-    
-    draw.text((header_x, header_y), header_text, fill=(255, 255, 255), font=header_font)
     
     # Convert to bytes
     output_buffer = BytesIO()
     image.save(output_buffer, format="JPEG", quality=95)
     return output_buffer.getvalue()
 
+def create_facebook_caption(tip_data):
+    """Create comprehensive Facebook caption with header, explanation, and CTA"""
+    caption = f"""🎯 Career Coach Tip of the Day! 🎯
+
+📌 {tip_data['main_tip']}
+
+💡 Why this works: {tip_data['explanation']}
+
+👇 Your turn! Share your best job search tip in the comments below!
+
+💼 Looking for more career advice? Follow for daily tips!
+
+{tip_data['hashtags']}
+
+#CareerCoach #JobSearchTips #CareerDevelopment #ProfessionalGrowth"""
+    
+    return caption
+
 def post_to_facebook(image_data, tip_data):
-    """Post the image to Facebook Page with practical career advice caption"""
+    """Post the image to Facebook Page with comprehensive career advice caption"""
     try:
         page_id = os.environ["FB_PAGE_ID"]
         access_token = os.environ["FB_PAGE_TOKEN"]
@@ -258,8 +251,8 @@ def post_to_facebook(image_data, tip_data):
         # Upload image to Facebook
         url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
         
-        # Create engaging caption with hashtags
-        caption = f"{tip_data['tip']}\n\n💼 Practical career advice to help you in your job search! What's your best job search tip? Share in the comments! 👇"
+        # Create comprehensive caption
+        caption = create_facebook_caption(tip_data)
         
         files = {'source': ('career_tip.jpg', image_data, 'image/jpeg')}
         data = {'message': caption, 'access_token': access_token}
@@ -287,11 +280,13 @@ def main():
     
     # Generate practical career tip
     tip_data = generate_career_tip()
-    print(f"Career Tip: {tip_data['tip']}")
+    print(f"Main Tip: {tip_data['main_tip']}")
+    print(f"Explanation: {tip_data['explanation']}")
+    print(f"Hashtags: {tip_data['hashtags']}")
     
-    # Create image with text overlay
+    # Create image with main tip text only
     final_image = create_career_image(tip_data)
-    print("Career advice image created")
+    print("Career advice image created (main tip only)")
     
     # Post to Facebook
     success = post_to_facebook(final_image, tip_data)
