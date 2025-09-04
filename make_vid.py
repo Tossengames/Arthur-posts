@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Anime Short Story Video Generator
+Simplified Anime Short Story Video Generator
 Uses Gemini AI, Pollinations.ai, Coqui TTS, and FFmpeg
 """
 
@@ -10,174 +10,267 @@ import requests
 import subprocess
 import random
 import re
+import argparse
 from datetime import datetime
 from pathlib import Path
-from TTS.api import TTS  # Coqui TTS
+import google.generativeai as genai
+from TTS.api import TTS
 
-# ---------------- CONFIG ---------------- #
+# Configuration
 CONFIG = {
-    "video_duration": 60,
+    "video_duration": 60,  # seconds total
     "output_dir": "generated_videos",
     "gemini_model": "gemini-2.0-flash",
-    "tts_model": "tts_models/en/ljspeech/tacotron2-DDC",  # Coqui TTS model
     "anime_style": "anime style, vibrant colors, detailed background",
     "max_scenes": 3
 }
 
+# Anime inspirations list
 ANIME_INSPIRATIONS = [
     "Naruto", "One Piece", "Attack on Titan", "My Hero Academia",
-    "Demon Slayer", "Jujutsu Kaisen", "Fullmetal Alchemist",
-    "Tokyo Ghoul", "Death Note", "Bleach"
+    "Demon Slayer", "Fullmetal Alchemist: Brotherhood", "Sailor Moon",
+    "Dragon Ball Z", "Spirited Away", "Your Name", "Hunter x Hunter",
+    "Jujutsu Kaisen", "Haikyuu", "Pokemon", "Studio Ghibli films"
 ]
 
-# ---------------- HELPERS ---------------- #
+def setup_directories():
+    """Create necessary directories for the project"""
+    Path(CONFIG["output_dir"]).mkdir(exist_ok=True)
+    Path(f"{CONFIG['output_dir']}/images").mkdir(exist_ok=True)
+    Path(f"{CONFIG['output_dir']}/audio").mkdir(exist_ok=True)
 
-def extract_json_from_text(text):
-    """Extract JSON block from Gemini response"""
-    try:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-    except Exception as e:
-        print(f"Error parsing JSON: {e}")
-    return {}
+def init_gemini(api_key):
+    """Initialize the Gemini AI client"""
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel(CONFIG["gemini_model"])
 
-# ---------------- STORY GENERATION ---------------- #
-
-def generate_story():
-    """Generate a unique anime story (narrator POV) using Gemini AI"""
+def generate_story(gemini_model):
+    """Generate a unique anime story using Gemini AI"""
     selected_anime = random.choice(ANIME_INSPIRATIONS)
 
     prompt = f"""
-    Write a complete, short story (around {CONFIG["video_duration"]} seconds when narrated)
-    from the **narrator's point of view**, inspired by {selected_anime}.
+    Create a complete, fun, and engaging anime short story from the NARRATOR point of view.
+    The story should:
+    - Be inspired by {selected_anime}
+    - Be fit for teenagers, with an emotional lesson
+    - Be written as a continuous narration (not just dialogues)
+    - Have only {CONFIG['max_scenes']} distinct scenes
+    - Include a clear moral lesson at the end
     
-    Requirements:
-    - Story must be fun, engaging, and easy to follow for teenagers
-    - Narrator should guide the story clearly, with occasional character dialogue
-    - Include emotional depth appropriate to the anime inspiration
-    - End with a clear moral lesson teenagers can learn from
-    - The story should naturally flow as one piece of narration
-    
-    Format the output as JSON with this structure:
+    Format the output as JSON:
     {{
         "title": "Story title",
         "anime_inspiration": "{selected_anime}",
-        "narration": "Full story narration text from narrator POV, including any dialogue in quotes",
+        "scenes": [
+            {{
+                "scene_number": 1,
+                "description": "Scene description including setting, characters, and action",
+                "image_prompt": "Detailed prompt for complete scene image with characters",
+                "narration": {{
+                    "text": "Narrator storytelling text",
+                    "emotion": "Narration emotion"
+                }}
+            }}
+        ],
         "moral_lesson": "The moral lesson of the story"
     }}
     """
 
-    # 🔹 Replace this with your Gemini API call
-    print("⚠️ Gemini API call not implemented here, using placeholder story...")
-    story_json = {
-        "title": "The Ninja’s Lesson",
-        "anime_inspiration": selected_anime,
-        "narration": f"Inspired by {selected_anime}, I, the narrator, tell you the tale of a young warrior who faced doubt, but discovered courage within...",
-        "moral_lesson": "Believe in yourself, even when the path is unclear."
+    try:
+        response = gemini_model.generate_content(prompt)
+        story_json = extract_json_from_text(response.text)
+
+        # Save the story
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        story_file = f"{CONFIG['output_dir']}/story_{timestamp}.json"
+
+        with open(story_file, 'w') as f:
+            json.dump(story_json, f, indent=2)
+
+        return story_json
+    except Exception as e:
+        print(f"Error generating story: {e}")
+        return None
+
+def extract_json_from_text(text):
+    """Extract JSON from Gemini response text"""
+    try:
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group())
+    except:
+        pass
+
+    # fallback story
+    return {
+        "title": "The Determined Hero",
+        "anime_inspiration": "Naruto",
+        "scenes": [
+            {
+                "scene_number": 1,
+                "description": "A young hero trains in a forest, determined to become stronger",
+                "image_prompt": "Anime hero training in a beautiful forest, determined expression, dynamic pose, vibrant colors",
+                "narration": {
+                    "text": "The hero trained every day, never giving up on his dream.",
+                    "emotion": "inspiring"
+                }
+            }
+        ],
+        "moral_lesson": "Hard work and determination lead to growth"
     }
 
-    # Save story
-    Path(CONFIG["output_dir"]).mkdir(parents=True, exist_ok=True)
+def generate_images(story_data):
+    """Generate complete scene images using Pollinations.ai"""
+    image_paths = []
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    story_file = f"{CONFIG['output_dir']}/story_{timestamp}.json"
-    with open(story_file, 'w') as f:
-        json.dump(story_json, f, indent=2)
 
-    return story_json
+    for scene in story_data["scenes"]:
+        scene_prompt = f"{scene['image_prompt']}, {CONFIG['anime_style']}, high quality, complete scene"
+        scene_url = f"https://image.pollinations.ai/prompt/{scene_prompt}?width=1024&height=576&nologo=true"
 
-# ---------------- VOICEOVER (COQUI) ---------------- #
+        try:
+            response = requests.get(scene_url, timeout=30)
+            scene_path = f"{CONFIG['output_dir']}/images/scene_{timestamp}_{scene['scene_number']}.png"
+
+            with open(scene_path, 'wb') as f:
+                f.write(response.content)
+
+            image_paths.append(scene_path)
+            print(f"Generated image for scene {scene['scene_number']}")
+        except Exception as e:
+            print(f"Error generating image for scene {scene['scene_number']}: {e}")
+            scene_path = create_fallback_image(scene, timestamp)
+            image_paths.append(scene_path)
+
+    return image_paths
+
+def create_fallback_image(scene, timestamp):
+    """Create a simple fallback image using PIL"""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+
+        img = Image.new('RGB', (1024, 576), color=(73, 109, 137))
+        d = ImageDraw.Draw(img)
+
+        try:
+            font = ImageFont.truetype("Arial", 30)
+        except:
+            font = ImageFont.load_default()
+
+        d.text((100, 100), f"Scene: {scene['description'][:50]}...", fill=(255, 255, 255), font=font)
+        d.text((100, 150), f"Inspired by: {CONFIG['anime_style']}", fill=(255, 255, 255), font=font)
+
+        scene_path = f"{CONFIG['output_dir']}/images/fallback_scene_{timestamp}_{scene['scene_number']}.png"
+        img.save(scene_path)
+        return scene_path
+    except:
+        return f"{CONFIG['output_dir']}/images/fallback.png"
 
 def generate_voiceover(story_data):
     """Generate voiceover using Coqui TTS"""
-    narration_text = story_data.get("narration", "")
-    if not narration_text:
-        print("No narration text found.")
-        return None
-
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    audio_dir = Path(CONFIG["output_dir"]) / "audio"
-    audio_dir.mkdir(parents=True, exist_ok=True)
-    audio_path = audio_dir / f"voiceover_{timestamp}.wav"
+    audio_files = []
 
-    print("🎤 Generating voiceover with Coqui TTS...")
+    all_text = []
+    for scene in story_data["scenes"]:
+        all_text.append(scene["narration"]["text"])
+
+    full_script = " ".join(all_text)
+
     try:
-        tts = TTS(model_name=CONFIG["tts_model"], progress_bar=False, gpu=False)
-        tts.tts_to_file(text=narration_text, file_path=str(audio_path))
-        print(f"✅ Voiceover saved at {audio_path}")
-        return str(audio_path)
+        # Use Coqui pre-trained model
+        tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC", progress_bar=False, gpu=False)
+        audio_path = f"{CONFIG['output_dir']}/audio/voiceover_{timestamp}.wav"
+        tts.tts_to_file(text=full_script, file_path=audio_path)
+        audio_files.append(audio_path)
+        print("Generated voiceover with Coqui TTS")
     except Exception as e:
-        print(f"❌ Error generating voiceover: {e}")
-        return None
+        print(f"Error generating voiceover: {e}")
 
-# ---------------- IMAGE GENERATION ---------------- #
+    return audio_files
 
-def generate_image(prompt, out_path):
-    """Generate image using Pollinations API"""
-    try:
-        url = f"https://image.pollinations.ai/prompt/{prompt}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            with open(out_path, "wb") as f:
-                f.write(response.content)
-            print(f"🖼️ Image saved at {out_path}")
-            return out_path
-        else:
-            print("❌ Failed to generate image")
-            return None
-    except Exception as e:
-        print(f"❌ Error fetching image: {e}")
-        return None
-
-# ---------------- VIDEO CREATION ---------------- #
-
-def create_video(story_data, audio_path):
-    """Combine images + narration into video"""
-    video_dir = Path(CONFIG["output_dir"]) / "videos"
-    video_dir.mkdir(parents=True, exist_ok=True)
+def create_video(story_data, image_paths, audio_files):
+    """Create the final video using FFmpeg"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = video_dir / f"story_{timestamp}.mp4"
+    output_path = f"{CONFIG['output_dir']}/video_{timestamp}.mp4"
 
-    # Generate 1-3 images
-    img_paths = []
-    for i in range(CONFIG["max_scenes"]):
-        scene_prompt = f"{story_data['anime_inspiration']} scene, {CONFIG['anime_style']}"
-        img_path = Path(CONFIG["output_dir"]) / f"scene_{i}_{timestamp}.jpg"
-        if generate_image(scene_prompt, img_path):
-            img_paths.append(str(img_path))
-
-    if not img_paths or not audio_path:
-        print("❌ Missing images or audio. Cannot create video.")
-        return None
-
-    # Make FFmpeg slideshow with audio
-    img_list_file = Path(CONFIG["output_dir"]) / "img_list.txt"
-    with open(img_list_file, "w") as f:
-        for img in img_paths:
-            f.write(f"file '{img}'\n")
-            f.write(f"duration {CONFIG['video_duration'] / len(img_paths)}\n")
-
-    cmd = [
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(img_list_file),
-        "-i", audio_path, "-c:v", "libx264", "-tune", "stillimage",
-        "-c:a", "aac", "-b:a", "192k", "-shortest", str(output_path)
-    ]
+    scene_duration = CONFIG["video_duration"] / len(story_data["scenes"])
 
     try:
-        subprocess.run(cmd, check=True)
-        print(f"✅ Video created at {output_path}")
-        return str(output_path)
-    except Exception as e:
-        print(f"❌ Error creating video: {e}")
-        return None
+        inputs = []
+        filter_complex = ""
+        for i, image_path in enumerate(image_paths):
+            inputs.extend(["-loop", "1", "-t", str(scene_duration), "-i", image_path])
+            filter_complex += f"[{i}:v]scale=1024:576,setsar=1[v{i}];"
 
-# ---------------- MAIN ---------------- #
+        filter_complex += "".join([f"[v{i}]" for i in range(len(image_paths))])
+        filter_complex += f"concat=n={len(image_paths)}:v=1:a=0[outv]"
+
+        cmd = [
+            "ffmpeg", "-y",
+            *inputs,
+            "-filter_complex", filter_complex,
+            "-map", "[outv]",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30",
+            output_path
+        ]
+
+        subprocess.run(cmd, check=True, timeout=300)
+
+        if audio_files:
+            temp_video = output_path
+            final_output = output_path.replace(".mp4", "_with_audio.mp4")
+
+            subprocess.run([
+                "ffmpeg", "-y", "-i", temp_video,
+                "-i", audio_files[0],
+                "-c:v", "copy", "-c:a", "aac", "-shortest",
+                final_output
+            ], check=True, timeout=300)
+
+            os.remove(temp_video)
+            output_path = final_output
+
+        print(f"Created video: {output_path}")
+        return output_path
+
+    except subprocess.CalledProcessError as e:
+        print(f"FFmpeg error (exit code {e.returncode}): {e.stderr.decode() if e.stderr else 'No error details'}")
+        return None
+    except Exception as e:
+        print(f"Error creating video: {e}")
+        return None
 
 def main():
-    story_data = generate_story()
-    audio_path = generate_voiceover(story_data)
-    if audio_path:
-        create_video(story_data, audio_path)
+    parser = argparse.ArgumentParser(description="Generate anime story videos")
+    parser.add_argument("--gemini-key", required=True, help="Google Gemini API key")
+    args = parser.parse_args()
+
+    setup_directories()
+
+    gemini_model = init_gemini(args.gemini_key)
+
+    story_data = generate_story(gemini_model)
+    if not story_data:
+        print("Failed to generate story")
+        return
+
+    print(f"Generated story: {story_data['title']}")
+    print(f"Inspired by: {story_data['anime_inspiration']}")
+
+    image_paths = generate_images(story_data)
+    print(f"Generated {len(image_paths)} images")
+
+    audio_files = generate_voiceover(story_data)
+    print(f"Generated {len(audio_files)} audio files")
+
+    video_path = create_video(story_data, image_paths, audio_files)
+    if not video_path:
+        print("Failed to create video")
+        return
+
+    print(f"Created video: {video_path}")
+    print("Video generation completed successfully!")
 
 if __name__ == "__main__":
     main()
