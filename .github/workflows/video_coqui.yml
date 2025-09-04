@@ -1,4 +1,4 @@
-name: Generate Anime Video coqui
+name: Generate Anime Video x2
 
 on:
   schedule:
@@ -23,6 +23,14 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y ffmpeg libimage-exiftool-perl
+
+    - name: Cache Coqui TTS models
+      uses: actions/cache@v4
+      with:
+        path: ~/.local/share/tts
+        key: coqui-tts-models-v1
+        restore-keys: |
+          coqui-tts-models-
 
     - name: Install Python dependencies
       run: |
