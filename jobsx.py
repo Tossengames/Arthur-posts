@@ -103,40 +103,38 @@ def is_duplicate_tip(tip_data):
         return False
 
 def get_google_trends():
-    """Get trending topics using Google Trends alternative approach"""
+    """Get trending topics using reliable fallback method"""
     try:
-        # Use Google Search to find currently trending topics
+        # Use a more reliable approach for trend discovery
         trending_keywords = [
-            "career trends", "job market news", "hiring trends", 
+            "career trends 2024", "job market news", "hiring trends", 
             "remote work trends", "skills in demand", "future of work"
         ]
         
         all_trends = []
         for keyword in trending_keywords:
             try:
-                search_query = f"{keyword} 2024 latest trends"
-                print(f"🔍 Searching for trends: {search_query}")
+                print(f"🔍 Searching for trends: {keyword}")
                 
-                # Perform Google search
+                # Perform Google search with correct parameters
                 results = list(google_search(
-                    search_query, 
-                    num=5, 
-                    stop=5,
+                    keyword, 
+                    num_results=5,
                     pause=2.0,
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                 ))
                 
-                # Extract potential trends from URLs and snippets
+                # Extract potential trends from URLs
                 for url in results:
                     if any(x in url for x in ['trend', 'news', 'blog', 'article', 'report']):
-                        # Extract potential trend words from URL
+                        # Extract meaningful words from URL
                         url_parts = url.split('/')
                         for part in url_parts:
                             if len(part) > 3 and '-' in part and any(c.isalpha() for c in part):
                                 words = part.split('-')
                                 for word in words:
                                     if (len(word) > 4 and word.isalpha() and 
-                                        word.lower() not in ['https', 'www', 'com', 'org', 'net']):
+                                        word.lower() not in ['https', 'www', 'com', 'org', 'net', 'html', 'php']):
                                         all_trends.append(word)
                 
                 time.sleep(1)  # Be polite with requests
@@ -149,7 +147,7 @@ def get_google_trends():
         unique_trends = list(set([t for t in all_trends if 3 < len(t) < 20]))
         if unique_trends:
             print(f"✅ Found {len(unique_trends)} potential trends")
-            return unique_trends[:10]  # Return top 10
+            return unique_trends[:10]
         
         return get_fallback_trends()
             
@@ -172,7 +170,7 @@ def get_fallback_trends():
     return selected
 
 def search_web_content(topic):
-    """Perform real web search for the topic using Google Search API"""
+    """Perform real web search for the topic using Google Search"""
     try:
         if not GOOGLE_SEARCH_AVAILABLE:
             print("❌ Google search not available, using fallback content")
@@ -180,12 +178,11 @@ def search_web_content(topic):
         
         print(f"🔍 Performing real web search for: {topic}")
         
-        # Perform Google search
+        # Perform Google search with correct parameters
         search_query = f"{topic} career development professional growth 2024"
         results = list(google_search(
             search_query, 
-            num=3, 
-            stop=3,
+            num_results=3,
             pause=2.0,
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         ))
@@ -547,6 +544,7 @@ def create_career_image(tip_data):
             tip_font = ImageFont.load_default()
     
     # Wrap the main tip text
+        # Wrap the main tip text
     max_chars_per_line = 22
     wrapped_tip = textwrap.fill(tip_data['main_tip'], width=max_chars_per_line)
     
