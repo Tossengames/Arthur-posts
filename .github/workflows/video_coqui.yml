@@ -1,4 +1,4 @@
-name: Generate Anime Video x
+name: Generate Anime Video
 
 on:
   schedule:
@@ -8,7 +8,7 @@ on:
 jobs:
   generate-video:
     runs-on: ubuntu-latest
-    timeout-minutes: 40    # More time since TTS + FFmpeg can be slow
+    timeout-minutes: 30    # Set timeout to 30 minutes
 
     steps:
     - name: Checkout repository
@@ -22,20 +22,12 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg libimage-exiftool-perl
-
-    - name: Cache Coqui models
-      uses: actions/cache@v4
-      with:
-        path: ~/.local/share/tts
-        key: ${{ runner.os }}-coqui-models
-        restore-keys: |
-          ${{ runner.os }}-coqui-models
+        sudo apt-get install -y ffmpeg libimage-exiftool-perl espeak-ng
 
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install google-generativeai TTS requests pillow
+        pip install google-generativeai requests pillow TTS
 
     - name: Create output directory
       run: mkdir -p generated_videos
@@ -44,6 +36,7 @@ jobs:
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: |
+        # Set safe paths for FFmpeg
         export FFMPEG_SAFE_PATHS=1
         python make_vid.py --gemini-key "$GEMINI_API_KEY"
 
