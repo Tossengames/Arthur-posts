@@ -1,147 +1,155 @@
 #!/usr/bin/env python3
 """
 Anime Story Video Generator
-Uses Gemini AI for story + image prompts,
-Pollinations for images,
-Coqui TTS for narration,
-and FFmpeg to assemble video.
+- Generates a short anime-style story with Gemini
+- Downloads images from Pollinations
+- Narrates with Coqui TTS (multi-speaker fallback to single-speaker)
+- Creates a video with FFmpeg
 """
 
 import os
-import subprocess
+import argparse
 import requests
+import subprocess
 import textwrap
+import random
 from pathlib import Path
-import google.generativeai as genai
 from TTS.api import TTS
+import google.generativeai as genai
 
-# ========================
-# CONFIG
-# ========================
-OUTPUT_DIR = Path("generated_videos")
-IMAGES_DIR = OUTPUT_DIR / "images"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+# -------------------------
+# Gemini: Generate Story
+# -------------------------
+def generate_story(api_key):
+    print("🔮 Generating story...")
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
 
-# Choose Coqui TTS model
-# "tts_models/en/ljspeech/tacotron2-DDC" (clear female)
-# "tts_models/en/vctk/vits" (multi-speaker, realistic)
-TTS_MODEL = "tts_models/en/vctk/vits"
-
-# ========================
-# GEMINI SETUP
-# ========================
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-model = genai.GenerativeModel("gemini-1.5-flash")
-
-# ========================
-# FUNCTIONS
-# ========================
-def generate_story():
     prompt = (
-        "Write a short anime-style story (2–3 paragraphs). "
-        "It should be vivid, emotional, and suitable for narration. "
-        "Also include 5 short descriptive scene prompts (one per line, starting with 'Scene:')."
+        "Write a short emotional anime-style scene (about 200-300 words). "
+        "End the text. Then give 5 short descriptive prompts for images "
+        "that could illustrate the scene, in JSON list format."
     )
-    resp = model.generate_content(prompt)
-    text = resp.text.strip()
 
-    story_lines = []
-    prompts = []
-    for line in text.splitlines():
-        if line.lower().startswith("scene:"):
-            prompts.append(line.replace("Scene:", "").strip())
-        else:
-            story_lines.append(line)
+    response = model.generate_content(prompt)
+    text = response.text
 
-    story = "\n".join(story_lines)
-    if not prompts:
-        prompts = ["anime night city", "forest with fireflies", "hero walking", "battle stance", "sunrise over mountains"]
+    # Split story and prompts
+    if "--- PROMPTS ---" in text:
+        story, prompts = text.split("--- PROMPTS ---", 1)
+    else:
+        story, prompts = text, "[]"
 
-    return story, prompts
+    return story.strip(), eval(prompts.strip())
 
-
-def download_image(prompt, idx):
+# -------------------------
+# Pollinations: Get Image
+# -------------------------
+def fetch_image(prompt, out_path):
+    print(f"🖼 Downloading image for: {prompt}")
     url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}"
-    out_path = IMAGES_DIR / f"image_{idx}.jpg"
-    if not out_path.exists():
-        r = requests.get(url, timeout=60)
+    r = requests.get(url)
+    if r.status_code == 200:
         with open(out_path, "wb") as f:
             f.write(r.content)
-    return out_path
+    else:
+        raise RuntimeError(f"Image download failed: {r.status_code}")
 
+# -------------------------
+# Coqui TTS with fallback
+# -------------------------
+def narrate(text, out_path):
+    print("🎙 Generating narration...")
+    try:
+        # First try multi-speaker
+        model_name = "tts_models/en/vctk/vits"
+        speaker = "p225"  # female, neutral tone
+        print(f" → Trying multi-speaker voice: {speaker}")
+        tts = TTS(model_name)
+        tts.tts_to_file(text=text, speaker=speaker, file_path=out_path)
 
-def narrate(text, out_path="narration.wav"):
-    # Cache model inside repo so it doesn’t redownload each run
-    model_cache = Path("~/.local/share/tts").expanduser()
-    os.environ["COQUI_TOS_AGREED"] = "1"  # avoid license prompt
+    except Exception as e:
+        print(f"⚠️ Multi-speaker failed: {e}")
+        print(" → Falling back to single-speaker model...")
+        model_name = "tts_models/en/ljspeech/tacotron2-DDC"
+        tts = TTS(model_name)
+        tts.tts_to_file(text=text, file_path=out_path)
 
-    tts = TTS(TTS_MODEL, progress_bar=False, gpu=False)
-    tts.tts_to_file(text=text, file_path=out_path)
-    return Path(out_path)
+# -------------------------
+# Video Assembly
+# -------------------------
+def make_video(images, audio, out_path):
+    print("🎬 Creating video...")
 
-
-def get_audio_duration(audio_file):
-    cmd = [
-        "ffprobe", "-v", "error",
+    # Get audio duration
+    duration_cmd = [
+        "ffprobe", "-i", audio,
         "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        str(audio_file)
+        "-v", "quiet", "-of", "csv=p=0"
     ]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return float(result.stdout.strip())
+    duration = float(subprocess.check_output(duration_cmd).decode().strip())
 
+    # Calculate time per image
+    time_per_img = duration / len(images)
 
-def create_video(image_files, audio_file, output_file, duration):
-    if not image_files:
-        raise RuntimeError("No images available for video.")
+    # Create temporary ffmpeg input file
+    with open("images.txt", "w") as f:
+        for img in images:
+            f.write(f"file '{img}'\n")
+            f.write(f"duration {time_per_img}\n")
 
-    per_image_duration = duration / len(image_files)
+    # Ensure last image stays until end
+    f.write(f"file '{images[-1]}'\n")
 
-    list_file = OUTPUT_DIR / "images.txt"
-    with open(list_file, "w") as f:
-        for img in image_files:
-            f.write(f"file '{os.path.abspath(img)}'\n")
-            f.write(f"duration {per_image_duration}\n")
-        f.write(f"file '{os.path.abspath(image_files[-1])}'\n")  # hold last frame
-
+    # Build video
     cmd = [
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file),
-        "-i", str(audio_file),
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
-        "-shortest", str(output_file)
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", "images.txt",
+        "-i", audio,
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-shortest",
+        out_path
     ]
     subprocess.run(cmd, check=True)
 
-
-# ========================
-# MAIN PIPELINE
-# ========================
+# -------------------------
+# Main
+# -------------------------
 def main():
-    print("🔮 Generating story...")
-    story, prompts = generate_story()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gemini-key", required=True)
+    args = parser.parse_args()
+
+    out_dir = Path("generated_videos")
+    out_dir.mkdir(exist_ok=True)
+
+    # 1. Generate story + prompts
+    story, prompts = generate_story(args.gemini_key)
+
     print("\n--- STORY ---\n")
     print(story)
     print("\n--- PROMPTS ---\n")
     print(prompts)
 
-    print("\n🖼 Downloading images...")
-    image_files = [download_image(p, i) for i, p in enumerate(prompts)]
-
-    print("\n🎙 Generating narration...")
-    narration_file = OUTPUT_DIR / "narration.wav"
+    # 2. Narration
+    narration_file = out_dir / "narration.wav"
     narrate(story, narration_file)
 
-    print("\n⏱ Checking audio length...")
-    duration = get_audio_duration(narration_file)
-    print(f"Audio length: {duration:.2f} sec")
+    # 3. Download images
+    images = []
+    for i, prompt in enumerate(prompts):
+        img_file = out_dir / f"img_{i}.jpg"
+        fetch_image(prompt, img_file)
+        images.append(str(img_file))
 
-    print("\n🎬 Creating video...")
-    output_file = OUTPUT_DIR / "anime_story.mp4"
-    create_video(image_files, narration_file, output_file, duration)
+    # 4. Make video
+    video_file = out_dir / "anime_story.mp4"
+    make_video(images, str(narration_file), str(video_file))
 
-    print(f"\n✅ Done! Video saved at: {output_file}")
-
+    print(f"✅ Video created: {video_file}")
 
 if __name__ == "__main__":
     main()
