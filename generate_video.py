@@ -19,12 +19,12 @@ import asyncio
 
 # Configuration
 CONFIG = {
-    "video_duration": 60,  # increased from 10 to 60 seconds
+    "video_duration": 60,  # ~1 minute video
     "output_dir": "generated_videos",
     "gemini_model": "gemini-2.0-flash",
-    "tts_voice": "en-US-AriaNeural",
+    "tts_voice": "en-US-GuyNeural",  # Male voice for narration
     "anime_style": "anime style, vibrant colors, detailed background",
-    "max_scenes": 3  # Reduced for 10-second video
+    "max_scenes": 3
 }
 
 # Anime inspirations list
@@ -47,40 +47,25 @@ def init_gemini(api_key):
     return genai.GenerativeModel(CONFIG["gemini_model"])
 
 def generate_story(gemini_model):
-    """Generate a unique anime story using Gemini AI"""
+    """Generate a complete anime story using Gemini AI"""
     selected_anime = random.choice(ANIME_INSPIRATIONS)
     
     prompt = f"""
-    Create a very short 10-second story inspired by {selected_anime} that has value and lesson for teenagers.
-    The story should include:
-    1. A clear moral lesson or value
-    2. Emotional depth appropriate for the source material
-    3. Only {CONFIG['max_scenes']} distinct scenes with descriptions
-    4. 1-2 main characters
-    5. Brief dialogue and narration
+    Write a complete, short story (around {CONFIG["video_duration"]} seconds when narrated)
+    from the **narrator's point of view**, inspired by {selected_anime}.
     
-    Format the output as JSON with the following structure:
+    Requirements:
+    - Story must be fun, engaging, and easy to follow for teenagers
+    - Narrator should guide the story clearly, with occasional character dialogue in quotes
+    - Include emotional depth appropriate to the anime inspiration
+    - End with a clear moral lesson teenagers can learn from
+    - The story should naturally flow as one piece of narration
+    
+    Format the output as JSON with this structure:
     {{
         "title": "Story title",
         "anime_inspiration": "{selected_anime}",
-        "scenes": [
-            {{
-                "scene_number": 1,
-                "description": "Scene description including setting, characters and action",
-                "image_prompt": "Detailed prompt for complete scene image with characters",
-                "dialogue": [
-                    {{
-                        "character": "Character name",
-                        "emotion": "Emotion for this line",
-                        "text": "Very brief dialogue text"
-                    }}
-                ],
-                "narration": {{
-                    "text": "Very brief narration text",
-                    "emotion": "Narration emotion"
-                }}
-            }}
-        ],
+        "narration": "Full story narration text from narrator POV, including any dialogue in quotes",
         "moral_lesson": "The moral lesson of the story"
     }}
     """
@@ -110,56 +95,46 @@ def extract_json_from_text(text):
     except:
         pass
     
+    # Fallback
     return {
         "title": "The Determined Hero",
         "anime_inspiration": "Naruto",
-        "scenes": [
-            {
-                "scene_number": 1,
-                "description": "A young hero trains in a forest, determined to become stronger",
-                "image_prompt": "Anime hero training in a beautiful forest, determined expression, dynamic pose, vibrant colors",
-                "dialogue": [
-                    {
-                        "character": "Hero",
-                        "emotion": "determined",
-                        "text": "I will never give up!"
-                    }
-                ],
-                "narration": {
-                    "text": "The hero trained every day to become stronger",
-                    "emotion": "inspiring"
-                }
-            }
-        ],
+        "narration": (
+            "In a quiet forest, I watched a young hero train tirelessly. "
+            "Every strike and every breath carried his determination. "
+            "He whispered to himself, 'I will never give up!' "
+            "Day after day, his spirit only grew stronger. "
+            "Through hardship, he learned that true strength is born from persistence."
+        ),
         "moral_lesson": "Hard work and determination lead to growth"
     }
 
 def generate_images(story_data):
-    """Generate complete scene images using Pollinations.ai"""
+    """Generate background images using Pollinations.ai"""
     image_paths = []
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    for scene in story_data["scenes"]:
-        scene_prompt = f"{scene['image_prompt']}, {CONFIG['anime_style']}, high quality, complete scene"
+    for i in range(CONFIG["max_scenes"]):
+        scene_prompt = f"{story_data['anime_inspiration']} inspired scene, {CONFIG['anime_style']}, high quality, cinematic"
         scene_url = f"https://image.pollinations.ai/prompt/{scene_prompt}?width=1024&height=576&nologo=true"
         
         try:
             response = requests.get(scene_url, timeout=30)
-            scene_path = f"{CONFIG['output_dir']}/images/scene_{timestamp}_{scene['scene_number']}.png"
+            scene_path = f"{CONFIG['output_dir']}/images/scene_{timestamp}_{i+1}.png"
             
             with open(scene_path, 'wb') as f:
                 f.write(response.content)
             
             image_paths.append(scene_path)
-            print(f"Generated image for scene {scene['scene_number']}")
+            print(f"Generated image {i+1}")
         except Exception as e:
-            print(f"Error generating image for scene {scene['scene_number']}: {e}")
-            scene_path = create_fallback_image(scene, timestamp)
+            print(f"Error generating image {i+1}: {e}")
+            scene_path = create_fallback_image(story_data['anime_inspiration'], timestamp, i+1)
             image_paths.append(scene_path)
     
     return image_paths
 
-def create_fallback_image(scene, timestamp):
+def create_fallback_image(inspiration, timestamp, index):
     """Create a simple fallback image using PIL"""
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -172,10 +147,10 @@ def create_fallback_image(scene, timestamp):
         except:
             font = ImageFont.load_default()
         
-        d.text((100, 100), f"Scene: {scene['description'][:50]}...", fill=(255, 255, 255), font=font)
-        d.text((100, 150), f"Inspired by: {CONFIG['anime_style']}", fill=(255, 255, 255), font=font)
+        d.text((100, 100), f"Scene {index}", fill=(255, 255, 255), font=font)
+        d.text((100, 150), f"Inspired by: {inspiration}", fill=(255, 255, 255), font=font)
         
-        scene_path = f"{CONFIG['output_dir']}/images/fallback_scene_{timestamp}_{scene['scene_number']}.png"
+        scene_path = f"{CONFIG['output_dir']}/images/fallback_scene_{timestamp}_{index}.png"
         img.save(scene_path)
         return scene_path
     except:
@@ -186,19 +161,13 @@ async def generate_voiceover(story_data):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     audio_files = []
     
-    all_text = []
-    for scene in story_data["scenes"]:
-        all_text.append(scene["narration"]["text"])
-        for dialogue in scene["dialogue"]:
-            all_text.append(dialogue["text"])
-    
-    full_script = " ".join(all_text)
+    full_script = story_data.get("narration", "")
     
     try:
         communicate = edge_tts.Communicate(
             full_script,
             CONFIG["tts_voice"],
-            rate="+0%"
+            rate="+0%"  # Keep pacing natural
         )
         
         audio_path = f"{CONFIG['output_dir']}/audio/voiceover_{timestamp}.mp3"
@@ -215,7 +184,7 @@ def create_video(story_data, image_paths, audio_files):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = f"{CONFIG['output_dir']}/video_{timestamp}.mp4"
     
-    scene_duration = CONFIG["video_duration"] / len(story_data["scenes"])
+    scene_duration = CONFIG["video_duration"] / len(image_paths)
     
     try:
         inputs = []
@@ -278,6 +247,7 @@ async def main():
     
     print(f"Generated story: {story_data['title']}")
     print(f"Inspired by: {story_data['anime_inspiration']}")
+    print(f"Moral: {story_data['moral_lesson']}")
     
     image_paths = generate_images(story_data)
     print(f"Generated {len(image_paths)} images")
