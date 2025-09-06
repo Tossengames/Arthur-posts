@@ -244,48 +244,37 @@ def generate_finance_post():
             else:
                 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
             
-            # REVOLUTIONIZED PROMPT: No templates, just creative guidance
+            # REVISED PROMPT: Forces a short hook and a separate caption
             prompt = f"""
-            ACT AS: A knowledgeable and engaging finance professional with expertise in freelance finance, personal finance, and sustainable/green investing. You are creating content for your social media followers who want practical, actionable advice.
+            ACT AS: A knowledgeable and engaging finance professional. You are creating a social media post for your followers.
 
             TOPIC/TREND: "{selected_trend}"
             CONTEXT: "{web_content}"
 
-            TASK: Create exactly ONE complete social media post about this topic. DO NOT USE A RIGID TEMPLATE. Be creative and varied in your approach.
+            TASK: Create a social media post with TWO distinct parts:
 
-            **CRITICAL REQUIREMENTS:**
-            1. **VARY YOUR STYLE:** Mix up your formats. Examples:
-               - "Did you know...?" (fact-based)
-               - "Here's a simple trick..." (actionable tip)
-               - "Myth vs. Fact: ..." (debunking misconceptions)
-               - "Question for you: ..." (engagement-focused)
-               - "The one thing I wish everyone knew about..." (personal insight)
-               - "3 ways to..." (list-based)
+            PART 1: IMAGE_HOOK
+            - This is a SHORT, punchy, and compelling one-line statement.
+            - It must be under 10 words.
+            - It must be strong enough to stand alone on an image.
+            - **NO EMOJIS.** Just plain text.
+            - Examples: "Budgeting is about prioritization, not deprivation." | "Your credit score is your financial fingerprint." | "Green investing is the future of wealth building."
 
-            2. **INCLUDE THESE ELEMENTS NATURALLY:**
-               - A compelling main point or tip (keep it concise)
-               - A brief explanation or why it matters
-               - A Call-To-Action (CTA) that feels organic, not generic. Ask for a like, share, or follow in a creative way.
-               - A question to prompt comments and engagement. Make it specific to the post.
-               - 5-7 relevant and specific hashtags. Include #FreelanceFinance and others that fit the topic.
+            PART 2: FULL_CAPTION
+            - This is the full social media caption that expands on the hook.
+            - Write in a natural, conversational style.
+            - Vary your format: use "Did you know...?", "Here's why...", "A simple trick is...", etc.
+            - Include a natural Call-To-Action (ask for a like, share, or follow).
+            - Include a specific question to prompt comments.
+            - Include 5-7 relevant hashtags.
+            - **DO NOT** start with "Okay, here's my post" or any other AI-disclosing phrase. Just start the content.
 
-            3. **TOPIC AREAS TO DRAW FROM:**
-               - Freelancer-specific issues (taxes, variable income, contracts)
-               - Basic personal finance (budgeting, saving, debt, credit)
-               - Green/sustainable finance (ESG investing, ethical banking, green loans)
+            FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
 
-            **IMPORTANT:** Write in a natural, conversational social media style. Do not use markdown. Do not label sections like "MAIN TIP" or "EXPLANATION". Just write the complete post as you would naturally post it.
+            IMAGE_HOOK: [Your short, emoji-free hook here]
+            FULL_CAPTION: [Your engaging full caption here]
 
-            Example output style (just one example of many possible styles):
-            "Did you know you can often deduct a portion of your home internet bill as a business expense if you're a freelancer? 📊 This is one of those overlooked deductions that can save you money at tax time. 
-
-            What's your most unexpected freelance tax deduction? Share below! 👇
-
-            👍 Like if you found this helpful and follow for more freelance finance tips!
-
-            #FreelanceTaxes #TaxDeductions #FreelanceFinance #MoneyTips #SideHustle"
-
-            Now create your post about {selected_trend}:
+            Now create a post about {selected_trend}:
             """
             
             # Generate content based on available SDK
@@ -303,20 +292,26 @@ def generate_finance_post():
             response_text = response_text.strip()
             print(f"Gemini response:\n{response_text}")
             
-            # Extract the first line to use for duplicate checking and image text
-            first_line = response_text.split('\n')[0].strip()
+            # Parse the response
+            post_data = {}
+            lines = response_text.split('\n')
             
-            # Check if this is a duplicate before returning
-            if is_duplicate_tip(first_line):
-                print(f"🔄 Generated post is a duplicate, trying again... (Attempt {retry_count + 1}/{max_retries})")
-                retry_count += 1
-                continue
+            for line in lines:
+                if line.startswith('IMAGE_HOOK:'):
+                    post_data['image_text'] = line.replace('IMAGE_HOOK:', '').strip()
+                elif line.startswith('FULL_CAPTION:'):
+                    post_data['full_post'] = line.replace('FULL_CAPTION:', '').strip()
             
-            # Return the full post and the first line for the image
-            return {
-                'full_post': response_text,
-                'image_text': first_line
-            }
+            # Check if we have both parts and if the hook is a duplicate
+            if 'image_text' in post_data and 'full_post' in post_data:
+                if is_duplicate_tip(post_data['image_text']):
+                    print(f"🔄 Generated hook is a duplicate, trying again... (Attempt {retry_count + 1}/{max_retries})")
+                    retry_count += 1
+                    continue
+                
+                return post_data
+            else:
+                raise Exception("Invalid response format from Gemini. Missing IMAGE_HOOK or FULL_CAPTION.")
             
         except Exception as e:
             print(f"❌ Error generating finance post: {e}")
@@ -328,31 +323,28 @@ def generate_finance_post():
     # Fallback if all retries fail
     print("🔄 Using fallback after Gemini failures...")
     fallback_posts = [
-        "Just a reminder: pay your quarterly taxes if you're a freelancer! It's not fun, but avoiding penalties is even better. 💸 What's your strategy for setting aside tax money? #FreelanceFinance #Taxes #Adulting",
-        "Compound interest is literally free money. The sooner you start saving, the less you actually have to save. Mind-blowing, right? 🤯 What's your favorite 'money magic' fact? #PersonalFinance #Investing #CompoundInterest",
-        "Green investing isn't just good for the planet—it's becoming really good for returns too. 🌱 Have you looked into ESG funds? What's been your experience? #SustainableInvesting #GreenFinance #ESG"
+        {
+            'image_text': "Pay your quarterly taxes to avoid IRS penalties.",
+            'full_post': "Just a friendly reminder to my fellow freelancers! Quarterly taxes aren't optional if you want to avoid a nasty surprise (and penalties) from the IRS. I set aside 30% from every invoice automatically. What's your system for managing tax payments? Share your tips below! 👇\n\nFollow for more essential freelance finance advice. #FreelanceFinance #Taxes #1099 #SideHustle"
+        },
+        {
+            'image_text': "Compound interest is your most powerful wealth builder.",
+            'full_post': "Did you know that starting to save just 5 years earlier can literally add hundreds of thousands to your retirement fund? That's the magic of compound interest. It's not about how much you make, but how long you let it grow. What's the best financial advice you've ever received? Drop it in the comments! 💡\n\nLike and share if you believe in starting early! #PersonalFinance #Investing #CompoundInterest #FinancialFreedom"
+        }
     ]
     
     # Filter out duplicates from fallback posts
     non_duplicate_posts = [
         p for p in fallback_posts 
-        if not is_duplicate_tip(p.split('\n')[0])
+        if not is_duplicate_tip(p['image_text'])
     ]
     
     if non_duplicate_posts:
-        chosen_post = random.choice(non_duplicate_posts)
-        return {
-            'full_post': chosen_post,
-            'image_text': chosen_post.split('\n')[0]
-        }
+        return random.choice(non_duplicate_posts)
     else:
         # If all fallbacks are duplicates, return a random one anyway
         print("⚠️ All fallback posts are duplicates, using random one")
-        chosen_post = random.choice(fallback_posts)
-        return {
-            'full_post': chosen_post,
-            'image_text': chosen_post.split('\n')[0]
-        }
+        return random.choice(fallback_posts)
 
 def get_pixabay_image():
     """Get a random image from Pixabay API - EXPANDED CATEGORIES"""
@@ -518,7 +510,7 @@ def post_to_facebook(image_data, post_data):
         
         if response.status_code == 200:
             result = response.json()
-            # Save to posted tips history to prevent duplicates (using first line)
+            # Save to posted tips history to prevent duplicates (using the image hook)
             if save_posted_tip(post_data['image_text']):
                 print(f"✅ Successfully posted to Facebook! Post ID: {result.get('id')}")
             else:
@@ -554,9 +546,10 @@ def main():
     # Generate a varied finance post
     post_data = generate_finance_post()
     print("🎯 Generated finance post")
-    print(f"📝 Full Post:\n{post_data['full_post']}")
+    print(f"🖼️  Image Hook: {post_data['image_text']}")
+    print(f"📝 Full Caption: {post_data['full_post']}")
     
-    # Create image with the first line of the post
+    # Create image with the short, clean hook
     final_image = create_finance_image(post_data['image_text'])
     print("🎨 Finance image created")
     
