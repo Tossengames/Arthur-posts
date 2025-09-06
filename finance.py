@@ -244,7 +244,7 @@ def generate_finance_post():
             else:
                 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
             
-            # REVISED PROMPT: Forces a short hook and a separate caption
+            # REVISED PROMPT: Enforces formatting, variety, and hashtags
             prompt = f"""
             ACT AS: A knowledgeable and engaging finance professional. You are creating a social media post for your followers.
 
@@ -262,11 +262,12 @@ def generate_finance_post():
 
             PART 2: FULL_CAPTION
             - This is the full social media caption that expands on the hook.
-            - Write in a natural, conversational style.
-            - Vary your format: use "Did you know...?", "Here's why...", "A simple trick is...", etc.
-            - Include a natural Call-To-Action (ask for a like, share, or follow).
+            - **VARY YOUR OPENING:** Do NOT start with "Did you know". Use different openings like:
+              "Here's why..." / "A simple trick..." / "Myth: ... Fact: ..." / "If you..." / "The one thing..." / "[Number] way to..." / Just start with a strong statement.
+            - **USE LINE BREAKS:** Make it easy to read. Use empty lines to separate ideas.
+            - Include a natural Call-To-Action (e.g., ask for a like, share, or follow).
             - Include a specific question to prompt comments.
-            - Include 5-7 relevant hashtags.
+            - **MUST INCLUDE 5-7 RELEVANT HASHTAGS at the end.**
             - **DO NOT** start with "Okay, here's my post" or any other AI-disclosing phrase. Just start the content.
 
             FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
@@ -296,16 +297,38 @@ def generate_finance_post():
             post_data = {}
             lines = response_text.split('\n')
             
+            image_hook_found = False
+            full_caption_lines = []
+            
             for line in lines:
                 if line.startswith('IMAGE_HOOK:'):
                     post_data['image_text'] = line.replace('IMAGE_HOOK:', '').strip()
+                    image_hook_found = True
                 elif line.startswith('FULL_CAPTION:'):
-                    post_data['full_post'] = line.replace('FULL_CAPTION:', '').strip()
+                    # Start collecting the caption after this line
+                    caption_start = line.replace('FULL_CAPTION:', '').strip()
+                    if caption_start:  # If there's text on the same line
+                        full_caption_lines.append(caption_start)
+                elif image_hook_found and 'full_post' not in post_data:
+                    # Check if we are in the caption section
+                    if line.strip() == '' and not full_caption_lines:
+                        continue  # Skip empty lines before caption starts
+                    full_caption_lines.append(line)
+            
+            # Join the caption lines to form the full post
+            if full_caption_lines:
+                post_data['full_post'] = '\n'.join(full_caption_lines).strip()
             
             # Check if we have both parts and if the hook is a duplicate
             if 'image_text' in post_data and 'full_post' in post_data:
                 if is_duplicate_tip(post_data['image_text']):
                     print(f"🔄 Generated hook is a duplicate, trying again... (Attempt {retry_count + 1}/{max_retries})")
+                    retry_count += 1
+                    continue
+                
+                # Final check: Ensure hashtags are present
+                if '#' not in post_data['full_post']:
+                    print("🔄 Generated caption lacks hashtags, trying again...")
                     retry_count += 1
                     continue
                 
@@ -324,12 +347,16 @@ def generate_finance_post():
     print("🔄 Using fallback after Gemini failures...")
     fallback_posts = [
         {
-            'image_text': "Pay your quarterly taxes to avoid IRS penalties.",
-            'full_post': "Just a friendly reminder to my fellow freelancers! Quarterly taxes aren't optional if you want to avoid a nasty surprise (and penalties) from the IRS. I set aside 30% from every invoice automatically. What's your system for managing tax payments? Share your tips below! 👇\n\nFollow for more essential freelance finance advice. #FreelanceFinance #Taxes #1099 #SideHustle"
+            'image_text': "Pay quarterly taxes to avoid IRS penalties.",
+            'full_post': "Here's why this is non-negotiable for freelancers: The IRS requires taxes to be paid as you earn income. Waiting until April often means a huge, unmanageable bill plus penalties.\n\nA simple trick is to save 30% of every payment in a separate account just for taxes.\n\nWhat's your biggest hurdle with quarterly taxes? Share your struggles below! 👇\n\nFollow for more tips that save you money and stress. #FreelanceFinance #Taxes #IRS #1099 #MoneyTips"
         },
         {
             'image_text': "Compound interest is your most powerful wealth builder.",
-            'full_post': "Did you know that starting to save just 5 years earlier can literally add hundreds of thousands to your retirement fund? That's the magic of compound interest. It's not about how much you make, but how long you let it grow. What's the best financial advice you've ever received? Drop it in the comments! 💡\n\nLike and share if you believe in starting early! #PersonalFinance #Investing #CompoundInterest #FinancialFreedom"
+            'full_post': "If you start investing just $100 a month at age 25, you could have over $300,000 by age 65. That's the magic of starting early.\n\nIt's not about having a lot of money. It's about giving your money time to grow.\n\nWhat's the best financial advice you've ever received? Drop it in the comments! 💡\n\nLike and share if you believe in the power of compound interest! #PersonalFinance #Investing #CompoundInterest #FinancialFreedom #WealthBuilding"
+        },
+        {
+            'image_text': "Sustainable investing aligns your money with your values.",
+            'full_post': "Green investing isn't just about feeling good—it's about funding the future you want to see. ESG funds (Environmental, Social, Governance) are performing competitively while making a positive impact.\n\nHave you considered aligning your investments with your values? What causes matter most to you? Let's discuss! 🌱\n\nShare this with someone who cares about their financial and planetary future. #SustainableInvesting #ESG #GreenFinance #EthicalInvesting #ImpactInvesting"
         }
     ]
     
