@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Freelance Finance Coach: Generate content for freelancers on variable income, taxes, and budgeting,
-create images with text overlay using Pixabay backgrounds, and post to Facebook Page.
+Freelance Finance Coach: Generate VARIED content for freelancers on finance, taxes, green investing, and budgeting.
+Creates images with text overlay and posts to Facebook Page.
 """
 
 import os
@@ -63,13 +63,13 @@ def load_posted_tips():
         print(f"Error loading history file: {e}")
         return []
 
-def save_posted_tip(tip_data):
-    """Save a posted tip to history"""
+def save_posted_tip(tip_text):
+    """Save a posted tip to history using its main text"""
     try:
         posted_tips = load_posted_tips()
         
-        # Create a unique hash of the main tip to identify duplicates
-        tip_hash = hashlib.md5(tip_data['main_tip'].encode()).hexdigest()
+        # Create a unique hash of the main tip text to identify duplicates
+        tip_hash = hashlib.md5(tip_text.encode()).hexdigest()
         
         # Add to history if not already there
         if tip_hash not in posted_tips:
@@ -78,37 +78,41 @@ def save_posted_tip(tip_data):
             os.makedirs(os.path.dirname(POST_HISTORY_FILE), exist_ok=True)
             with open(POST_HISTORY_FILE, 'w') as f:
                 json.dump(posted_tips, f)
-            print(f"✅ Saved tip to history: {tip_data['main_tip'][:50]}...")
+            print(f"✅ Saved tip to history: {tip_text[:50]}...")
             return True
         else:
-            print(f"❌ Tip already exists in history: {tip_data['main_tip'][:50]}...")
+            print(f"❌ Tip already exists in history: {tip_text[:50]}...")
             return False
     except Exception as e:
         print(f"❌ Error saving to history: {e}")
         return False
 
-def is_duplicate_tip(tip_data):
+def is_duplicate_tip(tip_text):
     """Check if a tip has already been posted"""
     try:
         posted_tips = load_posted_tips()
-        tip_hash = hashlib.md5(tip_data['main_tip'].encode()).hexdigest()
+        tip_hash = hashlib.md5(tip_text.encode()).hexdigest()
         is_dup = tip_hash in posted_tips
         if is_dup:
-            print(f"❌ Duplicate detected: {tip_data['main_tip'][:50]}...")
+            print(f"❌ Duplicate detected: {tip_text[:50]}...")
         else:
-            print(f"✅ New tip: {tip_data['main_tip'][:50]}...")
+            print(f"✅ New tip: {tip_text[:50]}...")
         return is_dup
     except Exception as e:
         print(f"❌ Error checking duplicate: {e}")
         return False
 
 def get_google_trends():
-    """Get trending topics using reliable fallback method"""
+    """Get trending topics using reliable fallback method - EXPANDED TOPICS"""
     try:
-        # Use a more reliable approach for trend discovery - UPDATED FOR FREELANCE FINANCE
+        # Use a more reliable approach for trend discovery - EXPANDED FOR FINANCE + GREEN TOPICS
         trending_keywords = [
             "freelancer taxes 2024", "gig economy finance", "variable income budgeting", 
-            "quarterly taxes", "freelance retirement", "1099 income"
+            "quarterly taxes", "freelance retirement", "1099 income",
+            "ESG investing", "sustainable personal finance", "green loans",
+            "ethical banking", "carbon footprint money", "basic budgeting",
+            "credit score tips", "compound interest", "saving for beginners",
+            "debt payoff strategies", "financial literacy", "crypto taxes freelancer"
         ]
         
         all_trends = []
@@ -156,29 +160,38 @@ def get_google_trends():
         return get_fallback_trends()
 
 def get_fallback_trends():
-    """Get reliable fallback trending topics - UPDATED FOR FREELANCE FINANCE"""
+    """Get reliable fallback trending topics - EXPANDED FOR FINANCE + GREEN TOPICS"""
     fallback_trends = [
+        # Freelance Finance
         "quarterly taxes", "variable income", "freelance budget", "1099 form",
         "self employed", "tax deductions", "emergency fund", "retirement planning",
         "invoicing clients", "contract work", "gig economy", "freelance rates",
         "cash flow", "business expenses", "tax savings", "Solo 401k", "SEP IRA",
-        "estimated taxes", "financial planning", "freelance finance"
+        "estimated taxes", "financial planning", "freelance finance",
+        # Basic Personal Finance
+        "budgeting basics", "credit score", "saving money", "compound interest",
+        "debt free", "financial freedom", "money management", "personal finance",
+        "investment basics", "rainy day fund", "financial goals", "smart spending",
+        # Green Finance
+        "ESG investing", "sustainable investing", "green banking", "ethical finance",
+        "climate friendly investing", "socially responsible", "green loans",
+        "carbon neutral", "impact investing", "renewable energy stocks"
     ]
     selected = random.sample(fallback_trends, min(8, len(fallback_trends)))
     print(f"✅ Using fallback trends: {selected}")
     return selected
 
 def search_web_content(topic):
-    """Perform real web search for the topic using Google Search - UPDATED FOR FREELANCE FINANCE"""
+    """Perform real web search for the topic using Google Search"""
     try:
         if not GOOGLE_SEARCH_AVAILABLE:
             print("❌ Google search not available, using fallback content")
-            return f"Financial experts are discussing {topic} as an important consideration for freelancers and gig workers managing their variable income and business finances."
+            return f"Financial experts are discussing {topic} as an important topic for freelancers and individuals managing their money."
         
         print(f"🔍 Performing real web search for: {topic}")
         
-        # Perform Google search with correct parameters - UPDATED QUERY
-        search_query = f"{topic} freelancer gig worker finance taxes 2024"
+        # Perform Google search with correct parameters
+        search_query = f"{topic} finance money tips 2024"
         results = list(google_search(
             search_query, 
             num_results=3,
@@ -186,171 +199,93 @@ def search_web_content(topic):
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         ))
         
-        # Create meaningful content from search results - UPDATED CONTEXT
+        # Create meaningful content from search results
         content_parts = []
-        content_parts.append(f"Recent discussions and financial advice show that {topic} is a critical topic for freelancers and gig workers.")
+        content_parts.append(f"Recent discussions show that {topic} is a relevant topic right now.")
         
         if results:
-            content_parts.append("Finance experts and industry reports are highlighting several key points:")
-            content_parts.append(f"- {topic} significantly impacts the financial stability of freelancers")
-            content_parts.append(f"- Understanding {topic} can lead to better tax outcomes and savings")
-            content_parts.append(f"- Freelancers who master {topic} often achieve greater financial security")
+            content_parts.append("Financial sources indicate several important points:")
+            content_parts.append(f"- {topic} is gaining attention among finance professionals")
+            content_parts.append(f"- This topic connects to broader financial trends and personal money management")
             
             # Mention that we found relevant sources
             domain_count = len(set(url.split('/')[2] for url in results if len(url.split('/')) > 2))
-            content_parts.append(f"Based on analysis of {domain_count} financial sources, this is a vital area for freelance financial health.")
+            content_parts.append(f"Based on analysis of {domain_count} sources, this is a valuable area for financial education.")
         else:
-            content_parts.append("This financial concept is gaining attention across freelance communities and financial discussions.")
+            content_parts.append("This financial concept is gaining attention across financial communities and discussions.")
         
-        content_parts.append("Accountants and financial coaches who work with freelancers are emphasizing the importance of understanding this topic.")
+        content_parts.append("Financial advisors and coaches are discussing the importance of this topic.")
         
         return " ".join(content_parts)
         
     except Exception as e:
         print(f"❌ Error in web search: {e}")
-        return f"Recent discussions about {topic} indicate it's a significant financial consideration for freelancers. Finance experts are highlighting its importance for tax planning, budgeting, and long-term stability."
+        return f"Recent discussions about {topic} indicate it's a significant financial topic. Experts are highlighting its importance for money management and financial health."
 
-def generate_trend_based_tip():
-    """Generate a finance tip for freelancers based on real trending topics"""
-    try:
-        # Get real trending topics
-        trends = get_google_trends()
-        
-        if not trends:
-            print("🔄 No trends found, using fallback finance tip generation")
-            return generate_freelance_tip()
-        
-        # Filter for finance-related trends - UPDATED KEYWORDS
-        finance_keywords = ["tax", "income", "budget", "finance", "retirement", "save", "invest", 
-                          "debt", "cash", "flow", "rate", "fee", "expense", "deduct", "1099", "freelance"]
-        
-        finance_trends = [trend for trend in trends 
-                        if any(keyword in trend.lower() for keyword in finance_keywords)]
-        
-        if not finance_trends:
-            finance_trends = trends[:2]  # Use first two trends if none are finance-related
-        
-        selected_trend = random.choice(finance_trends)
-        print(f"🎯 Selected trend: {selected_trend}")
-        
-        # Perform real web search about this trend
-        web_content = search_web_content(selected_trend)
-        print(f"🔍 Web content found: {web_content[:100]}...")
-        
-        # Initialize client based on available SDK
-        if SDK_TYPE == "new":
-            client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-        else:
-            genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-        
-        # UPDATED PROMPT FOR FREELANCE FINANCE
-        prompt = f"""
-        Create a comprehensive freelance finance coaching post based on the trending topic: "{selected_trend}"
-        
-        Use this research context: "{web_content}"
-        
-        Format your response with these components:
-        
-        MAIN_TIP: [A short, practical, actionable finance tip for freelancers related to {selected_trend} - under 15 words]
-        EXPLANATION: [1-2 sentences explaining why this tip is crucial for freelancers based on current trends]
-        HASHTAGS: [3-4 relevant hashtags for freelancers including #FreelanceFinance and #{selected_trend.replace(' ', '').replace('-', '')}]
-        
-        Make it practical and actionable for freelancers, gig workers, and self-employed individuals.
-        Focus on how this trend affects taxes, budgeting, retirement, or financial stability for variable income earners.
-        
-        Example format:
-        
-        MAIN_TIP: Set aside 30% of every invoice for taxes and quarterly payments.
-        EXPLANATION: Freelancers are responsible for their own tax withholdings, and this practice prevents unexpected tax bills and helps with cash flow management.
-        HASHTAGS: #FreelanceTaxes #QuarterlyTaxes #FreelanceFinance #MoneyTips
-        
-        Return only ONE post in this exact format.
-        """
-        
-        # Generate content based on available SDK
-        if SDK_TYPE == "new":
-            response = client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt,
-            )
-            response_text = response.text
-        else:
-            model = genai.GenerativeModel('gemini-pro')
-            response = model.generate_content(prompt)
-            response_text = response.text
-        
-        response_text = response_text.strip()
-        print(f"Gemini response:\n{response_text}")
-        
-        # Parse the response
-        tip_data = {}
-        lines = response_text.split('\n')
-        
-        for line in lines:
-            if line.startswith('MAIN_TIP:'):
-                tip_data['main_tip'] = line.replace('MAIN_TIP:', '').strip()
-            elif line.startswith('EXPLANATION:'):
-                tip_data['explanation'] = line.replace('EXPLANATION:', '').strip()
-            elif line.startswith('HASHTAGS:'):
-                tip_data['hashtags'] = line.replace('HASHTAGS:', '').strip()
-        
-        if 'main_tip' in tip_data:
-            # Check if this is a duplicate before returning
-            if is_duplicate_tip(tip_data):
-                print("🔄 Generated trend tip is a duplicate, trying regular freelance finance tip...")
-                return generate_freelance_tip()
-            
-            return tip_data
-        else:
-            raise Exception("Invalid response format from Gemini for trend-based tip")
-            
-    except Exception as e:
-        print(f"❌ Error generating trend-based tip: {e}")
-        # Fallback to regular freelance finance tip generation
-        return generate_freelance_tip()
-
-def generate_freelance_tip():
-    """Generate a practical freelance finance advice tip using Gemini"""
+def generate_finance_post():
+    """Generate a VARIED finance post using Gemini. No rigid templates."""
     max_retries = 3
     retry_count = 0
     
     while retry_count < max_retries:
         try:
+            # Get real trending topics
+            trends = get_google_trends()
+            selected_trend = random.choice(trends) if trends else "financial wellness"
+            
+            # Perform real web search about this trend
+            web_content = search_web_content(selected_trend)
+            print(f"🎯 Selected trend: {selected_trend}")
+            print(f"🔍 Web context: {web_content[:100]}...")
+            
             # Initialize client based on available SDK
             if SDK_TYPE == "new":
                 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
             else:
                 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
             
-            # UPDATED PROMPT FOR FREELANCE FINANCE
-            prompt = """
-            Create ONE comprehensive freelance finance coaching post with these components:
+            # REVOLUTIONIZED PROMPT: No templates, just creative guidance
+            prompt = f"""
+            ACT AS: A knowledgeable and engaging finance professional with expertise in freelance finance, personal finance, and sustainable/green investing. You are creating content for your social media followers who want practical, actionable advice.
 
-            MAIN_TIP: [A short, practical, actionable finance tip for freelancers - under 15 words]
-            EXPLANATION: [1-2 sentences explaining why this tip works or how to implement it for variable income]
-            HASHTAGS: [3-4 relevant hashtags for freelancers]
+            TOPIC/TREND: "{selected_trend}"
+            CONTEXT: "{web_content}"
 
-            Focus on practical advice for:
-            - Managing variable income
-            - Quarterly tax payments and calculations
-            - Tax deductions for home office and business expenses
-            - Freelancer budgeting strategies
-            - Freelancer retirement accounts (Solo 401k, SEP IRA)
-            - Invoicing and getting paid on time
-            - Setting freelance rates and negotiating
-            - Emergency funds for income volatility
-            - Managing business and personal finances separately
-            - Financial planning for freelancers
+            TASK: Create exactly ONE complete social media post about this topic. DO NOT USE A RIGID TEMPLATE. Be creative and varied in your approach.
 
-            IMPORTANT: Focus on fresh, diverse freelance finance advice that is specific to gig workers and self-employed individuals.
+            **CRITICAL REQUIREMENTS:**
+            1. **VARY YOUR STYLE:** Mix up your formats. Examples:
+               - "Did you know...?" (fact-based)
+               - "Here's a simple trick..." (actionable tip)
+               - "Myth vs. Fact: ..." (debunking misconceptions)
+               - "Question for you: ..." (engagement-focused)
+               - "The one thing I wish everyone knew about..." (personal insight)
+               - "3 ways to..." (list-based)
 
-            Format the response exactly like this:
+            2. **INCLUDE THESE ELEMENTS NATURALLY:**
+               - A compelling main point or tip (keep it concise)
+               - A brief explanation or why it matters
+               - A Call-To-Action (CTA) that feels organic, not generic. Ask for a like, share, or follow in a creative way.
+               - A question to prompt comments and engagement. Make it specific to the post.
+               - 5-7 relevant and specific hashtags. Include #FreelanceFinance and others that fit the topic.
 
-            MAIN_TIP: Pay estimated quarterly taxes to avoid penalties.
-            EXPLANATION: The IRS requires freelancers to pay taxes as they earn income throughout the year, not just at tax time.
-            HASHTAGS: #FreelanceTaxes #QuarterlyTaxes #FreelanceFinance #1099
+            3. **TOPIC AREAS TO DRAW FROM:**
+               - Freelancer-specific issues (taxes, variable income, contracts)
+               - Basic personal finance (budgeting, saving, debt, credit)
+               - Green/sustainable finance (ESG investing, ethical banking, green loans)
 
-            Return only ONE post in this exact format.
+            **IMPORTANT:** Write in a natural, conversational social media style. Do not use markdown. Do not label sections like "MAIN TIP" or "EXPLANATION". Just write the complete post as you would naturally post it.
+
+            Example output style (just one example of many possible styles):
+            "Did you know you can often deduct a portion of your home internet bill as a business expense if you're a freelancer? 📊 This is one of those overlooked deductions that can save you money at tax time. 
+
+            What's your most unexpected freelance tax deduction? Share below! 👇
+
+            👍 Like if you found this helpful and follow for more freelance finance tips!
+
+            #FreelanceTaxes #TaxDeductions #FreelanceFinance #MoneyTips #SideHustle"
+
+            Now create your post about {selected_trend}:
             """
             
             # Generate content based on available SDK
@@ -368,90 +303,70 @@ def generate_freelance_tip():
             response_text = response_text.strip()
             print(f"Gemini response:\n{response_text}")
             
-            # Parse the response
-            tip_data = {}
-            lines = response_text.split('\n')
+            # Extract the first line to use for duplicate checking and image text
+            first_line = response_text.split('\n')[0].strip()
             
-            for line in lines:
-                if line.startswith('MAIN_TIP:'):
-                    tip_data['main_tip'] = line.replace('MAIN_TIP:', '').strip()
-                elif line.startswith('EXPLANATION:'):
-                    tip_data['explanation'] = line.replace('EXPLANATION:', '').strip()
-                elif line.startswith('HASHTAGS:'):
-                    tip_data['hashtags'] = line.replace('HASHTAGS:', '').strip()
+            # Check if this is a duplicate before returning
+            if is_duplicate_tip(first_line):
+                print(f"🔄 Generated post is a duplicate, trying again... (Attempt {retry_count + 1}/{max_retries})")
+                retry_count += 1
+                continue
             
-            if 'main_tip' in tip_data:
-                # Check if this is a duplicate before returning
-                if is_duplicate_tip(tip_data):
-                    print(f"🔄 Generated tip is a duplicate, trying again... (Attempt {retry_count + 1}/{max_retries})")
-                    retry_count += 1
-                    continue
-                
-                return tip_data
-            else:
-                raise Exception("Invalid response format from Gemini")
+            # Return the full post and the first line for the image
+            return {
+                'full_post': response_text,
+                'image_text': first_line
+            }
             
         except Exception as e:
-            print(f"❌ Error generating freelance finance tip: {e}")
+            print(f"❌ Error generating finance post: {e}")
             retry_count += 1
             if retry_count >= max_retries:
                 break
             time.sleep(2)  # Wait before retrying
     
-    # Fallback practical freelance finance tips - UPDATED
-    print("🔄 Using fallback tips after Gemini failures...")
-    fallback_tips = [
-        {
-            'main_tip': 'Pay estimated quarterly taxes to avoid penalties.',
-            'explanation': 'The IRS requires freelancers to pay taxes as they earn income throughout the year, not just at tax time.',
-            'hashtags': '#FreelanceTaxes #QuarterlyTaxes #FreelanceFinance #1099'
-        },
-        {
-            'main_tip': 'Separate your business and personal finances completely.',
-            'explanation': 'Use separate bank accounts and credit cards to simplify bookkeeping, track deductions, and protect personal assets.',
-            'hashtags': '#FreelanceFinance #MoneyManagement #BusinessTips #TaxDeductions'
-        },
-        {
-            'main_tip': 'Set aside 25-30% of every payment for taxes.',
-            'explanation': 'This practice helps freelancers avoid cash flow crises when quarterly tax payments are due and ensures you can cover your tax liability.',
-            'hashtags': '#TaxPlanning #FreelanceLife #FinancialPlanning #VariableIncome'
-        },
-        {
-            'main_tip': 'Track every business expense for maximum deductions.',
-            'explanation': 'Home office costs, software subscriptions, internet bills, and equipment purchases can all be legitimate business deductions for freelancers.',
-            'hashtags': '#TaxDeductions #FreelanceTips #BusinessExpenses #SaveMoney'
-        },
-        {
-            'main_tip': 'Create a baseline budget for your essential expenses.',
-            'explanation': 'Knowing your minimum monthly costs helps freelancers manage variable income and prioritize spending during lean months.',
-            'hashtags': '#FreelanceBudget #VariableIncome #FinancialStability #MoneyTips'
+    # Fallback if all retries fail
+    print("🔄 Using fallback after Gemini failures...")
+    fallback_posts = [
+        "Just a reminder: pay your quarterly taxes if you're a freelancer! It's not fun, but avoiding penalties is even better. 💸 What's your strategy for setting aside tax money? #FreelanceFinance #Taxes #Adulting",
+        "Compound interest is literally free money. The sooner you start saving, the less you actually have to save. Mind-blowing, right? 🤯 What's your favorite 'money magic' fact? #PersonalFinance #Investing #CompoundInterest",
+        "Green investing isn't just good for the planet—it's becoming really good for returns too. 🌱 Have you looked into ESG funds? What's been your experience? #SustainableInvesting #GreenFinance #ESG"
+    ]
+    
+    # Filter out duplicates from fallback posts
+    non_duplicate_posts = [
+        p for p in fallback_posts 
+        if not is_duplicate_tip(p.split('\n')[0])
+    ]
+    
+    if non_duplicate_posts:
+        chosen_post = random.choice(non_duplicate_posts)
+        return {
+            'full_post': chosen_post,
+            'image_text': chosen_post.split('\n')[0]
         }
-    ]
-    
-    # Filter out duplicates from fallback tips
-    non_duplicate_tips = [
-        t for t in fallback_tips 
-        if not is_duplicate_tip(t)
-    ]
-    
-    if non_duplicate_tips:
-        return random.choice(non_duplicate_tips)
     else:
         # If all fallbacks are duplicates, return a random one anyway
-        print("⚠️ All fallback tips are duplicates, using random one")
-        return random.choice(fallback_tips)
+        print("⚠️ All fallback posts are duplicates, using random one")
+        chosen_post = random.choice(fallback_posts)
+        return {
+            'full_post': chosen_post,
+            'image_text': chosen_post.split('\n')[0]
+        }
 
 def get_pixabay_image():
-    """Get a random image from Pixabay API - UPDATED CATEGORIES FOR FREELANCE FINANCE"""
+    """Get a random image from Pixabay API - EXPANDED CATEGORIES"""
     try:
         api_key = os.environ.get("PIXABAY_KEY")
         if not api_key:
             print("❌ PIXABAY_KEY not found in environment variables")
             return None
             
-        # UPDATED CATEGORIES FOR FREELANCE/FINANCE THEME
+        # EXPANDED CATEGORIES FOR FINANCE + GREEN THEMES
         categories = ["home office", "laptop", "money", "calculator", "finance", 
-                     "freelance", "workspace", "tax", "budget", "entrepreneur"]
+                     "freelance", "workspace", "tax", "budget", "entrepreneur",
+                     "nature", "renewable energy", "sustainability", "earth", "green",
+                     "savings", "investment", "growth", "planning", "success"]
         category = random.choice(categories)
         
         print(f"🌄 Searching Pixabay for: {category}")
@@ -492,8 +407,8 @@ def get_pixabay_image():
         print(f"❌ Error fetching image from Pixabay: {e}")
         return None
 
-def create_freelance_image(tip_data):
-    """Create freelance finance-themed image with Pixabay background and text overlay"""
+def create_finance_image(image_text):
+    """Create finance-themed image with Pixabay background and text overlay"""
     width, height = 1200, 1200
     
     # Try to get a Pixabay image first
@@ -548,7 +463,7 @@ def create_freelance_image(tip_data):
     
     # Wrap the main tip text
     max_chars_per_line = 22
-    wrapped_tip = textwrap.fill(tip_data['main_tip'], width=max_chars_per_line)
+    wrapped_tip = textwrap.fill(image_text, width=max_chars_per_line)
     
     # Calculate text position
     bbox = draw.textbbox((0, 0), wrapped_tip, font=tip_font)
@@ -580,52 +495,8 @@ def create_freelance_image(tip_data):
     background.save(output_buffer, format="JPEG", quality=95)
     return output_buffer.getvalue()
 
-def create_facebook_caption(tip_data):
-    """Create Facebook caption with freelance finance advice and CTA - UPDATED"""
-    # Random header options - UPDATED
-    headers = [
-        "Freelance Finance Tip",
-        "Gig Economy Money Advice",
-        "Freelancer Tax Tip",
-        "Variable Income Strategy",
-        "Freelance Budgeting",
-        "1099 Income Advice",
-        "Self-Employed Finance",
-        "Freelancer Money Management"
-    ]
-    
-    header = random.choice(headers)
-    
-    # Random CTA options - UPDATED
-    cta_options = [
-        "👍 Like and share if this helps your freelance business! Follow for daily money tips!",
-        "💼 Struggling with freelance finances? Follow for practical advice for gig workers!",
-        "🚀 Share this with a freelancer friend! Follow for more financial strategies!",
-        "📈 Want to master your freelance finances? Follow for daily tips!",
-        "👥 Tag a fellow freelancer who needs this! Follow for more money management advice!"
-    ]
-    
-    cta = random.choice(cta_options)
-    
-    # UPDATED CAPTION FOR FREELANCE FINANCE
-    caption = f"""{header}:
-
-{tip_data['main_tip']}
-
-💡 {tip_data['explanation']}
-
-💬 What's your #1 freelance finance challenge? Share below!
-
-{cta}
-
-{tip_data['hashtags']}
-
-#FreelanceFinance #GigEconomy #VariableIncome #FreelancerTips"""
-    
-    return caption
-
-def post_to_facebook(image_data, tip_data):
-    """Post the image to Facebook Page with freelance finance advice caption"""
+def post_to_facebook(image_data, post_data):
+    """Post the image to Facebook Page with the AI-generated caption"""
     try:
         page_id = os.environ.get("FB_PAGE_ID")
         access_token = os.environ.get("FB_PAGE_TOKEN")
@@ -637,18 +508,18 @@ def post_to_facebook(image_data, tip_data):
         # Upload image to Facebook
         url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
         
-        # Create caption
-        caption = create_facebook_caption(tip_data)
+        # Use the AI-generated full post as the caption
+        caption = post_data['full_post']
         
-        files = {'source': ('freelance_finance_tip.jpg', image_data, 'image/jpeg')}
+        files = {'source': ('finance_tip.jpg', image_data, 'image/jpeg')}
         data = {'message': caption, 'access_token': access_token}
         
         response = requests.post(url, files=files, data=data, timeout=30)
         
         if response.status_code == 200:
             result = response.json()
-            # Save to posted tips history to prevent duplicates
-            if save_posted_tip(tip_data):
+            # Save to posted tips history to prevent duplicates (using first line)
+            if save_posted_tip(post_data['image_text']):
                 print(f"✅ Successfully posted to Facebook! Post ID: {result.get('id')}")
             else:
                 print(f"⚠️ Posted to Facebook but failed to save to history: {result.get('id')}")
@@ -663,8 +534,8 @@ def post_to_facebook(image_data, tip_data):
         return False
 
 def main():
-    """Main function to run the entire process - UPDATED MESSAGING"""
-    print("🚀 Starting freelance finance coach tip generation and posting process...")
+    """Main function to run the entire process"""
+    print("🚀 Starting freelance finance content generation and posting process...")
     print(f"📁 History file location: {POST_HISTORY_FILE}")
     
     # Check environment variables
@@ -680,27 +551,20 @@ def main():
     posted_tips = load_posted_tips()
     print(f"📊 Existing tips in history: {len(posted_tips)}")
     
-    # Generate practical freelance finance tip (try trend-based first, fallback to regular)
-    try:
-        tip_data = generate_trend_based_tip()
-        print("🎯 Generated trend-based freelance finance tip")
-    except Exception as e:
-        print(f"❌ Error with trend-based generation: {e}, using regular freelance finance tip")
-        tip_data = generate_freelance_tip()
+    # Generate a varied finance post
+    post_data = generate_finance_post()
+    print("🎯 Generated finance post")
+    print(f"📝 Full Post:\n{post_data['full_post']}")
     
-    print(f"💡 Main Tip: {tip_data['main_tip']}")
-    print(f"📝 Explanation: {tip_data['explanation']}")
-    print(f"🏷️ Hashtags: {tip_data['hashtags']}")
-    
-    # Create image with main tip text only
-    final_image = create_freelance_image(tip_data)
-    print("🎨 Freelance finance image created")
+    # Create image with the first line of the post
+    final_image = create_finance_image(post_data['image_text'])
+    print("🎨 Finance image created")
     
     # Post to Facebook
-    success = post_to_facebook(final_image, tip_data)
+    success = post_to_facebook(final_image, post_data)
     
     if success:
-        print("✅ Process completed successfully! The freelance finance tip has been shared.")
+        print("✅ Process completed successfully! The finance post has been shared.")
     else:
         print("❌ Process completed with errors")
 
