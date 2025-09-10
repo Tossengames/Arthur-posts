@@ -2,7 +2,7 @@
 """
 Tenchu Series Content Generator: Generate content about Tenchu games - characters, weapons, stages, music, and lore.
 Creates images with text overlay and posts to Facebook Page.
-Uses Google Images search for Tenchu-specific images with intelligent selection.
+Uses Google Images search for Tenchu-specific images with intelligent selection and fallback.
 """
 
 import os
@@ -184,8 +184,8 @@ def search_google_images(query, num_results=5):
             # Extract image URLs from search results
             if hasattr(result, 'url'):
                 url = result.url
-                # Filter for image URLs
-                if any(ext in url for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                # Filter for image URLs - check for common image extensions
+                if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
                     image_urls.append(url)
                     if len(image_urls) >= 3:  # Limit to 3 images
                         break
@@ -198,18 +198,36 @@ def search_google_images(query, num_results=5):
         return None
 
 def download_image(url):
-    """Download an image from a URL"""
+    """Download an image from a URL with proper error handling"""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
         response = requests.get(url, headers=headers, timeout=15)
+        
+        # Check if the response is successful and contains actual image data
         if response.status_code == 200:
-            return BytesIO(response.content)
+            # Check if the response contains image data by checking content-type
+            content_type = response.headers.get('content-type', '').lower()
+            if 'image' in content_type:
+                # Check if the response content is not empty or HTML
+                content = response.content
+                if content and len(content) > 1024:  # Ensure it's not a small file (likely error page)
+                    # Check if it's not HTML content disguised as an image
+                    if not content.startswith(b'<!DOCTYPE html') and not content.startswith(b'<html'):
+                        return BytesIO(content)
+                    else:
+                        print(f"❌ Downloaded HTML content instead of image from {url}")
+                else:
+                    print(f"❌ Downloaded empty or too small image from {url}")
+            else:
+                print(f"❌ Non-image content type: {content_type} from {url}")
         else:
-            print(f"❌ Failed to download image: {response.status_code}")
-            return None
+            print(f"❌ Failed to download image: {response.status_code} from {url}")
+        
+        return None
+        
     except Exception as e:
         print(f"❌ Error downloading image: {e}")
         return None
@@ -276,16 +294,24 @@ def get_tenchu_image(topic, image_text):
                     print(f"✅ Successfully downloaded Tenchu image for: {search_query}")
                     return image_data
         
-        # Fallback to general Tenchu search if specific search fails
+        # If specific search fails, try a general Tenchu search
         print(f"🔄 Falling back to general Tenchu image search")
-        fallback_urls = search_google_images("Tenchu ninja stealth game")
+        fallback_queries = [
+            "Tenchu ninja stealth game",
+            "Tenchu PlayStation game",
+            "Tenchu stealth assassins",
+            "Tenchu game art",
+            "Tenchu character art"
+        ]
         
-        if fallback_urls:
-            for url in fallback_urls:
-                image_data = download_image(url)
-                if image_data:
-                    print("✅ Successfully downloaded fallback Tenchu image")
-                    return image_data
+        for query in fallback_queries:
+            fallback_urls = search_google_images(query)
+            if fallback_urls:
+                for url in fallback_urls:
+                    image_data = download_image(url)
+                    if image_data:
+                        print(f"✅ Successfully downloaded fallback Tenchu image from: {query}")
+                        return image_data
         
         print("❌ Could not find any Tenchu images, using solid background")
         return None
