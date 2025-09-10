@@ -2,7 +2,7 @@
 """
 Tenchu Series Content Generator: Generate content about Tenchu games - characters, weapons, stages, music, and lore.
 Creates images with text overlay and posts to Facebook Page.
-Uses Google Images search for Tenchu-specific images.
+Uses Google Images search for Tenchu-specific images with intelligent selection.
 """
 
 import os
@@ -47,6 +47,28 @@ except ImportError:
 
 # File to store posted tips for duplication check - using absolute path
 POST_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "posted_tenchu_content.json")
+
+# Tenchu character database
+TENCHU_CHARACTERS = {
+    "rikimaru": ["Tenchu Rikimaru", "Rikimaru character", "Rikimaru ninja"],
+    "ayame": ["Tenchu Ayame", "Ayame kunoichi", "Ayame character"],
+    "tatsumaru": ["Tenchu Tatsumaru", "Tatsumaru character"],
+    "tesshu": ["Tenchu Tesshu", "Tesshu Fujioka", "Tesshu character"],
+    "onikage": ["Tenchu Onikage", "Onikage villain", "Onikage character"],
+    "lord gohda": ["Lord Gohda", "Matsunoshin Gohda", "Gohda character"],
+    "princess kiku": ["Princess Kiku", "Kiku character"],
+    "princess rin": ["Princess Rin", "Rin character"],
+    "shiunsai": ["Shiunsai Azuma", "Master Shiunsai"],
+}
+
+# Tenchu games database
+TENCHU_GAMES = {
+    "tenchu 1": ["Tenchu Stealth Assassins", "Tenchu 1 game"],
+    "tenchu 2": ["Tenchu Birth of the Stealth Assassins", "Tenchu 2 game"],
+    "tenchu 3": ["Tenchu Wrath of Heaven", "Tenchu Return from Darkness", "Tenchu 3 game"],
+    "tenchu 4": ["Tenchu Fatal Shadows", "Tenchu 4 game"],
+    "tenchu z": ["Tenchu Z game", "Tenchu Xbox"],
+}
 
 def load_posted_tips():
     """Load history of posted content to avoid duplicates"""
@@ -148,12 +170,9 @@ def search_google_images(query, num_results=5):
             
         print(f"🔍 Searching Google Images for: {query}")
         
-        # Add "Tenchu" to the query to ensure relevance
-        search_query = f"Tenchu {query} game character art"
-        
         # Perform Google search
         results = list(google_search(
-            search_query, 
+            query, 
             num_results=num_results,
             pause=2.0,
             advanced=True,
@@ -195,22 +214,71 @@ def download_image(url):
         print(f"❌ Error downloading image: {e}")
         return None
 
-def get_tenchu_image(topic):
-    """Get a Tenchu-specific image based on the topic"""
+def determine_image_search_query(topic, image_text):
+    """Determine the best search query based on the topic and content"""
+    # Convert to lowercase for easier matching
+    topic_lower = topic.lower()
+    text_lower = image_text.lower()
+    
+    # First, check if this is about a specific character
+    for char_name, search_terms in TENCHU_CHARACTERS.items():
+        if char_name in topic_lower or char_name in text_lower:
+            print(f"🎯 Detected character: {char_name}")
+            return random.choice(search_terms)
+    
+    # Check for game-specific content
+    for game_name, search_terms in TENCHU_GAMES.items():
+        if game_name in topic_lower or game_name in text_lower:
+            print(f"🎮 Detected game: {game_name}")
+            return random.choice(search_terms)
+    
+    # Check for music/soundtrack content
+    music_keywords = ["music", "soundtrack", "noriyuki asakura", "sound", "theme"]
+    if any(keyword in topic_lower or keyword in text_lower for keyword in music_keywords):
+        print("🎵 Detected music content")
+        # For music, use the associated game imagery
+        if "tenchu 3" in topic_lower or "wrath of heaven" in topic_lower:
+            return "Tenchu 3 Wrath of Heaven game"
+        elif "tenchu 2" in topic_lower or "birth of the stealth assassins" in topic_lower:
+            return "Tenchu 2 Birth of the Stealth Assassins game"
+        else:
+            return "Tenchu game soundtrack"
+    
+    # Check for stage/location content
+    stage_keywords = ["stage", "castle", "temple", "forest", "village", "azuma", "gohda"]
+    if any(keyword in topic_lower or keyword in text_lower for keyword in stage_keywords):
+        print("🏯 Detected stage/location content")
+        # For stages, use imagery from the associated game
+        if "tenchu 3" in topic_lower:
+            return "Tenchu 3 game stages"
+        elif "tenchu 2" in topic_lower:
+            return "Tenchu 2 game stages"
+        else:
+            return "Tenchu game locations"
+    
+    # Default fallback - general Tenchu search
+    print("🔍 Using general Tenchu search")
+    return "Tenchu stealth assassins game"
+
+def get_tenchu_image(topic, image_text):
+    """Get a Tenchu-specific image based on the topic and content"""
     try:
-        # First try to search Google Images for the specific topic
-        image_urls = search_google_images(topic)
+        # Determine the best search query
+        search_query = determine_image_search_query(topic, image_text)
+        
+        # Search for images
+        image_urls = search_google_images(search_query)
         
         if image_urls:
             for url in image_urls:
                 image_data = download_image(url)
                 if image_data:
-                    print(f"✅ Successfully downloaded Tenchu image for: {topic}")
+                    print(f"✅ Successfully downloaded Tenchu image for: {search_query}")
                     return image_data
         
-        # Fallback to general Tenchu search if specific topic fails
-        print(f"🔄 Falling back to general Tenchu image search for: {topic}")
-        fallback_urls = search_google_images("Tenchu ninja stealth")
+        # Fallback to general Tenchu search if specific search fails
+        print(f"🔄 Falling back to general Tenchu image search")
+        fallback_urls = search_google_images("Tenchu ninja stealth game")
         
         if fallback_urls:
             for url in fallback_urls:
@@ -331,6 +399,8 @@ def generate_tenchu_post():
                     retry_count += 1
                     continue
                 
+                # Store the original topic for image selection
+                post_data['topic'] = selected_topic
                 return post_data
             else:
                 raise Exception("Invalid response format from Gemini. Missing IMAGE_HOOK or FULL_CAPTION.")
@@ -347,15 +417,18 @@ def generate_tenchu_post():
     fallback_posts = [
         {
             'image_text': "Rikimaru: The silent blade of Azuma.",
-            'full_post': "Rikimaru's stoic demeanor and unmatched sword skills made him the perfect assassin for the Azuma clan. His loyalty to Lord Gohda was absolute, even when faced with impossible missions.\n\nWhich Rikimaru moment stands out most in your memory? Share your favorite assassination!\n\n#Tenchu #Rikimaru #StealthAssassin #AzumaClan #NinjaGames"
+            'full_post': "Rikimaru's stoic demeanor and unmatched sword skills made him the perfect assassin for the Azuma clan. His loyalty to Lord Gohda was absolute, even when faced with impossible missions.\n\nWhich Rikimaru moment stands out most in your memory? Share your favorite assassination!\n\n#Tenchu #Rikimaru #StealthAssassin #AzumaClan #NinjaGames",
+            'topic': "Rikimaru"
         },
         {
             'image_text': "Ayame's grace defines silent elimination.",
-            'full_post': "Ayame brought speed and agility to the Azuma clan, complementing Rikimaru's strength. Her kodachi techniques were as beautiful as they were deadly, making her one of the most memorable female protagonists in gaming.\n\nWhat was your most impressive Ayame stealth kill? Describe it below! ⚔️\n\n#Tenchu #Ayame #FemaleProtagonist #StealthGame #ClassicGaming"
+            'full_post': "Ayame brought speed and agility to the Azuma clan, complementing Rikimaru's strength. Her kodachi techniques were as beautiful as they were deadly, making her one of the most memorable female protagonists in gaming.\n\nWhat was your most impressive Ayame stealth kill? Describe it below! ⚔️\n\n#Tenchu #Ayame #FemaleProtagonist #StealthGame #ClassicGaming",
+            'topic': "Ayame"
         },
         {
             'image_text': "Stealth kills: The heart of Tenchu.",
-            'full_post': "The satisfaction of a perfect stealth kill never gets old. From environmental assassinations to creative use of tools, Tenchu perfected the art of silent elimination years before other stealth games.\n\nWhat's your personal record for stealth kills in a single mission? Let's compare techniques! 🎯\n\n#Tenchu #StealthKills #NinjaAssassin #GamingHistory #StealthGame"
+            'full_post': "The satisfaction of a perfect stealth kill never gets old. From environmental assassinations to creative use of tools, Tenchu perfected the art of silent elimination years before other stealth games.\n\nWhat's your personal record for stealth kills in a single mission? Let's compare techniques! 🎯\n\n#Tenchu #StealthKills #NinjaAssassin #GamingHistory #StealthGame",
+            'topic': "Stealth kills"
         }
     ]
     
@@ -370,14 +443,16 @@ def generate_tenchu_post():
     else:
         # If all fallbacks are duplicates, return a random one anyway
         print("⚠️ All fallback posts are duplicates, using random one")
-        return random.choice(fallback_posts)
+        post = random.choice(fallback_posts)
+        post['topic'] = post['image_text'].split(':')[0] if ':' in post['image_text'] else post['image_text']
+        return post
 
 def create_tenchu_image(image_text, topic):
     """Create Tenchu-themed image with appropriate background and text overlay"""
     width, height = 1200, 1200
     
-    # Try to get a Tenchu-specific image based on the topic
-    image_bytes = get_tenchu_image(topic)
+    # Try to get a Tenchu-specific image based on the topic and content
+    image_bytes = get_tenchu_image(topic, image_text)
     
     if image_bytes:
         try:
@@ -511,13 +586,10 @@ def main():
     print("🎯 Generated Tenchu post")
     print(f"🖼️  Image Hook: {post_data['image_text']}")
     print(f"📝 Full Caption: {post_data['full_post']}")
-    
-    # Extract the main topic from the image text for image search
-    topic = post_data['image_text'].split(':')[0] if ':' in post_data['image_text'] else post_data['image_text']
-    topic = topic.replace('"', '').strip()
+    print(f"🎯 Topic: {post_data['topic']}")
     
     # Create image with the short, clean hook
-    final_image = create_tenchu_image(post_data['image_text'], topic)
+    final_image = create_tenchu_image(post_data['image_text'], post_data['topic'])
     print("🎨 Tenchu image created")
     
     # Post to Facebook
