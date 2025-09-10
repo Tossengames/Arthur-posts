@@ -2,6 +2,7 @@
 """
 Tenchu Series Content Generator: Generate content about Tenchu games - characters, weapons, stages, music, and lore.
 Creates images with text overlay and posts to Facebook Page.
+Uses Google Images search for Tenchu-specific images.
 """
 
 import os
@@ -14,6 +15,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 from io import BytesIO
 import time
+import re
 
 # Try the new Google GenAI SDK import first
 try:
@@ -33,6 +35,15 @@ except ImportError:
         print("   or")
         print("   pip install google-generativeai  # For old SDK")
         exit(1)
+
+# Try to import google search for images
+try:
+    from googlesearch import search as google_search
+    GOOGLE_SEARCH_AVAILABLE = True
+    print("✅ Using googlesearch-python for image searches")
+except ImportError:
+    GOOGLE_SEARCH_AVAILABLE = False
+    print("❌ googlesearch-python not available")
 
 # File to store posted tips for duplication check - using absolute path
 POST_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "posted_tenchu_content.json")
@@ -127,6 +138,93 @@ def get_tenchu_topics():
         "Hidden areas", "Secret techniques", "Multiple endings"
     ]
     return random.sample(tenchu_topics, min(5, len(tenchu_topics)))
+
+def search_google_images(query, num_results=5):
+    """Search Google Images for Tenchu-related content"""
+    try:
+        if not GOOGLE_SEARCH_AVAILABLE:
+            print("❌ Google search not available for images")
+            return None
+            
+        print(f"🔍 Searching Google Images for: {query}")
+        
+        # Add "Tenchu" to the query to ensure relevance
+        search_query = f"Tenchu {query} game character art"
+        
+        # Perform Google search
+        results = list(google_search(
+            search_query, 
+            num_results=num_results,
+            pause=2.0,
+            advanced=True,
+            extra_params={"tbm": "isch"}  # Image search
+        ))
+        
+        image_urls = []
+        for result in results:
+            # Extract image URLs from search results
+            if hasattr(result, 'url'):
+                url = result.url
+                # Filter for image URLs
+                if any(ext in url for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                    image_urls.append(url)
+                    if len(image_urls) >= 3:  # Limit to 3 images
+                        break
+        
+        print(f"✅ Found {len(image_urls)} image URLs")
+        return image_urls
+        
+    except Exception as e:
+        print(f"❌ Error searching Google Images: {e}")
+        return None
+
+def download_image(url):
+    """Download an image from a URL"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            return BytesIO(response.content)
+        else:
+            print(f"❌ Failed to download image: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"❌ Error downloading image: {e}")
+        return None
+
+def get_tenchu_image(topic):
+    """Get a Tenchu-specific image based on the topic"""
+    try:
+        # First try to search Google Images for the specific topic
+        image_urls = search_google_images(topic)
+        
+        if image_urls:
+            for url in image_urls:
+                image_data = download_image(url)
+                if image_data:
+                    print(f"✅ Successfully downloaded Tenchu image for: {topic}")
+                    return image_data
+        
+        # Fallback to general Tenchu search if specific topic fails
+        print(f"🔄 Falling back to general Tenchu image search for: {topic}")
+        fallback_urls = search_google_images("Tenchu ninja stealth")
+        
+        if fallback_urls:
+            for url in fallback_urls:
+                image_data = download_image(url)
+                if image_data:
+                    print("✅ Successfully downloaded fallback Tenchu image")
+                    return image_data
+        
+        print("❌ Could not find any Tenchu images, using solid background")
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error in get_tenchu_image: {e}")
+        return None
 
 def generate_tenchu_post():
     """Generate a Tenchu series post using Gemini."""
@@ -274,63 +372,12 @@ def generate_tenchu_post():
         print("⚠️ All fallback posts are duplicates, using random one")
         return random.choice(fallback_posts)
 
-def get_tenchu_image():
-    """Get a ninja/feudal Japan themed image from Pixabay API"""
-    try:
-        api_key = os.environ.get("PIXABAY_KEY")
-        if not api_key:
-            print("❌ PIXABAY_KEY not found in environment variables")
-            return None
-            
-        # Ninja and feudal Japan themed categories
-        categories = ["ninja", "samurai", "japan", "feudal", "temple", "castle", 
-                     "bamboo", "night", "moon", "shadow", "stealth", "assassin",
-                     "sword", "shuriken", "traditional", "ancient", "dojo"]
-        category = random.choice(categories)
-        
-        print(f"🌄 Searching Pixabay for: {category}")
-        
-        url = "https://pixabay.com/api/"
-        params = {
-            "key": api_key,
-            "q": category,
-            "image_type": "photo",
-            "orientation": "horizontal",
-            "per_page": 20,
-            "safesearch": "true"
-        }
-        
-        response = requests.get(url, params=params, timeout=15)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data['hits']:
-                # Select a random image from the results
-                image_data = random.choice(data['hits'])
-                image_url = image_data["largeImageURL"]
-                
-                print(f"✅ Found Pixabay image: {image_url}")
-                
-                # Download the image
-                img_response = requests.get(image_url, timeout=15)
-                return BytesIO(img_response.content)
-            else:
-                print(f"❌ No images found for category: {category}")
-                return None
-        else:
-            print(f"❌ Pixabay API error: {response.status_code}")
-            return None
-            
-    except Exception as e:
-        print(f"❌ Error fetching image from Pixabay: {e}")
-        return None
-
-def create_tenchu_image(image_text):
+def create_tenchu_image(image_text, topic):
     """Create Tenchu-themed image with appropriate background and text overlay"""
     width, height = 1200, 1200
     
-    # Try to get a ninja/Japan themed image first
-    image_bytes = get_tenchu_image()
+    # Try to get a Tenchu-specific image based on the topic
+    image_bytes = get_tenchu_image(topic)
     
     if image_bytes:
         try:
@@ -342,27 +389,15 @@ def create_tenchu_image(image_text):
             enhancer = ImageEnhance.Brightness(background)
             background = enhancer.enhance(0.7)  # Darken slightly
             
-            print("✅ Using themed background image")
+            print("✅ Using Tenchu-specific background image")
             
         except Exception as e:
-            print(f"❌ Error processing image: {e}")
+            print(f"❌ Error processing Tenchu image: {e}")
             # Fallback to dark, ninja-appropriate color background
-            ninja_colors = [
-                '#1a1a1a', '#2d2d2d', '#3a3a3a', '#4a4a4a', '#2d1a1a',
-                '#1a2d2d', '#2d1a2d', '#1a2d1a', '#2d2d1a', '#1a1a2d'
-            ]
-            bg_color = random.choice(ninja_colors)
-            background = Image.new('RGB', (width, height), color=bg_color)
-            print("✅ Using fallback dark color background")
+            background = create_fallback_background(width, height)
     else:
         # Fallback to dark, ninja-appropriate color background
-        ninja_colors = [
-            '#1a1a1a', '#2d2d2d', '#3a3a3a', '#4a4a4a', '#2d1a1a',
-            '#1a2d2d', '#2d1a2d', '#1a2d1a', '#2d2d1a', '#1a1a2d'
-        ]
-        bg_color = random.choice(ninja_colors)
-        background = Image.new('RGB', (width, height), color=bg_color)
-        print("✅ Using fallback dark color background")
+        background = create_fallback_background(width, height)
     
     # Create drawing context
     draw = ImageDraw.Draw(background)
@@ -405,6 +440,15 @@ def create_tenchu_image(image_text):
     output_buffer = BytesIO()
     background.save(output_buffer, format="JPEG", quality=95)
     return output_buffer.getvalue()
+
+def create_fallback_background(width, height):
+    """Create a fallback background with ninja-appropriate colors"""
+    ninja_colors = [
+        '#1a1a1a', '#2d2d2d', '#3a3a3a', '#4a4a4a', '#2d1a1a',
+        '#1a2d2d', '#2d1a2d', '#1a2d1a', '#2d2d1a', '#1a1a2d'
+    ]
+    bg_color = random.choice(ninja_colors)
+    return Image.new('RGB', (width, height), color=bg_color)
 
 def post_to_facebook(image_data, post_data):
     """Post the image to Facebook Page with the AI-generated caption"""
@@ -450,7 +494,7 @@ def main():
     print(f"📁 History file location: {POST_HISTORY_FILE}")
     
     # Check environment variables
-    required_env_vars = ["GEMINI_API_KEY", "PIXABAY_KEY", "FB_PAGE_ID", "FB_PAGE_TOKEN"]
+    required_env_vars = ["GEMINI_API_KEY", "FB_PAGE_ID", "FB_PAGE_TOKEN"]
     missing_vars = [var for var in required_env_vars if not os.environ.get(var)]
     
     if missing_vars:
@@ -468,8 +512,12 @@ def main():
     print(f"🖼️  Image Hook: {post_data['image_text']}")
     print(f"📝 Full Caption: {post_data['full_post']}")
     
+    # Extract the main topic from the image text for image search
+    topic = post_data['image_text'].split(':')[0] if ':' in post_data['image_text'] else post_data['image_text']
+    topic = topic.replace('"', '').strip()
+    
     # Create image with the short, clean hook
-    final_image = create_tenchu_image(post_data['image_text'])
+    final_image = create_tenchu_image(post_data['image_text'], topic)
     print("🎨 Tenchu image created")
     
     # Post to Facebook
