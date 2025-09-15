@@ -3,7 +3,6 @@ name: Soccer News Posts
 on:
   workflow_dispatch:
   schedule:
-    # Schedule to run at soccer-specific UTC hours (3 times a day)
     - cron: '0 0,8,19 * * *'  # Runs at 00:00, 08:00, and 19:00 UTC
 
 jobs:
@@ -19,7 +18,10 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install feedparser
+          pip install requests
+          pip install python-dotenv
 
       - name: Run Soccer News Post Script
         env:
