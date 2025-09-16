@@ -46,7 +46,7 @@ def extract_keywords(text):
         "first", "following", "for", "formerly", "forth", "forward", "from", "further",
         "generally", "hardly", "hence", "hereafter", "hereby", "herein", "hereupon", "how",
         "however", "if", "immediately", "in", "inc", "indeed", "instead", "into", "last",
-        "later", "least", "less", "likewise", "little", "long", "mainly", "many", "may",
+        "later", "least", "less", "likewise", "little", "long", "mainly", "any", "may",
         "maybe", "meanwhile", "merely", "might", "more", "moreover", "most", "mostly", "much",
         "must", "my", "namely", "near", "nearly", "never", "nevertheless", "next", "no",
         "none", "nonetheless", "noone", "nor", "not", "nothing", "now", "nowhere", "obviously",
@@ -312,8 +312,9 @@ def post_soccer_news():
             "ابدأ مباشرة بالمحتوى الرئيسي بدون أي تحيات أو مقدمات. "
             "ركز على العناوين الرئيسية والأخبار المهمة فقط. "
             "استخدم نبرة احترافية ورياضية. "
-            "قم بتنسيق المنشور بفقرات واضحة ورموز تعبيرية مناسبة. "
+            "استخدم فقرات واضحة ورموز تعبيرية مناسبة. "
             "اختتم بدعوة الجمهور للمشاركة والتعليق. "
+            "لا تستخدم أي تنسيق ماركداون مثل العناوين أو التسطير أو التمييز. "
             "لا تدرج أي روابط في المنشور النهائي. "
             "إليك الأخبار:\n\n" + raw_combined
         )
@@ -376,7 +377,7 @@ def post_soccer_news():
             "📢 أبرز العناوين:\n\n"
             "⚽ لا توجد أخبار كرة قدم رئيسية الآن\n\n"
             "ما رأيكم في هذه التطورات؟ شاركونا آراءكم 👇\n\n"
-            "#كرة_القدم #أخبار_الكرة #متابعات_кروية"
+            "#كرة_القدم #أخبار_الكرة #متابعات_كروية"
         )
 
     fb_post(fallback_message, image_urls_to_post if image_urls_to_post else None)
