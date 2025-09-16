@@ -16,7 +16,7 @@ GEMINI = os.getenv("GEMINI_API_KEY")
 
 # Popular soccer RSS feeds
 SOCCER_RSS_FEEDS = [
-    "https://www.espn.com/espn/rss/soccer/news",  # ESPN Soccer News
+     "https://www.espn.com/espn/rss/soccer/news",  # ESPN Soccer News
     "https://www.bbc.co.uk/sport/football/rss.xml",  # BBC Football
     "https://www.skysports.com/rss/12040",  # Sky Sports Football
     "https://www.goal.com/feeds/en/news",  # Goal.com News
