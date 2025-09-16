@@ -16,7 +16,7 @@ GEMINI = os.getenv("GEMINI_API_KEY")
 
 # Popular soccer RSS feeds
 SOCCER_RSS_FEEDS = [
-     "https://www.espn.com/espn/rss/soccer/news",  # ESPN Soccer News
+    "https://www.espn.com/espn/rss/soccer/news",  # ESPN Soccer News
     "https://www.bbc.co.uk/sport/football/rss.xml",  # BBC Football
     "https://www.skysports.com/rss/12040",  # Sky Sports Football
     "https://www.goal.com/feeds/en/news",  # Goal.com News
@@ -48,7 +48,7 @@ def extract_keywords(text):
         "however", "if", "immediately", "in", "inc", "indeed", "instead", "into", "last",
         "later", "least", "less", "likewise", "little", "long", "mainly", "many", "may",
         "maybe", "meanwhile", "merely", "might", "more", "moreover", "most", "mostly", "much",
-        "must", "my", "namely", "near", "nearly", "never", "nevertheless", "next", "no",
+        "must", "my", "namely", "near", "narly", "never", "nevertheless", "next", "no",
         "none", "nonetheless", "noone", "nor", "not", "nothing", "now", "nowhere", "obviously",
         "of", "off", "often", "on", "once", "one", "only", "onto", "or", "other", "otherwise",
         "our", "out", "outside", "over", "overall", "perhaps", "quite", "rather", "really",
@@ -197,9 +197,9 @@ def post_soccer_news():
         if not entries:
             print("❌ No soccer news entries found from any RSS feed.")
             fallback_message = (
-                "⚽ لا توجد أخبار كرة قدم رئيسية للإبلاغ عنها الآن! "
-                "قد يكون عالم كرة القدم هادئًا، لكن العمل دائمًا قاب قوسين أو أدنى! "
-                "ما هي لحظة كرة القدم المفضلة لديك على الإطلاق؟ دعنا نعرف! 👇 "
+                "📢 أبرز العناوين:\n\n"
+                "⚽ لا توجد أخبار كرة قدم رئيسية الآن\n\n"
+                "ما رأيكم في هذه التطورات؟ شاركونا آراءكم 👇\n\n"
                 "#كرة_القدم #أخبار_الكرة #متابعات_كروية"
             )
             fb_post(fallback_message)
@@ -250,17 +250,14 @@ def post_soccer_news():
         generated_keywords = extract_keywords(" ".join(all_text_for_keywords))
 
         prompt = (
-            "قم بتلخيص عناوين أخبار كرة القدم التالية في منشور فيسبوك جذاب "
-            "لعشاق كرة القدم. استخدم نبرة حماسية وعادية. "
-            "قم بتنسيق المنشور بفقرات ورموز تعبيرية استراتيجية لتحسين قابلية القراءة. "
-            "اختتم بدعوة قوية للجمهور للإعجاب والمشاركة والتعليق على آرائهم، "
-            "وانتهي بـ 3-4 وسوم ذات صلة. "
-            "لا تدرج روابط في المنشور النهائي. "
-            "يجب أن يكون النص باللغة العربية الفصحى فقط. "
-            "استخدم اللغة العربية الرسمية المناسبة للمحتوى الرياضي. "
-            "إليك الأخبار:\n\n" + raw_combined +
-            ("\n\nكما يمكنك النظر في هذه الكلمات المفتاحية للوسوم الإضافية: " +
-            ", ".join(generated_keywords) if generated_keywords else "")
+            "أنشئ منشور فيسبوك باللغة العربية الفصحى فقط عن أخبار كرة القدم التالية. "
+            "ابدأ مباشرة بالمحتوى الرئيسي بدون أي تحيات أو مقدمات. "
+            "ركز على العناوين الرئيسية والأخبار المهمة فقط. "
+            "استخدم نبرة احترافية ورياضية. "
+            "قم بتنسيق المنشور بفقرات واضحة ورموز تعبيرية مناسبة. "
+            "اختتم بدعوة الجمهور للمشاركة والتعليق. "
+            "لا تدرج أي روابط في المنشور النهائي. "
+            "إليك الأخبار:\n\n" + raw_combined
         )
 
         try:
@@ -294,40 +291,7 @@ def post_soccer_news():
     except Exception as e:
         print(f"[Soccer News Exception] ❌ An error occurred while processing soccer news: {e}")
     
-    # Fallback if anything above fails (in Arabic)
-    emoji_list = ["⚽", "🔥", "👟", "🏆", "🚨", "📢"]
-    clean_posts = []
-
+    # Fallback if anything above fails (direct to headlines)
     if entries:
-        for i, entry in enumerate(entries[:3]):
-            emoji = emoji_list[i % len(emoji_list)]
-            title = getattr(entry, 'title', 'Latest Soccer Update').strip()
-            summary = getattr(entry, 'summary', '')[:180].strip().replace('\n', ' ')
-            if title and summary:
-                clean_posts.append(f"{emoji} **{title}**\n{summary}")
-            elif title:
-                clean_posts.append(f"{emoji} **{title}**")
-    
-    if clean_posts:
-        fallback_message = (
-            "⚽ أحدث أخبار كرة القدم:\n\n" +
-            "\n\n".join(clean_posts) +
-            "\n\nما هي آراؤكم حول هذه العناوين؟ أعجب، شارك، وعلق أدناه! 👇"
-        )
-    else:
-        fallback_message = (
-            "⚽ لا توجد أخبار كرة قدم رئيسية للإبلاغ عنها الآن! "
-            "قد يكون عالم كرة القدم هادئًا، لكن العمل دائمًا قاب قوسين أو أدنى! "
-            "ما هي لحظة كرة القدم المفضلة لديك على الإطلاق؟ دعنا نعرف! 👇 "
-            "#كرة_القدم #أخبار_الكرة #متابعات_كروية"
-        )
-
-    fallback_hashtags = "#كرة_القدم #أخبار_الكرة #متابعات_كروية #عشاق_الكرة"
-    if generated_keywords:
-        fallback_hashtags += " " + " ".join([f"#{kw}" for kw in generated_keywords])
-        fallback_hashtags = " ".join(sorted(list(set(fallback_hashtags.split())))[:5])
-
-    fb_post(f"{fallback_message}\n\n{fallback_hashtags}", image_urls_to_post if image_urls_to_post else None)
-
-if __name__ == '__main__':
-    post_soccer_news()
+        headlines = []
+        for
