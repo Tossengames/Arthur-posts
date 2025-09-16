@@ -196,6 +196,20 @@ def get_gaming_news():
     
     return all_entries[:10]  # Return top 10 most recent entries
 
+def clean_facebook_text(text):
+    """Remove markdown formatting that doesn't work well on Facebook"""
+    # Remove **bold** formatting
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    # Remove __bold__ formatting
+    text = re.sub(r'__(.*?)__', r'\1', text)
+    # Remove *italic* formatting
+    text = re.sub(r'\*(.*?)\*', r'\1', text)
+    # Remove _italic_ formatting
+    text = re.sub(r'_(.*?)_', r'\1', text)
+    # Remove any remaining markdown symbols
+    text = re.sub(r'[#`~]', '', text)
+    return text.strip()
+
 def post_gaming_news():
     print("🎮 Fetching latest gaming news from multiple sources...")
     
@@ -279,14 +293,15 @@ def post_gaming_news():
 
         prompt = (
             "قم بإنشاء منشور فيسبوك جذاب عن أخبار ألعاب الفيديو والألعاب المستقلة. "
-            "ابدأ بخطاف قوي وجذاب للانتباه مباشرة بدون تحية أو مقدمة. "
+            "ابدأ مباشرة بخطاف قوي وجذاب للانتباه بدون أي تحية أو مقدمة. "
             "استخدم نبرة حماسية وعادية تناسب مجتمع الألعاب. "
             "قم بتنسيق المنشور بفقرات ورموز تعبيرية استراتيجية لتحسين قابلية القراءة. "
+            "لا تستخدم أي تنسيق مثل العريض أو المائل (** أو __). "
+            "استخدم اللغة العربية الفصحى الرسمية فقط مع الحفاظ على أسماء الألعاب بالإنجليزية. "
             "اختتم بدعوة قوية للجمهور للإعجاب والمشاركة والتعليق على آرائهم، "
             "وانتهي بـ 3-4 وسوم ذات صلة. "
             "لا تدرج روابط في المنشور النهائي. "
-            "يجب أن يكون النص باللغة العربية الفصحى فقط. "
-            "استخدم اللغة العربية الرسمية المناسبة لمحتوى الألعاب. "
+            "يجب أن يكون النص باللغة العربية الفصحى فقط مع إمكانية وجود أسماء الألعاب بالإنجليزية. "
             "إليك الأخبار:\n\n" + raw_combined +
             ("\n\nكما يمكنك النظر في هذه الكلمات المفتاحية للوسوم الإضافية: " +
             ", ".join(generated_keywords) if generated_keywords else "")
@@ -305,7 +320,9 @@ def post_gaming_news():
                 data = response.json()
                 if "candidates" in data and data["candidates"]:
                     ai_summary = data["candidates"][0]["content"]["parts"][0]["text"]
-                    fb_post(ai_summary, image_urls_to_post)
+                    # Clean the text from any markdown formatting
+                    cleaned_summary = clean_facebook_text(ai_summary)
+                    fb_post(cleaned_summary, image_urls_to_post)
                     print("[Gemini Gaming News] Successfully generated and posted content in Arabic.")
                     return
                 else:
@@ -333,9 +350,9 @@ def post_gaming_news():
             title = getattr(entry, 'title', 'Latest Gaming Update').strip()
             summary = getattr(entry, 'summary', '')[:180].strip().replace('\n', ' ')
             if title and summary:
-                clean_posts.append(f"{emoji} **{title}**\n{summary}")
+                clean_posts.append(f"{emoji} {title}\n{summary}")
             elif title:
-                clean_posts.append(f"{emoji} **{title}**")
+                clean_posts.append(f"{emoji} {title}")
     
     if clean_posts:
         fallback_message = (
@@ -355,7 +372,9 @@ def post_gaming_news():
         fallback_hashtags += " " + " ".join([f"#{kw}" for kw in generated_keywords])
         fallback_hashtags = " ".join(sorted(list(set(fallback_hashtags.split())))[:5])
 
-    fb_post(f"{fallback_message}\n\n{fallback_hashtags}", image_urls_to_post if image_urls_to_post else None)
+    # Clean the fallback message from any markdown
+    cleaned_fallback = clean_facebook_text(fallback_message)
+    fb_post(f"{cleaned_fallback}\n\n{fallback_hashtags}", image_urls_to_post if image_urls_to_post else None)
 
 if __name__ == '__main__':
     post_gaming_news()
