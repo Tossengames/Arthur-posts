@@ -188,6 +188,67 @@ def get_soccer_news():
     
     return all_entries[:10]  # Return top 10 most recent entries
 
+def extract_images_from_entry(entry):
+    """Extract images from an RSS entry using multiple methods"""
+    images = []
+    
+    # Method 1: Check media_content
+    if hasattr(entry, 'media_content') and entry.media_content:
+        for media in entry.media_content:
+            if hasattr(media, 'url') and media.url and media.get('type', '').startswith('image/'):
+                images.append(media.url)
+    
+    # Method 2: Check enclosures
+    if hasattr(entry, 'enclosures') and entry.enclosures:
+        for enc in entry.enclosures:
+            if hasattr(enc, 'href') and enc.href and enc.get('type', '').startswith('image/'):
+                images.append(enc.href)
+    
+    # Method 3: Check links
+    if hasattr(entry, 'links') and entry.links:
+        for link in entry.links:
+            if hasattr(link, 'href') and link.href and link.get('type', '').startswith('image/'):
+                images.append(link.href)
+    
+    # Method 4: Parse HTML content for img tags
+    content_fields = ['summary', 'description', 'content']
+    for field in content_fields:
+        if hasattr(entry, field) and getattr(entry, field):
+            content = getattr(entry, field)
+            # Extract image URLs from HTML
+            img_matches = re.findall(r'<img[^>]+src="([^">]+)"', content)
+            images.extend(img_matches)
+            
+            # Also check for srcset and data-src attributes
+            srcset_matches = re.findall(r'srcset="([^"]+)"', content)
+            for srcset in srcset_matches:
+                urls = re.findall(r'([^\s,]+)\s*(?:\d+w)?[,]?', srcset)
+                images.extend(urls)
+            
+            data_src_matches = re.findall(r'data-src="([^">]+)"', content)
+            images.extend(data_src_matches)
+    
+    # Method 5: Check for common image fields
+    image_fields = ['image', 'thumbnail', 'media:thumbnail', 'media:content']
+    for field in image_fields:
+        if hasattr(entry, field) and getattr(entry, field):
+            image_obj = getattr(entry, field)
+            if hasattr(image_obj, 'url') and image_obj.url:
+                images.append(image_obj.url)
+            elif isinstance(image_obj, str) and image_obj.startswith('http'):
+                images.append(image_obj)
+    
+    # Filter and clean image URLs
+    unique_images = []
+    for img_url in images:
+        if img_url and img_url.startswith('http'):
+            # Clean URL by removing query parameters that might cause issues
+            clean_url = img_url.split('?')[0]
+            if clean_url not in unique_images:
+                unique_images.append(clean_url)
+    
+    return unique_images[:5]  # Return up to 5 unique images per entry
+
 def post_soccer_news():
     print("⚽ Fetching latest soccer news from multiple sources...")
     
@@ -222,29 +283,26 @@ def post_soccer_news():
             posts_for_ai.append(f"Source: {source}\nTitle: {title}\nSummary: {summary}\nLink: {link}")
             all_text_for_keywords.append(title + " " + summary)
 
-            # Extract images from entry
-            current_entry_images = []
-            if hasattr(entry, 'media_content') and entry.media_content:
-                for media in entry.media_content:
-                    if 'url' in media and media.get('type', '').startswith('image/'):
-                        current_entry_images.append(media.url)
-            if hasattr(entry, 'enclosures') and entry.enclosures:
-                for enc in entry.enclosures:
-                    if 'href' in enc and enc.get('type', '').startswith('image/'):
-                        current_entry_images.append(enc.href)
-            if hasattr(entry, 'summary'):
-                matches = re.findall(r'<img[^>]+src="([^">]+)"', entry.summary)
-                current_entry_images.extend(matches)
-            if hasattr(entry, 'description'):
-                matches = re.findall(r'<img[^>]+src="([^">]+)"', entry.description)
-                current_entry_images.extend(matches)
+            # Extract images from entry using improved function
+            entry_images = extract_images_from_entry(entry)
+            print(f"Found {len(entry_images)} images for entry: {title}")
             
-            for img_url in current_entry_images:
+            for img_url in entry_images:
                 if img_url and img_url.startswith('http') and img_url not in image_urls_to_post: 
                     image_urls_to_post.append(img_url)
 
         image_urls_to_post = list(set(image_urls_to_post))[:10]
         print(f"Total unique images collected for post: {len(image_urls_to_post)}")
+        
+        # If no images found, try to get some default soccer images
+        if not image_urls_to_post:
+            print("No images found in RSS feeds, using fallback soccer images...")
+            fallback_images = [
+                "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800",
+                "https://images.unsplash.com/photo-1529900748604-07564a03e7a6?w=800",
+                "https://images.unsplash.com/photo-1575361204480-aadea25e6e68?w=800"
+            ]
+            image_urls_to_post = fallback_images[:2]
 
         raw_combined = "\n\n".join(posts_for_ai)
         generated_keywords = extract_keywords(" ".join(all_text_for_keywords))
@@ -318,7 +376,7 @@ def post_soccer_news():
             "📢 أبرز العناوين:\n\n"
             "⚽ لا توجد أخبار كرة قدم رئيسية الآن\n\n"
             "ما رأيكم في هذه التطورات؟ شاركونا آراءكم 👇\n\n"
-            "#كرة_القدم #أخبار_الكرة #متابعات_كروية"
+            "#كرة_القدم #أخبار_الكرة #متابعات_кروية"
         )
 
     fb_post(fallback_message, image_urls_to_post if image_urls_to_post else None)
