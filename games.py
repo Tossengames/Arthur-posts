@@ -199,6 +199,9 @@ def get_gaming_news():
 def post_gaming_news():
     print("🎮 Fetching latest gaming news from multiple sources...")
     
+    # Initialize generated_keywords with empty list to avoid UnboundLocalError
+    generated_keywords = []
+    
     try:
         entries = get_gaming_news()
         
@@ -229,25 +232,43 @@ def post_gaming_news():
             posts_for_ai.append(f"Source: {source}\nTitle: {title}\nSummary: {summary}\nLink: {link}")
             all_text_for_keywords.append(title + " " + summary)
 
-            # Extract images from entry
+            # Extract images from entry - handle different RSS formats safely
             current_entry_images = []
+            
+            # Handle media_content
             if hasattr(entry, 'media_content') and entry.media_content:
                 for media in entry.media_content:
-                    if 'url' in media and media.get('type', '').startswith('image/'):
+                    if hasattr(media, 'url') and hasattr(media, 'type') and media.get('type', '').startswith('image/'):
                         current_entry_images.append(media.url)
+                    elif isinstance(media, dict) and 'url' in media and media.get('type', '').startswith('image/'):
+                        current_entry_images.append(media['url'])
+            
+            # Handle enclosures
             if hasattr(entry, 'enclosures') and entry.enclosures:
                 for enc in entry.enclosures:
-                    if 'href' in enc and enc.get('type', '').startswith('image/'):
+                    if hasattr(enc, 'href') and hasattr(enc, 'type') and enc.get('type', '').startswith('image/'):
                         current_entry_images.append(enc.href)
-            if hasattr(entry, 'summary'):
-                matches = re.findall(r'<img[^>]+src="([^">]+)"', entry.summary)
-                current_entry_images.extend(matches)
-            if hasattr(entry, 'description'):
-                matches = re.findall(r'<img[^>]+src="([^">]+)"', entry.description)
-                current_entry_images.extend(matches)
+                    elif isinstance(enc, dict) and 'href' in enc and enc.get('type', '').startswith('image/'):
+                        current_entry_images.append(enc['href'])
             
+            # Extract images from HTML content
+            if hasattr(entry, 'summary'):
+                try:
+                    matches = re.findall(r'<img[^>]+src="([^">]+)"', entry.summary)
+                    current_entry_images.extend(matches)
+                except:
+                    pass
+            
+            if hasattr(entry, 'description'):
+                try:
+                    matches = re.findall(r'<img[^>]+src="([^">]+)"', entry.description)
+                    current_entry_images.extend(matches)
+                except:
+                    pass
+            
+            # Add valid image URLs
             for img_url in current_entry_images:
-                if img_url and img_url.startswith('http') and img_url not in image_urls_to_post: 
+                if img_url and isinstance(img_url, str) and img_url.startswith('http') and img_url not in image_urls_to_post: 
                     image_urls_to_post.append(img_url)
 
         image_urls_to_post = list(set(image_urls_to_post))[:10]
