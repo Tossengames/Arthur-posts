@@ -48,7 +48,7 @@ def extract_keywords(text):
         "however", "if", "immediately", "in", "inc", "indeed", "instead", "into", "last",
         "later", "least", "less", "likewise", "little", "long", "mainly", "many", "may",
         "maybe", "meanwhile", "merely", "might", "more", "moreover", "most", "mostly", "much",
-        "must", "my", "namely", "near", "narly", "never", "nevertheless", "next", "no",
+        "must", "my", "namely", "near", "nearly", "never", "nevertheless", "next", "no",
         "none", "nonetheless", "noone", "nor", "not", "nothing", "now", "nowhere", "obviously",
         "of", "off", "often", "on", "once", "one", "only", "onto", "or", "other", "otherwise",
         "our", "out", "outside", "over", "overall", "perhaps", "quite", "rather", "really",
@@ -294,4 +294,34 @@ def post_soccer_news():
     # Fallback if anything above fails (direct to headlines)
     if entries:
         headlines = []
-        for
+        for i, entry in enumerate(entries[:3]):
+            title = getattr(entry, 'title', 'أخبار كرة القدم').strip()
+            if title:
+                headlines.append(f"• {title}")
+        
+        if headlines:
+            fallback_message = (
+                "📢 أبرز العناوين:\n\n" +
+                "\n".join(headlines) +
+                "\n\nما رأيكم في هذه التطورات؟ شاركونا آراءكم 👇\n\n"
+                "#كرة_القدم #أخبار_الكرة #متابعات_كروية"
+            )
+        else:
+            fallback_message = (
+                "📢 أبرز العناوين:\n\n"
+                "⚽ لا توجد أخبار كرة قدم رئيسية الآن\n\n"
+                "ما رأيكم في هذه التطورات؟ شاركونا آراءكم 👇\n\n"
+                "#كرة_القدم #أخبار_الكرة #متابعات_كروية"
+            )
+    else:
+        fallback_message = (
+            "📢 أبرز العناوين:\n\n"
+            "⚽ لا توجد أخبار كرة قدم رئيسية الآن\n\n"
+            "ما رأيكم في هذه التطورات؟ شاركونا آراءكم 👇\n\n"
+            "#كرة_القدم #أخبار_الكرة #متابعات_كروية"
+        )
+
+    fb_post(fallback_message, image_urls_to_post if image_urls_to_post else None)
+
+if __name__ == '__main__':
+    post_soccer_news()
