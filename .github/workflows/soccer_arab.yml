@@ -1,0 +1,31 @@
+name: Soccer News Posts Arabic 
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0,8,19 * * *'  # Runs at 00:00, 08:00, and 19:00 UTC
+
+jobs:
+  post-to-facebook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install feedparser
+          pip install requests
+          pip install python-dotenv
+
+      - name: Run Soccer News Post Script
+        env:
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python soccer_arab.py
