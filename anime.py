@@ -24,8 +24,6 @@ ANIME_MANGA_RSS_FEEDS = [
     "https://www.animeherald.com/feed/",  # Anime Herald
     "https://www.animecorner.me/feed/",  # Anime Corner
     "https://www.anitrendz.net/feed/",  # AniTrendz
-    "https://www.manganato.com/rss",  # Manganato
-    "https://www.animeclick.it/rss.xml",  # AnimeClick
 ]
 
 def extract_keywords(text):
@@ -53,8 +51,8 @@ def extract_keywords(text):
         "generally", "hardly", "hence", "hereafter", "hereby", "herein", "hereupon", "how",
         "however", "if", "immediately", "in", "inc", "indeed", "instead", "into", "last",
         "later", "least", "less", "likewise", "little", "long", "mainly", "many", "may",
-        "maybe", "meanwhile", "merely", "might", "more", "moreover", "most", "mostly", "much",
-        "must", "my", "namely", "near", "nearly", "never", "nevertheless", "next", "no",
+        "maybe", "meanwhile", "merely", "might", "more", "moreover", "more", "mostly", "much",
+        "must", "my", "namely", "near", "near", "never", "nevertheless", "next", "no",
         "none", "nonetheless", "noone", "nor", "not", "nothing", "now", "nowhere", "obviously",
         "of", "off", "often", "on", "once", "one", "only", "onto", "or", "other", "otherwise",
         "our", "out", "outside", "over", "overall", "perhaps", "quite", "rather", "really",
@@ -80,35 +78,139 @@ def extract_keywords(text):
             keywords.add(word)
     return list(keywords)[:5]
 
+def get_images_from_entry(entry):
+    """Extract all image URLs from an RSS entry using multiple methods"""
+    image_urls = []
+    
+    # Method 1: Check media_content (common in RSS feeds)
+    if hasattr(entry, 'media_content') and entry.media_content:
+        for media in entry.media_content:
+            try:
+                if hasattr(media, 'url') and hasattr(media, 'type') and media.get('type', '').startswith('image/'):
+                    image_urls.append(media.url)
+                elif isinstance(media, dict) and 'url' in media and media.get('type', '').startswith('image/'):
+                    image_urls.append(media['url'])
+            except:
+                continue
+    
+    # Method 2: Check enclosures
+    if hasattr(entry, 'enclosures') and entry.enclosures:
+        for enc in entry.enclosures:
+            try:
+                if hasattr(enc, 'href') and hasattr(enc, 'type') and enc.get('type', '').startswith('image/'):
+                    image_urls.append(enc.href)
+                elif isinstance(enc, dict) and 'href' in enc and enc.get('type', '').startswith('image/'):
+                    image_urls.append(enc['href'])
+            except:
+                continue
+    
+    # Method 3: Parse HTML content for images
+    content_fields = ['summary', 'description', 'content']
+    for field in content_fields:
+        if hasattr(entry, field) and getattr(entry, field):
+            try:
+                content = getattr(entry, field)
+                # Find all image tags
+                img_matches = re.findall(r'<img[^>]+src="([^">]+)"', content)
+                image_urls.extend(img_matches)
+                
+                # Also check for data-src, srcset, etc.
+                data_src_matches = re.findall(r'data-src="([^">]+)"', content)
+                image_urls.extend(data_src_matches)
+                
+                # Check for links that might be images
+                srcset_matches = re.findall(r'srcset="([^">]+)"', content)
+                for srcset in srcset_matches:
+                    # Extract the first URL from srcset
+                    urls = re.findall(r'([^\s,]+)', srcset)
+                    image_urls.extend(urls)
+            except:
+                continue
+    
+    # Method 4: Check links that end with image extensions
+    image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']
+    if hasattr(entry, 'links') and entry.links:
+        for link in entry.links:
+            try:
+                if hasattr(link, 'href') and any(link.href.lower().endswith(ext) for ext in image_extensions):
+                    image_urls.append(link.href)
+            except:
+                continue
+    
+    # Clean and deduplicate URLs
+    cleaned_urls = []
+    for url in image_urls:
+        if url and isinstance(url, str) and url.startswith('http'):
+            # Remove query parameters that might cause issues
+            clean_url = url.split('?')[0]
+            if clean_url not in cleaned_urls:
+                cleaned_urls.append(clean_url)
+    
+    return cleaned_urls
+
+def is_valid_image_url(url):
+    """Check if a URL is likely to be a valid image"""
+    if not url or not isinstance(url, str):
+        return False
+    
+    # Check if it's a common image URL pattern
+    image_patterns = [
+        r'\.(jpg|jpeg|png|gif|webp|bmp)($|\?)',
+        r'images?/',
+        r'cdn\.',
+        r'wp-content/',
+        r'media\.',
+        r'img\.'
+    ]
+    
+    url_lower = url.lower()
+    return any(re.search(pattern, url_lower) for pattern in image_patterns)
+
 def fb_post(message, image_urls=None):
     if image_urls and len(image_urls) > 0:
         uploaded_media_ids = []
         upload_photo_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/photos"
-
-        print(f"[FB POST] Attempting to upload {len(image_urls)} images for multi-photo post...")
-        for img_url in image_urls:
+        
+        # Filter and limit images
+        valid_image_urls = [url for url in image_urls if is_valid_image_url(url)][:4]  # Max 4 images for Facebook
+        
+        if not valid_image_urls:
+            print("[FB POST] No valid image URLs found, falling back to text-only")
+            return post_text_only(message)
+        
+        print(f"[FB POST] Attempting to upload {len(valid_image_urls)} images for multi-photo post...")
+        
+        for img_url in valid_image_urls:
             try:
-                image_response = requests.get(img_url, stream=True, timeout=10)
+                print(f"  [FB POST] Downloading image: {img_url}")
+                image_response = requests.get(img_url, stream=True, timeout=15, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                })
                 image_response.raise_for_status()
-
+                
+                # Check if content is actually an image
+                content_type = image_response.headers.get('Content-Type', '')
+                if not content_type.startswith('image/'):
+                    print(f"  [FB POST] ❌ URL doesn't point to an image: {content_type}")
+                    continue
+                
                 image_file = BytesIO(image_response.content)
-                content_type = image_response.headers.get('Content-Type', 'image/jpeg')
                 
                 params = {
                     "access_token": FB_PAGE_TOKEN,
                     "published": "false"
                 }
-                files = {'source': ('image', image_file.getvalue(), content_type)}
+                files = {'source': ('image.jpg', image_file.getvalue(), content_type)}
                 
-                response = requests.post(upload_photo_url, data=params, files=files)
+                response = requests.post(upload_photo_url, data=params, files=files, timeout=15)
                 response.raise_for_status()
                 result = response.json()
                 
                 if 'id' in result:
                     uploaded_media_ids.append({"media_fbid": result['id']})
-                    print(f"  [FB POST] Uploaded image {img_url} with ID: {result['id']}")
+                    print(f"  [FB POST] ✅ Uploaded image with ID: {result['id']}")
                 else:
-                    print(f"  [FB POST] ❌ Failed to get ID for image {img_url}: {result}")
+                    print(f"  [FB POST] ❌ Failed to get ID for image: {result}")
 
             except requests.exceptions.RequestException as e:
                 print(f"  [FB POST Error] ❌ Failed to download or upload image {img_url}: {e}")
@@ -126,48 +228,39 @@ def fb_post(message, image_urls=None):
             }
 
             try:
-                response = requests.post(feed_post_url, data=post_data, timeout=10)
+                response = requests.post(feed_post_url, data=post_data, timeout=15)
                 response.raise_for_status()
-                print("[FB POST Result - Multi-photo Post]", response.json())
+                result = response.json()
+                print("[FB POST Result - Multi-photo Post]", result)
+                return result
             except requests.exceptions.RequestException as e:
                 print(f"[FB POST Error] ❌ Failed to create multi-photo post: {e}")
-                print("[FB POST] Falling back to text-only post.")
-                text_post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
-                text_data = {
-                    "message": message,
-                    "access_token": FB_PAGE_TOKEN
-                }
-                response = requests.post(text_post_url, data=text_data, timeout=10)
-                print("[FB POST Result - Text Only Fallback]", response.json())
+                return post_text_only(message)
             except Exception as e:
                 print(f"[FB POST Error] ❌ An unexpected error occurred during multi-photo post: {e}")
-                print("[FB POST] Falling back to text-only post.")
-                text_post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
-                text_data = {
-                    "message": message,
-                    "access_token": FB_PAGE_TOKEN
-                }
-                response = requests.post(text_post_url, data=text_data, timeout=10)
-                print("[FB POST Result - Text Only Fallback]", response.json())
+                return post_text_only(message)
         else:
-            print("[FB POST] No images successfully uploaded. Posting text-only message.")
-            post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
-            data = {
-                "message": message,
-                "access_token": FB_PAGE_TOKEN
-            }
-            response = requests.post(post_url, data=data, timeout=10)
-            print("[FB POST Result - Text Only]", response.json())
-
+            print("[FB POST] No images successfully uploaded.")
+            return post_text_only(message)
     else:
-        print("[FB POST] No images provided. Posting text-only message.")
-        post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
-        data = {
-            "message": message,
-            "access_token": FB_PAGE_TOKEN
-        }
-        response = requests.post(post_url, data=data, timeout=10)
-        print("[FB POST Result - Text Only]", response.json())
+        return post_text_only(message)
+
+def post_text_only(message):
+    """Post text-only message to Facebook"""
+    print("[FB POST] Posting text-only message.")
+    post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
+    data = {
+        "message": message,
+        "access_token": FB_PAGE_TOKEN
+    }
+    try:
+        response = requests.post(post_url, data=data, timeout=15)
+        result = response.json()
+        print("[FB POST Result - Text Only]", result)
+        return result
+    except Exception as e:
+        print(f"[FB POST Error] ❌ Failed to post text message: {e}")
+        return None
 
 def get_anime_manga_news():
     """Fetch anime and manga news from multiple RSS feeds and return combined entries"""
@@ -230,7 +323,7 @@ def post_anime_manga_news():
 
         posts_for_ai = []
         all_text_for_keywords = []
-        image_urls_to_post = []
+        all_image_urls = []
 
         for entry in entries[:5]:  # Use top 5 entries
             title = getattr(entry, 'title', 'No Title').strip()
@@ -245,47 +338,17 @@ def post_anime_manga_news():
             posts_for_ai.append(f"Source: {source}\nTitle: {title}\nSummary: {summary}\nLink: {link}")
             all_text_for_keywords.append(title + " " + summary)
 
-            # Extract images from entry - handle different RSS formats safely
-            current_entry_images = []
+            # Extract images from entry
+            entry_images = get_images_from_entry(entry)
+            print(f"  Found {len(entry_images)} images for entry: {title[:50]}...")
             
-            # Handle media_content
-            if hasattr(entry, 'media_content') and entry.media_content:
-                for media in entry.media_content:
-                    if hasattr(media, 'url') and hasattr(media, 'type') and media.get('type', '').startswith('image/'):
-                        current_entry_images.append(media.url)
-                    elif isinstance(media, dict) and 'url' in media and media.get('type', '').startswith('image/'):
-                        current_entry_images.append(media['url'])
-            
-            # Handle enclosures
-            if hasattr(entry, 'enclosures') and entry.enclosures:
-                for enc in entry.enclosures:
-                    if hasattr(enc, 'href') and hasattr(enc, 'type') and enc.get('type', '').startswith('image/'):
-                        current_entry_images.append(enc.href)
-                    elif isinstance(enc, dict) and 'href' in enc and enc.get('type', '').startswith('image/'):
-                        current_entry_images.append(enc['href'])
-            
-            # Extract images from HTML content
-            if hasattr(entry, 'summary'):
-                try:
-                    matches = re.findall(r'<img[^>]+src="([^">]+)"', entry.summary)
-                    current_entry_images.extend(matches)
-                except:
-                    pass
-            
-            if hasattr(entry, 'description'):
-                try:
-                    matches = re.findall(r'<img[^>]+src="([^">]+)"', entry.description)
-                    current_entry_images.extend(matches)
-                except:
-                    pass
-            
-            # Add valid image URLs
-            for img_url in current_entry_images:
-                if img_url and isinstance(img_url, str) and img_url.startswith('http') and img_url not in image_urls_to_post: 
-                    image_urls_to_post.append(img_url)
+            for img_url in entry_images:
+                if img_url and img_url not in all_image_urls and is_valid_image_url(img_url):
+                    all_image_urls.append(img_url)
 
-        image_urls_to_post = list(set(image_urls_to_post))[:10]
-        print(f"Total unique images collected for post: {len(image_urls_to_post)}")
+        print(f"Total unique images collected: {len(all_image_urls)}")
+        if all_image_urls:
+            print("Sample image URLs:", all_image_urls[:2])
 
         raw_combined = "\n\n".join(posts_for_ai)
         generated_keywords = extract_keywords(" ".join(all_text_for_keywords))
@@ -312,7 +375,7 @@ def post_anime_manga_news():
                 params={"key": GEMINI},
                 headers={"Content-Type": "application/json"},
                 json={"contents": [{"parts": [{"text": prompt}]}]},
-                timeout=20
+                timeout=30
             )
 
             if response.status_code == 200:
@@ -321,7 +384,7 @@ def post_anime_manga_news():
                     ai_summary = data["candidates"][0]["content"]["parts"][0]["text"]
                     # Clean the text from any markdown formatting
                     cleaned_summary = clean_facebook_text(ai_summary)
-                    fb_post(cleaned_summary, image_urls_to_post)
+                    fb_post(cleaned_summary, all_image_urls)
                     print("[Gemini Anime/Manga News] Successfully generated and posted content in Arabic.")
                     return
                 else:
@@ -363,7 +426,7 @@ def post_anime_manga_news():
         fallback_message = (
             "🎌 لا توجد أخبار أنمي أو مانغا رئيسية للإبلاغ عنها الآن! "
             "ما هو آخر أنمي شاهدته أو مانغا قرأتها؟ شاركنا تجربتك! 👇 "
-            "#أنمي #مانغا #أخبار_الأنمي"
+            "#أنمي #مانغa #أخبار_الأنمي"
         )
 
     fallback_hashtags = "#أنمي #مانغا #أخبار_الأنمي #مجتمع_الأنمي"
@@ -373,7 +436,7 @@ def post_anime_manga_news():
 
     # Clean the fallback message from any markdown
     cleaned_fallback = clean_facebook_text(fallback_message)
-    fb_post(f"{cleaned_fallback}\n\n{fallback_hashtags}", image_urls_to_post if image_urls_to_post else None)
+    fb_post(f"{cleaned_fallback}\n\n{fallback_hashtags}", all_image_urls if all_image_urls else None)
 
 if __name__ == '__main__':
     post_anime_manga_news()
