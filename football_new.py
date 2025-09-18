@@ -1,4 +1,4 @@
-# football_news_post.py
+# soccer_news_post.py
 import os
 import requests
 import feedparser
@@ -14,18 +14,20 @@ FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN")
 GEMINI = os.getenv("GEMINI_API_KEY")
 
-# Football/soccer RSS feeds
-FOOTBALL_RSS_FEEDS = [
+# Soccer/football RSS feeds
+SOCCER_RSS_FEEDS = [
     "https://www.espn.com/espn/rss/soccer/news",  # ESPN Soccer
+    "https://www.espnfc.com/rss",  # ESPN FC
     "https://www.skysports.com/rss/12040",  # Sky Sports Football
     "https://www.bbc.co.uk/sport/football/rss.xml",  # BBC Football
     "https://www.theguardian.com/football/rss",  # The Guardian Football
     "https://www.goal.com/feeds/en/news",  # Goal.com
     "https://www.fourfourtwo.com/news/feed",  # FourFourTwo
     "https://www.90min.com/feeds/rss",  # 90min
-    "https://www.transfermarkt.co.in/rss/news",  # Transfermarkt
-    "https://www.fifa.com/rss/news",  # FIFA
-    "https://www.uefa.com/rssfeed/news/rss.xml",  # UEFA
+    "https://www.marca.com/en/rss/football.xml",  # Marca Football
+    "https://www.as.com/rss/futbol.xml",  # AS Football
+    "https://www.uefa.com/rssfeed/news/rss.xml",  # UEFA News
+    "https://www.fifa.com/rss/news.xml",  # FIFA News
 ]
 
 def extract_keywords(text):
@@ -70,9 +72,9 @@ def extract_keywords(text):
         "whereas", "whereby", "wherein", "whereupon", "wherever", "whether", "which",
         "while", "whither", "who", "whoever", "whole", "whom", "whose", "why", "will",
         "with", "within", "without", "would", "yes", "yet", "you", "your", "yourself",
-        "yourselves", "football", "soccer", "match", "matches", "player", "players", "play",
-        "playing", "team", "teams", "league", "leagues", "cup", "tournament", "goal", "goals",
-        "transfer", "transfers", "news", "title", "titles", "club", "clubs", "manager", "coach"
+        "yourselves", "soccer", "football", "match", "game", "player", "players", "team",
+        "teams", "league", "goal", "goals", "score", "transfer", "news", "cup", "championship",
+        "premier", "league", "champions", "europa", "world", "europe", "international"
     ])
     keywords = set()
     words = re.findall(r'\b[A-Z][a-zA-Z]*\b', text)
@@ -170,13 +172,13 @@ def fb_post(message, image_urls=None):
         response = requests.post(post_url, data=data, timeout=10)
         print("[FB POST Result - Text Only]", response.json())
 
-def get_football_news():
-    """Fetch football news from multiple RSS feeds and return combined entries"""
+def get_soccer_news():
+    """Fetch soccer news from multiple RSS feeds and return combined entries"""
     all_entries = []
     
-    for rss_url in FOOTBALL_RSS_FEEDS:
+    for rss_url in SOCCER_RSS_FEEDS:
         try:
-            print(f"⚽ Fetching football news from: {rss_url}")
+            print(f"⚽ Fetching soccer news from: {rss_url}")
             feed = feedparser.parse(rss_url)
             
             if feed.entries:
@@ -210,20 +212,20 @@ def clean_facebook_text(text):
     text = re.sub(r'[#`~]', '', text)
     return text.strip()
 
-def post_football_news():
-    print("⚽ Fetching latest football news from multiple sources...")
+def post_soccer_news():
+    print("⚽ Fetching latest soccer news from multiple sources...")
     
     # Initialize generated_keywords with empty list to avoid UnboundLocalError
     generated_keywords = []
     
     try:
-        entries = get_football_news()
+        entries = get_soccer_news()
         
         if not entries:
-            print("❌ No football news entries found from any RSS feed.")
+            print("❌ No soccer news entries found from any RSS feed.")
             fallback_message = (
                 "⚽ لا توجد أخبار كرة قدم رئيسية للإبلاغ عنها الآن! "
-                "ما هو رأيك في آخر مباراة شاهدتها؟ شاركنا تجربتك! 👇 "
+                "ما هو رأيك في آخر مباراة شاهدتها؟ شاركنا رأيك! 👇 "
                 "#كرة_القدم #أخبار_الكرة #مباريات"
             )
             fb_post(fallback_message)
@@ -240,7 +242,7 @@ def post_football_news():
             source = getattr(entry, 'source', 'Unknown Source')
             
             if not title or not summary or title.lower().startswith('no title'):
-                print(f"[Football News] Skipping malformed entry: Title='{title}', Summary='{summary}'")
+                print(f"[Soccer News] Skipping malformed entry: Title='{title}', Summary='{summary}'")
                 continue
 
             posts_for_ai.append(f"Source: {source}\nTitle: {title}\nSummary: {summary}\nLink: {link}")
@@ -292,12 +294,13 @@ def post_football_news():
         generated_keywords = extract_keywords(" ".join(all_text_for_keywords))
 
         prompt = (
-            "قم بإنشاء منشور فيسبوك جذاب عن أخبار كرة القدم. "
+            "قم بإنشاء منشور فيسبوك جذاب عن أخبار كرة القدم العالمية. "
             "ابدأ مباشرة بخطاف قوي وجذاب للانتباه بدون أي تحية أو مقدمة. "
             "استخدم نبرة حماسية وعادية تناسب مشجعي كرة القدم. "
             "قم بتنسيق المنشور بفقرات ورموز تعبيرية استراتيجية لتحسين قابلية القراءة. "
             "لا تستخدم أي تنسيق مثل العريض أو المائل (** أو __). "
             "استخدم اللغة العربية الفصحى الرسمية فقط مع الحفاظ على أسماء الأندية واللاعبين بالإنجليزية. "
+            "تحدث عن أهم الأخبار مثل: نتائج المباريات، انتقالات اللاعبين، أخبار البطولات، وأهم الأحداث. "
             "اختتم بدعوة قوية للجمهور للإعجاب والمشاركة والتعليق على آرائهم، "
             "وانتهي بـ 3-4 وسوم ذات صلة. "
             "لا تدرج روابط في المنشور النهائي. "
@@ -323,31 +326,31 @@ def post_football_news():
                     # Clean the text from any markdown formatting
                     cleaned_summary = clean_facebook_text(ai_summary)
                     fb_post(cleaned_summary, image_urls_to_post)
-                    print("[Gemini Football News] Successfully generated and posted content in Arabic.")
+                    print("[Gemini Soccer News] Successfully generated and posted content in Arabic.")
                     return
                 else:
-                    print(f"[Gemini Football News] ❌ No valid candidates found in Gemini response: {data}")
+                    print(f"[Gemini Soccer News] ❌ No valid candidates found in Gemini response: {data}")
             else:
-                print(f"[Gemini Football News Error] ❌ API Status {response.status_code}: {response.text}")
+                print(f"[Gemini Soccer News Error] ❌ API Status {response.status_code}: {response.text}")
 
         except requests.exceptions.RequestException as e:
-            print(f"[Gemini Football News Exception] ❌ Network or API error during Gemini call: {e}")
+            print(f"[Gemini Soccer News Exception] ❌ Network or API error during Gemini call: {e}")
         except json.JSONDecodeError:
-            print(f"[Gemini Football News Exception] ❌ Could not decode JSON response from Gemini API.")
+            print(f"[Gemini Soccer News Exception] ❌ Could not decode JSON response from Gemini API.")
         except Exception as e:
-            print(f"[Gemini Football News Exception] ❌ An unexpected error occurred with Gemini API: {e}")
+            print(f"[Gemini Soccer News Exception] ❌ An unexpected error occurred with Gemini API: {e}")
 
     except Exception as e:
-        print(f"[Football News Exception] ❌ An error occurred while processing football news: {e}")
+        print(f"[Soccer News Exception] ❌ An error occurred while processing soccer news: {e}")
     
     # Fallback if anything above fails (in Arabic)
-    emoji_list = ["⚽", "🔥", "🏆", "🚨", "✨", "👏", "🎯", "⭐"]
+    emoji_list = ["⚽", "🔥", "🏆", "👟", "🚨", "✨", "🥅", "🎯"]
     clean_posts = []
 
     if entries:
         for i, entry in enumerate(entries[:3]):
             emoji = emoji_list[i % len(emoji_list)]
-            title = getattr(entry, 'title', 'Latest Football Update').strip()
+            title = getattr(entry, 'title', 'Latest Soccer Update').strip()
             summary = getattr(entry, 'summary', '')[:180].strip().replace('\n', ' ')
             if title and summary:
                 clean_posts.append(f"{emoji} {title}\n{summary}")
@@ -363,7 +366,7 @@ def post_football_news():
     else:
         fallback_message = (
             "⚽ لا توجد أخبار كرة قدم رئيسية للإبلاغ عنها الآن! "
-            "ما هو رأيك في آخر مباراة شاهدتها؟ شاركنا تجربتك! 👇 "
+            "ما هو رأيك في آخر مباراة شاهدتها؟ شاركنا رأيك! 👇 "
             "#كرة_القدم #أخبار_الكرة #مباريات"
         )
 
@@ -377,4 +380,4 @@ def post_football_news():
     fb_post(f"{cleaned_fallback}\n\n{fallback_hashtags}", image_urls_to_post if image_urls_to_post else None)
 
 if __name__ == '__main__':
-    post_football_news()
+    post_soccer_news()
