@@ -15,12 +15,12 @@ def main():
         sys.exit(1)
     
     try:
-        # Handle both integer and float inputs (e.g., 2 vs 2.0)
+        # Handle both integer and float inputs
         image_count = float(image_count_str)
         if image_count <= 0:
             print("ERROR: Image count must be a positive number.")
             sys.exit(1)
-        # Convert to integer (round down if needed)
+        # Convert to integer
         image_count = int(image_count)
     except ValueError:
         print(f"ERROR: Invalid image count '{image_count_str}'. Must be a number.")
@@ -32,14 +32,15 @@ def main():
     output_folder = "downloaded_images"
     Path(output_folder).mkdir(parents=True, exist_ok=True)
     
-    # Initialize downloader
+    # Initialize downloader - FIXED: Use correct parameter name
     downloader = simp.simple_image_download()
     
     # Download images for each keyword
     for keyword in keywords:
         print(f"Downloading {image_count} images for keyword: '{keyword}'")
         try:
-            downloader.download(keyword, image_count, output_dir=output_folder)
+            # FIXED: Use 'output_directory' instead of 'output_dir'
+            downloader.download(keyword, image_count, output_directory=output_folder)
             print(f"Completed downloading images for '{keyword}'")
             
             # Add a small delay between keywords to avoid rate limiting
