@@ -15,12 +15,15 @@ def main():
         sys.exit(1)
     
     try:
-        image_count = int(image_count_str)
+        # Handle both integer and float inputs (e.g., 2 vs 2.0)
+        image_count = float(image_count_str)
         if image_count <= 0:
-            print("ERROR: Image count must be a positive integer.")
+            print("ERROR: Image count must be a positive number.")
             sys.exit(1)
+        # Convert to integer (round down if needed)
+        image_count = int(image_count)
     except ValueError:
-        print(f"ERROR: Invalid image count '{image_count_str}'. Must be an integer.")
+        print(f"ERROR: Invalid image count '{image_count_str}'. Must be a number.")
         sys.exit(1)
     
     keywords = [keyword.strip() for keyword in keywords_str.split(',') if keyword.strip()]
