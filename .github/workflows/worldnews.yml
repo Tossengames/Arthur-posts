@@ -1,4 +1,4 @@
-name: games news Destructoid 
+name: World news
 
 on:
   workflow_dispatch:
