@@ -1,4 +1,4 @@
-# world_news_post.py
+# gaming_news_post.py
 import os
 import requests
 import feedparser
@@ -14,11 +14,9 @@ FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN")
 GEMINI = os.getenv("GEMINI_API_KEY")
 
-# World news RSS feeds from reliable sources
-WORLD_NEWS_RSS_FEEDS = [
-    "https://feeds.reuters.com/reuters/topNews",  # Reuters Top News
-    "https://rss.cnn.com/rss/edition.rss",  # CNN International
-    "http://feeds.bbci.co.uk/news/world/rss.xml",  # BBC World News
+# Video games and indie games RSS feeds
+GAMING_RSS_FEEDS = [
+  "https://rss.cnn.com/rss/edition.rss",  # PC Gamer
 ]
 
 def extract_keywords(text):
@@ -63,14 +61,9 @@ def extract_keywords(text):
         "whereas", "whereby", "wherein", "whereupon", "wherever", "whether", "which",
         "while", "whither", "who", "whoever", "whole", "whom", "whose", "why", "will",
         "with", "within", "without", "would", "yes", "yet", "you", "your", "yourself",
-        "yourselves", "news", "report", "reports", "breaking", "latest", "update", "updates",
-        "world", "international", "global", "politics", "economy", "business", "technology",
-        "health", "science", "environment", "climate", "weather", "government", "official",
-        "leader", "president", "prime", "minister", "country", "countries", "nation",
-        "city", "capital", "war", "peace", "conflict", "crisis", "emergency", "disaster",
-        "earthquake", "flood", "fire", "attack", "security", "defense", "military",
-        "agreement", "deal", "treaty", "summit", "meeting", "conference", "election",
-        "vote", "result", "law", "policy", "rights", "human", "social", "development"
+        "yourselves", "game", "games", "gaming", "video", "player", "players", "play",
+        "playing", "release", "released", "announce", "announced", "update", "updated",
+        "news", "title", "titles", "studio", "studios", "developer", "developers", "indie"
     ])
     keywords = set()
     words = re.findall(r'\b[A-Z][a-zA-Z]*\b', text)
@@ -163,19 +156,19 @@ def fb_post(message, image_urls=None):
         print("[FB POST] No images provided. Posting text-only message.")
         post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
         data = {
-            "message": message,
+            "markdown": message,
             "access_token": FB_PAGE_TOKEN
         }
         response = requests.post(post_url, data=data, timeout=10)
         print("[FB POST Result - Text Only]", response.json())
 
-def get_world_news():
-    """Fetch world news from multiple RSS feeds and return combined entries"""
+def get_gaming_news():
+    """Fetch gaming news from multiple RSS feeds and return combined entries"""
     all_entries = []
     
-    for rss_url in WORLD_NEWS_RSS_FEEDS:
+    for rss_url in GAMING_RSS_FEEDS:
         try:
-            print(f"🌍 Fetching world news from: {rss_url}")
+            print(f"🎮 Fetching gaming news from: {rss_url}")
             feed = feedparser.parse(rss_url)
             
             if feed.entries:
@@ -220,25 +213,26 @@ def is_recent_entry(entry, hours_threshold=48):
         pass
     return False
 
-def post_world_news():
-    print("🌍 Fetching latest world news from international sources...")
+def post_gaming_news():
+    print("🎮 Fetching latest gaming news from multiple sources...")
     
     # Initialize generated_keywords with empty list to avoid UnboundLocalError
     generated_keywords = []
     
     try:
-        entries = get_world_news()
+        entries = get_gaming_news()
         
         # Filter only recent entries (last 48 hours)
         recent_entries = [entry for entry in entries if is_recent_entry(entry)]
         
         if not recent_entries:
-            print("❌ No recent world news entries found from any RSS feed.")
+            print("❌ No recent gaming news entries found from any RSS feed.")
             fallback_message = (
-                "📰 أهم الأخبار العالمية\n\n"
-                "لا توجد أخبار عالمية رئيسية للإبلاغ عنها حالياً. "
-                "تابعونا للحصول على آخر التحديثات.\n\n"
-                "#أخبار_عالمية #أخبار #تحديثات"
+                "📰 أخبار الألعاب من GameSea\n\n"
+                "لا توجد أخبار ألعاب رئيسية للإبلاغ عنها حالياً! "
+                "ما هي آخر لعبة لعبتها؟ شاركنا تجربتك! 👇\n\n"
+                "📲 تابع الصفحة للحصول على آخر أخبار وتحديثات الألعاب يومياً!\n\n"
+                "#أخبار_الألعاب #ألعاب_فيديو #ألعاب_إندي #GameSea"
             )
             fb_post(fallback_message)
             return
@@ -261,7 +255,7 @@ def post_world_news():
             published = getattr(entry, 'published', '')
             
             if not title or title.lower().startswith('no title'):
-                print(f"[World News] Skipping malformed entry: Title='{title}'")
+                print(f"[Gaming News] Skipping malformed entry: Title='{title}'")
                 continue
 
             # Create detailed entry information
@@ -315,20 +309,22 @@ def post_world_news():
         generated_keywords = extract_keywords(" ".join(all_text_for_keywords))
 
         prompt = (
-            "قم بإنشاء منشور فيسبوك مختصر ومباشر عن أهم الأخبار العالمية. "
-            "ابدأ مباشرة بعنوان رئيسي يعبر عن أهم موضوع في الأخبار. "
-            "استخدم نبرة إخبارية مهنية واحترافية تناسب الأخبار العالمية باللغة العربية الفصحى. "
-            "لا تستخدم أي مقدمات أو عبارات مثل 'أهلاً بكم' أو 'هل أنتم مستعدون' أو 'أخبار ساخنة'. "
-            "اذهب مباشرة إلى صلب الموضوع. "
-            "قم بتقديم المعلومات بشكل واضح ومختصر مع التركيز على الحقائق الأساسية. "
+            "قم بإنشاء منشور فيسبوك شامل ومفصل عن آخر أخبار ألعاب الفيديو والألعاب المستقلة. "
+            "ابدأ مباشرة بالعنوان: 'أخبار الألعاب من GameSea' متبوعاً بخطاف قوي وجذاب. "
+            "استخدم نبرة حماسية واحترافية تناسب مجتمع الألعاب باللغة العربية الفصحى. "
+            "قم بتنسيق المنشور بفقرات واضحة ورموز تعبيرية استراتيجية لتحسين قابلية القراءة. "
             "لا تستخدم أي تنسيق مثل العريض أو المائل (** أو __). "
-            "احتفظ بأسماء الأعلام والمنظمات بلغتها الأصلية. "
-            "قم بتضمين أهم 3-4 أخبار من القائمة المقدمة. "
-            "أنهِ المنشور بوسوم إخبارية مناسبة. "
+            "قدم معلومات كاملة عن كل خبر - لا تترك أي تفاصيل مهمة. "
+            "احتفظ بأسماء الألعاب بلغتها الأصلية (الإنجليزية). "
+            "قم بتضمين جميع الأخبار المقدمة، مع التأكد من تغطية كل منها بشكل مناسب. "
+            "أنهِ المنشور بدعوة قوية للجمهور للإعجاب والمشاركة والتعليق بآرائهم. "
+            "أضف دعوة للمتابعة: '📲 تابع الصفحة للحصول على آخر أخبار وتحديثات الألعاب يومياً!' "
+            "اختم بـ 3-4 وسوم ذات صلة باللغتين العربية والإنجليزية بما في ذلك #GameSea. "
             "لا تدرج روابط في المنشور النهائي. "
-            "يجب أن يكون النص باللغة العربية الفصحى مع الحفاظ على الأسماء الأجنبية كما هي. "
+            "يجب أن يكون النص باللغة العربية الفصحى مع الحفاظ على أسماء الألعاب بالإنجليزية. "
             "إليك الأخبار المفصلة:\n\n" + raw_combined +
-            ("\n\nكلمات مفتاحية للوسوم: " + ", ".join(generated_keywords) if generated_keywords else "")
+            ("\n\nيمكنك النظر في هذه الكلمات المفتاحية للوسوم الإضافية: " +
+            ", ".join(generated_keywords) if generated_keywords else "")
         )
 
         try:
@@ -337,7 +333,7 @@ def post_world_news():
                 params={"key": GEMINI},
                 headers={"Content-Type": "application/json"},
                 json={"contents": [{"parts": [{"text": prompt}]}]},
-                timeout=30
+                timeout=30  # Increased timeout for more detailed processing
             )
 
             if response.status_code == 200:
@@ -347,38 +343,38 @@ def post_world_news():
                     # Clean the text from any markdown formatting but preserve hashtags
                     cleaned_summary = clean_facebook_text(ai_summary)
                     fb_post(cleaned_summary, image_urls_to_post)
-                    print("[Gemini World News] Successfully generated and posted world news content in Arabic.")
+                    print("[Gemini Gaming News] Successfully generated and posted detailed content in Arabic.")
                     return
                 else:
-                    print(f"[Gemini World News] ❌ No valid candidates found in Gemini response: {data}")
+                    print(f"[Gemini Gaming News] ❌ No valid candidates found in Gemini response: {data}")
             else:
-                print(f"[Gemini World News Error] ❌ API Status {response.status_code}: {response.text}")
+                print(f"[Gemini Gaming News Error] ❌ API Status {response.status_code}: {response.text}")
 
         except requests.exceptions.RequestException as e:
-            print(f"[Gemini World News Exception] ❌ Network or API error during Gemini call: {e}")
+            print(f"[Gemini Gaming News Exception] ❌ Network or API error during Gemini call: {e}")
         except json.JSONDecodeError:
-            print(f"[Gemini World News Exception] ❌ Could not decode JSON response from Gemini API.")
+            print(f"[Gemini Gaming News Exception] ❌ Could not decode JSON response from Gemini API.")
         except Exception as e:
-            print(f"[Gemini World News Exception] ❌ An unexpected error occurred with Gemini API: {e}")
+            print(f"[Gemini Gaming News Exception] ❌ An unexpected error occurred with Gemini API: {e}")
 
     except Exception as e:
-        print(f"[World News Exception] ❌ An error occurred while processing world news: {e}")
+        print(f"[Gaming News Exception] ❌ An error occurred while processing gaming news: {e}")
     
     # Fallback if anything above fails (in Arabic)
-    emoji_list = ["🌍", "📰", "⚡", "🔴", "📊", "🏛️", "💼", "🌐"]
+    emoji_list = ["🎮", "🔥", "💻", "🏆", "🚨", "✨", "👾", "🎯"]
     clean_posts = []
 
     if entries:
-        for i, entry in enumerate(entries[:4]):  # Show top 4 news items
+        for i, entry in enumerate(entries[:5]):  # Show more entries in fallback
             if not is_recent_entry(entry):
                 continue
                 
             emoji = emoji_list[i % len(emoji_list)]
-            title = getattr(entry, 'title', 'Latest News Update').strip()
+            title = getattr(entry, 'title', 'Latest Gaming Update').strip()
             summary = getattr(entry, 'summary', '')
             description = getattr(entry, 'description', summary)
             content = description if len(description) > len(summary) else summary
-            content = content[:200].strip().replace('\n', ' ')
+            content = content[:250].strip().replace('\n', ' ')
             
             if title and content:
                 clean_posts.append(f"{emoji} {title}\n{content}")
@@ -387,25 +383,29 @@ def post_world_news():
     
     if clean_posts:
         fallback_message = (
-            "📰 أهم الأخبار العالمية\n\n" +
+            "📰 أخبار الألعاب من GameSea\n\n" +
             "\n\n".join(clean_posts) +
-            "\n\n#أخبار_عالمية #أخبار #تحديثات"
+            "\n\nما رأيك في هذه الأخبار؟ شاركنا رأيك في التعليقات! 👇\n\n"
+            "📲 تابع الصفحة للحصول على آخر أخبار وتحديثات الألعاب يومياً!\n\n"
         )
     else:
         fallback_message = (
-            "📰 أهم الأخبار العالمية\n\n"
-            "لا توجد أخبار عالمية رئيسية للإبلاغ عنها حالياً. "
-            "تابعونا للحصول على آخر التحديثات.\n\n"
-            "#أخبار_عالمية #أخبار #تحديثات"
+            "📰 أخبار الألعاب من GameSea\n\n"
+            "لا توجد أخبار ألعاب رئيسية للإبلاغ عنها حالياً! "
+            "ما هي آخر لعبة لعبتها؟ شاركنا تجربتك! 👇\n\n"
+            "📲 تابع الصفحة للحصول على آخر أخبار وتحديثات الألعاب يومياً!\n\n"
         )
 
-    # Add generated hashtags if available
+    # Add hashtags properly
+    fallback_hashtags = "#أخبار_الألعاب #ألعاب_فيديو #ألعاب_إندي #GameSea"
     if generated_keywords:
-        fallback_message += " " + " ".join(generated_keywords)
+        fallback_hashtags += " " + " ".join(generated_keywords)
+        # Remove any duplicates
+        fallback_hashtags = " ".join(sorted(list(set(fallback_hashtags.split())))[:8])
 
     # Clean the fallback message from any markdown but preserve hashtags
     cleaned_fallback = clean_facebook_text(fallback_message)
-    fb_post(cleaned_fallback, image_urls_to_post if image_urls_to_post else None)
+    fb_post(f"{cleaned_fallback}{fallback_hashtags}", image_urls_to_post if image_urls_to_post else None)
 
 if __name__ == '__main__':
-    post_world_news()
+    post_gaming_news()
