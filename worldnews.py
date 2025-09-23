@@ -16,7 +16,7 @@ GEMINI = os.getenv("GEMINI_API_KEY")
 
 # Video games and indie games RSS feeds
 GAMING_RSS_FEEDS = [
-  "https://rss.cnn.com/rss/edition.rss",  # PC Gamer
+    "http://feeds.bbci.co.uk/news/world/rss.xml",  # PC Gamer
 ]
 
 def extract_keywords(text):
