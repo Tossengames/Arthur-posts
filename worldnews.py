@@ -1,4 +1,4 @@
-# hollywood_news_post.py
+# gaming_news_post.py
 import os
 import requests
 import feedparser
@@ -14,16 +14,9 @@ FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN")
 GEMINI = os.getenv("GEMINI_API_KEY")
 
-# Hollywood and celebrities RSS feeds
-HOLLYWOOD_RSS_FEEDS = [
-    "https://feeds.feedburner.com/people/news",  # People Magazine
-    "https://www.eonline.com/news.rss",  # E! News
-    "https://feeds.feedburner.com/justjared",  # Just Jared
-    "https://www.tmz.com/rss.xml",  # TMZ
-    "https://feeds.feedburner.com/etonline/news",  # Entertainment Tonight
-    "https://www.hollywoodreporter.com/feed/",  # Hollywood Reporter
-    "https://variety.com/feed/",  # Variety
-    "https://deadline.com/feed/",  # Deadline
+# Video games and indie games RSS feeds
+GAMING_RSS_FEEDS = [
+    "https://variety.com/t/one-piece/feed/",  # PC Gamer
 ]
 
 def extract_keywords(text):
@@ -68,11 +61,9 @@ def extract_keywords(text):
         "whereas", "whereby", "wherein", "whereupon", "wherever", "whether", "which",
         "while", "whither", "who", "whoever", "whole", "whom", "whose", "why", "will",
         "with", "within", "without", "would", "yes", "yet", "you", "your", "yourself",
-        "yourselves", "hollywood", "celebrity", "celebrities", "movie", "movies", "film",
-        "films", "actor", "actors", "actress", "actresses", "star", "stars", "famous",
-        "entertainment", "news", "gossip", "red", "carpet", "award", "awards", "oscar",
-        "oscars", "grammy", "golden", "globe", "premiere", "premieres", "tv", "television",
-        "show", "shows", "series", "netflix", "hbo", "amazon", "disney", "marvel", "dc"
+        "yourselves", "game", "games", "gaming", "video", "player", "players", "play",
+        "playing", "release", "released", "announce", "announced", "update", "updated",
+        "news", "title", "titles", "studio", "studios", "developer", "developers", "indie"
     ])
     keywords = set()
     words = re.findall(r'\b[A-Z][a-zA-Z]*\b', text)
@@ -83,14 +74,6 @@ def extract_keywords(text):
     return list(keywords)[:5]
 
 def fb_post(message, image_urls=None):
-    # Check if message is empty or contains only whitespace
-    if not message or not message.strip():
-        print("[FB POST] ❌ Error: Message is empty, cannot post.")
-        return
-        
-    message = message.strip()
-    print(f"[FB POST] Message length: {len(message)} characters")
-    
     if image_urls and len(image_urls) > 0:
         uploaded_media_ids = []
         upload_photo_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/photos"
@@ -138,39 +121,54 @@ def fb_post(message, image_urls=None):
             try:
                 response = requests.post(feed_post_url, data=post_data, timeout=10)
                 response.raise_for_status()
-                result = response.json()
-                print("[FB POST Result - Multi-photo Post]", result)
-                return result
+                print("[FB POST Result - Multi-photo Post]", response.json())
             except requests.exceptions.RequestException as e:
                 print(f"[FB POST Error] ❌ Failed to create multi-photo post: {e}")
                 print("[FB POST] Falling back to text-only post.")
+                text_post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
+                text_data = {
+                    "message": message,
+                    "access_token": FB_PAGE_TOKEN
+                }
+                response = requests.post(text_post_url, data=text_data, timeout=10)
+                print("[FB POST Result - Text Only Fallback]", response.json())
+            except Exception as e:
+                print(f"[FB POST Error] ❌ An unexpected error occurred during multi-photo post: {e}")
+                print("[FB POST] Falling back to text-only post.")
+                text_post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
+                text_data = {
+                    "message": message,
+                    "access_token": FB_PAGE_TOKEN
+                }
+                response = requests.post(text_post_url, data=text_data, timeout=10)
+                print("[FB POST Result - Text Only Fallback]", response.json())
         else:
             print("[FB POST] No images successfully uploaded. Posting text-only message.")
-    
-    # Text-only post fallback
-    print("[FB POST] Posting text-only message.")
-    post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
-    data = {
-        "message": message,
-        "access_token": FB_PAGE_TOKEN
-    }
-    try:
-        response = requests.post(post_url, data=data, timeout=10)
-        response.raise_for_status()
-        result = response.json()
-        print("[FB POST Result - Text Only]", result)
-        return result
-    except requests.exceptions.RequestException as e:
-        print(f"[FB POST Error] ❌ Failed to create text post: {e}")
-        return None
+            post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
+            data = {
+                "message": message,
+                "access_token": FB_PAGE_TOKEN
+            }
+            response = requests.post(post_url, data=data, timeout=10)
+            print("[FB POST Result - Text Only]", response.json())
 
-def get_hollywood_news():
-    """Fetch Hollywood and celebrities news from multiple RSS feeds and return combined entries"""
+    else:
+        print("[FB POST] No images provided. Posting text-only message.")
+        post_url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}/feed"
+        data = {
+            "markdown": message,
+            "access_token": FB_PAGE_TOKEN
+        }
+        response = requests.post(post_url, data=data, timeout=10)
+        print("[FB POST Result - Text Only]", response.json())
+
+def get_gaming_news():
+    """Fetch gaming news from multiple RSS feeds and return combined entries"""
     all_entries = []
     
-    for rss_url in HOLLYWOOD_RSS_FEEDS:
+    for rss_url in GAMING_RSS_FEEDS:
         try:
-            print(f"🎬 Fetching Hollywood news from: {rss_url}")
+            print(f"🎮 Fetching gaming news from: {rss_url}")
             feed = feedparser.parse(rss_url)
             
             if feed.entries:
@@ -192,8 +190,6 @@ def get_hollywood_news():
 
 def clean_facebook_text(text):
     """Remove markdown formatting that doesn't work well on Facebook"""
-    if not text:
-        return ""
     # Remove **bold** formatting
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     # Remove __bold__ formatting
@@ -217,63 +213,26 @@ def is_recent_entry(entry, hours_threshold=48):
         pass
     return False
 
-def extract_images_from_entry(entry):
-    """Extract images from RSS entry with better error handling"""
-    images = []
+def post_gaming_news():
+    print("🎮 Fetching latest gaming news from multiple sources...")
     
-    # Try different methods to extract images
-    methods = [
-        # Method 1: media_content
-        lambda: [media.url for media in getattr(entry, 'media_content', []) 
-                if hasattr(media, 'url') and hasattr(media, 'type') and getattr(media, 'type', '').startswith('image/')],
-        
-        # Method 2: enclosures
-        lambda: [enc.href for enc in getattr(entry, 'enclosures', [])
-                if hasattr(enc, 'href') and hasattr(enc, 'type') and getattr(enc, 'type', '').startswith('image/')],
-        
-        # Method 3: HTML content parsing
-        lambda: re.findall(r'<img[^>]+src="([^">]+)"', getattr(entry, 'summary', '') + getattr(entry, 'description', '')),
-        
-        # Method 4: links with image extensions
-        lambda: [link.href for link in getattr(entry, 'links', [])
-                if hasattr(link, 'href') and any(ext in link.href.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])]
-    ]
-    
-    for method in methods:
-        try:
-            found_images = method()
-            if found_images:
-                images.extend(found_images)
-        except Exception as e:
-            continue
-    
-    # Filter and return unique images
-    valid_images = []
-    for img in images:
-        if (isinstance(img, str) and img.startswith('http') and 
-            any(ext in img.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']) and
-            img not in valid_images):
-            valid_images.append(img)
-    
-    return valid_images[:3]  # Return max 3 images per entry
-
-def post_hollywood_news():
-    print("🎬 Fetching latest Hollywood and celebrities news from multiple sources...")
+    # Initialize generated_keywords with empty list to avoid UnboundLocalError
+    generated_keywords = []
     
     try:
-        entries = get_hollywood_news()
+        entries = get_gaming_news()
         
         # Filter only recent entries (last 48 hours)
         recent_entries = [entry for entry in entries if is_recent_entry(entry)]
         
         if not recent_entries:
-            print("❌ No recent Hollywood news entries found from any RSS feed.")
+            print("❌ No recent gaming news entries found from any RSS feed.")
             fallback_message = (
-                "🌟 أخبار هوليوود والمشاهير\n\n"
-                "لا توجد أخبار مثيرة عن المشاهير للإبلاغ عنها حالياً! "
-                "من هو نجمك المفضل؟ شاركنا رأيك! 👇\n\n"
-                "📲 تابع الصفحة للحصول على آخر أخبار هوليوود والمشاهير يومياً!\n\n"
-                "#أخبار_هوليوود #المشاهير #أخبار_الفن #هوليوود"
+                "📰 أخبار الألعاب من GameSea\n\n"
+                "لا توجد أخبار ألعاب رئيسية للإبلاغ عنها حالياً! "
+                "ما هي آخر لعبة لعبتها؟ شاركنا تجربتك! 👇\n\n"
+                "📲 تابع الصفحة للحصول على آخر أخبار وتحديثات الألعاب يومياً!\n\n"
+                "#أخبار_الألعاب #ألعاب_فيديو #ألعاب_إندي #GameSea"
             )
             fb_post(fallback_message)
             return
@@ -282,21 +241,21 @@ def post_hollywood_news():
         all_text_for_keywords = []
         image_urls_to_post = []
 
-        for entry in recent_entries[:6]:  # Use up to 6 recent entries
+        for entry in recent_entries[:8]:  # Use up to 8 recent entries for detailed coverage
             title = getattr(entry, 'title', 'No Title').strip()
             summary = getattr(entry, 'summary', '')
             description = getattr(entry, 'description', summary)
             
             # Use the longer of summary or description
             content = description if len(description) > len(summary) else summary
-            content = content[:400].replace('\n', ' ').strip()
+            content = content[:500].replace('\n', ' ').strip()  # Limit length but keep it detailed
             
             link = getattr(entry, 'link', '#').strip()
             source = getattr(entry, 'source', 'Unknown Source')
             published = getattr(entry, 'published', '')
             
             if not title or title.lower().startswith('no title'):
-                print(f"[Hollywood News] Skipping malformed entry: Title='{title}'")
+                print(f"[Gaming News] Skipping malformed entry: Title='{title}'")
                 continue
 
             # Create detailed entry information
@@ -304,137 +263,149 @@ def post_hollywood_news():
             posts_for_ai.append(detailed_entry)
             all_text_for_keywords.append(title + " " + content)
 
-            # Extract images
-            entry_images = extract_images_from_entry(entry)
-            for img_url in entry_images:
-                if img_url not in image_urls_to_post:
+            # Extract images from entry - handle different RSS formats safely
+            current_entry_images = []
+            
+            # Handle media_content
+            if hasattr(entry, 'media_content') and entry.media_content:
+                for media in entry.media_content:
+                    if hasattr(media, 'url') and hasattr(media, 'type') and media.get('type', '').startswith('image/'):
+                        current_entry_images.append(media.url)
+                    elif isinstance(media, dict) and 'url' in media and media.get('type', '').startswith('image/'):
+                        current_entry_images.append(media['url'])
+            
+            # Handle enclosures
+            if hasattr(entry, 'enclosures') and entry.enclosures:
+                for enc in entry.enclosures:
+                    if hasattr(enc, 'href') and hasattr(enc, 'type') and enc.get('type', '').startswith('image/'):
+                        current_entry_images.append(enc.href)
+                    elif isinstance(enc, dict) and 'href' in enc and enc.get('type', '').startswith('image/'):
+                        current_entry_images.append(enc['href'])
+            
+            # Extract images from HTML content
+            if hasattr(entry, 'summary'):
+                try:
+                    matches = re.findall(r'<img[^>]+src="([^">]+)"', entry.summary)
+                    current_entry_images.extend(matches)
+                except:
+                    pass
+            
+            if hasattr(entry, 'description'):
+                try:
+                    matches = re.findall(r'<img[^>]+src="([^">]+)"', entry.description)
+                    current_entry_images.extend(matches)
+                except:
+                    pass
+            
+            # Add valid image URLs
+            for img_url in current_entry_images:
+                if img_url and isinstance(img_url, str) and img_url.startswith('http') and img_url not in image_urls_to_post: 
                     image_urls_to_post.append(img_url)
 
-        image_urls_to_post = image_urls_to_post[:10]
+        image_urls_to_post = list(set(image_urls_to_post))[:10]
         print(f"Total unique images collected for post: {len(image_urls_to_post)}")
 
-        if not posts_for_ai:
-            print("❌ No valid news entries to process.")
-            fallback_message = (
-                "🌟 أخبار هوليوود والمشاهير\n\n"
-                "لا توجد أخبار جديدة عن المشاهير حالياً. "
-                "ما هو آخر فيلم شاهدته؟ شاركنا رأيك! 👇\n\n"
-                "📲 تابع الصفحة للحصول على آخر أخبار هوليوود!\n\n"
-                "#أخبار_هوليوود #المشاهير #أفلام #هوليوود"
-            )
-            fb_post(fallback_message)
-            return
-
-        raw_combined = "\n\n".join(posts_for_ai)
+        raw_combined = "\n\n" + "="*50 + "\n\n".join(posts_for_ai) + "\n" + "="*50
         generated_keywords = extract_keywords(" ".join(all_text_for_keywords))
 
         prompt = (
-            "قم بإنشاء منشور فيسبوك عربي عن أخبار هوليوود والمشاهير باستخدام المعلومات التالية. "
-            "المنشور يجب أن يكون:\n"
-            "- باللغة العربية الفصحى السليمة\n"
-            "- يبدأ بعنوان جذاب عن أخبار هوليوود\n"
-            "- يحتوي على ملخص للأخبار المهمة\n"
-            "- يستخدم رموز تعبيرية مناسبة\n"
-            -" يكون مناسباً لجمهور عربي مهتم بأخبار المشاهير\n"
-            "- ينتهي بدعوة للتفاعل ووسوم ذات صلة\n"
-            "- لا يستخدم تنسيق الماركداون (لا ** أو __ أو *)\n"
-            "- يحافظ على أسماء النجوم والأفلام بالإنجليزية\n\n"
-            "الأخبار:\n" + raw_combined +
-            ("\n\nالكلمات المفتاحية للوسوم: " + ", ".join(generated_keywords) if generated_keywords else "")
+            "قم بإنشاء منشور فيسبوك شامل ومفصل عن آخر أخبار ألعاب الفيديو والألعاب المستقلة. "
+            "ابدأ مباشرة بالعنوان: 'أخبار الألعاب من GameSea' متبوعاً بخطاف قوي وجذاب. "
+            "استخدم نبرة حماسية واحترافية تناسب مجتمع الألعاب باللغة العربية الفصحى. "
+            "قم بتنسيق المنشور بفقرات واضحة ورموز تعبيرية استراتيجية لتحسين قابلية القراءة. "
+            "لا تستخدم أي تنسيق مثل العريض أو المائل (** أو __). "
+            "قدم معلومات كاملة عن كل خبر - لا تترك أي تفاصيل مهمة. "
+            "احتفظ بأسماء الألعاب بلغتها الأصلية (الإنجليزية). "
+            "قم بتضمين جميع الأخبار المقدمة، مع التأكد من تغطية كل منها بشكل مناسب. "
+            "أنهِ المنشور بدعوة قوية للجمهور للإعجاب والمشاركة والتعليق بآرائهم. "
+            "أضف دعوة للمتابعة: '📲 تابع الصفحة للحصول على آخر أخبار وتحديثات الألعاب يومياً!' "
+            "اختم بـ 3-4 وسوم ذات صلة باللغتين العربية والإنجليزية بما في ذلك #GameSea. "
+            "لا تدرج روابط في المنشور النهائي. "
+            "يجب أن يكون النص باللغة العربية الفصحى مع الحفاظ على أسماء الألعاب بالإنجليزية. "
+            "إليك الأخبار المفصلة:\n\n" + raw_combined +
+            ("\n\nيمكنك النظر في هذه الكلمات المفتاحية للوسوم الإضافية: " +
+            ", ".join(generated_keywords) if generated_keywords else "")
         )
 
-        print("[Gemini] Sending request to Gemini API...")
         try:
             response = requests.post(
                 "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent",
                 params={"key": GEMINI},
                 headers={"Content-Type": "application/json"},
-                json={
-                    "contents": [{
-                        "parts": [{"text": prompt}]
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.7,
-                        "topK": 40,
-                        "topP": 0.8,
-                        "maxOutputTokens": 2000
-                    }
-                },
-                timeout=45
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=30  # Increased timeout for more detailed processing
             )
 
             if response.status_code == 200:
                 data = response.json()
-                print("[Gemini] Received response from API")
-                
                 if "candidates" in data and data["candidates"]:
                     ai_summary = data["candidates"][0]["content"]["parts"][0]["text"]
-                    print(f"[Gemini] Generated text length: {len(ai_summary)} characters")
-                    
-                    if ai_summary and len(ai_summary.strip()) > 50:  # Ensure meaningful content
-                        cleaned_summary = clean_facebook_text(ai_summary)
-                        print("[Gemini] Posting to Facebook...")
-                        fb_post(cleaned_summary, image_urls_to_post)
-                        print("[Gemini Hollywood News] Successfully generated and posted content.")
-                        return
-                    else:
-                        print("[Gemini] ❌ Generated content is too short or empty")
+                    # Clean the text from any markdown formatting but preserve hashtags
+                    cleaned_summary = clean_facebook_text(ai_summary)
+                    fb_post(cleaned_summary, image_urls_to_post)
+                    print("[Gemini Gaming News] Successfully generated and posted detailed content in Arabic.")
+                    return
                 else:
-                    print(f"[Gemini] ❌ No valid candidates found: {data}")
+                    print(f"[Gemini Gaming News] ❌ No valid candidates found in Gemini response: {data}")
             else:
-                print(f"[Gemini] ❌ API Error {response.status_code}: {response.text}")
+                print(f"[Gemini Gaming News Error] ❌ API Status {response.status_code}: {response.text}")
 
         except requests.exceptions.RequestException as e:
-            print(f"[Gemini] ❌ Network error: {e}")
-        except json.JSONDecodeError as e:
-            print(f"[Gemini] ❌ JSON decode error: {e}")
+            print(f"[Gemini Gaming News Exception] ❌ Network or API error during Gemini call: {e}")
+        except json.JSONDecodeError:
+            print(f"[Gemini Gaming News Exception] ❌ Could not decode JSON response from Gemini API.")
         except Exception as e:
-            print(f"[Gemini] ❌ Unexpected error: {e}")
+            print(f"[Gemini Gaming News Exception] ❌ An unexpected error occurred with Gemini API: {e}")
 
     except Exception as e:
-        print(f"[Hollywood News] ❌ Main processing error: {e}")
+        print(f"[Gaming News Exception] ❌ An error occurred while processing gaming news: {e}")
     
-    # Fallback content
-    print("[Fallback] Using fallback content...")
-    emoji_list = ["🌟", "🎬", "✨", "🏆", "📸", "💫"]
+    # Fallback if anything above fails (in Arabic)
+    emoji_list = ["🎮", "🔥", "💻", "🏆", "🚨", "✨", "👾", "🎯"]
     clean_posts = []
 
     if entries:
-        for i, entry in enumerate(entries[:4]):
+        for i, entry in enumerate(entries[:5]):  # Show more entries in fallback
             if not is_recent_entry(entry):
                 continue
                 
             emoji = emoji_list[i % len(emoji_list)]
-            title = getattr(entry, 'title', 'Latest Hollywood News').strip()
-            if title and not title.lower().startswith('no title'):
+            title = getattr(entry, 'title', 'Latest Gaming Update').strip()
+            summary = getattr(entry, 'summary', '')
+            description = getattr(entry, 'description', summary)
+            content = description if len(description) > len(summary) else summary
+            content = content[:250].strip().replace('\n', ' ')
+            
+            if title and content:
+                clean_posts.append(f"{emoji} {title}\n{content}")
+            elif title:
                 clean_posts.append(f"{emoji} {title}")
-
+    
     if clean_posts:
         fallback_message = (
-            "🌟 أخبار هوليوود والمشاهير 🌟\n\n"
-            "أبرز العناوين:\n" +
-            "\n".join(clean_posts) +
+            "📰 أخبار الألعاب من GameSea\n\n" +
+            "\n\n".join(clean_posts) +
             "\n\nما رأيك في هذه الأخبار؟ شاركنا رأيك في التعليقات! 👇\n\n"
-            "📲 تابع الصفحة للحصول على آخر أخبار هوليوود والمشاهير يومياً!\n\n"
-            "#أخبار_هوليوود #المشاهير #أخبار_الفن #هوليوود"
+            "📲 تابع الصفحة للحصول على آخر أخبار وتحديثات الألعاب يومياً!\n\n"
         )
     else:
         fallback_message = (
-            "🌟 أخبار هوليوود والمشاهير\n\n"
-            "تابعونا لأحدث أخبار المشاهير والأفلام من هوليوود! 🎬\n\n"
-            "ما هو آخر فيلم شاهدته؟ ومن نجمك المفضل؟ شاركنا في التعليقات! 👇\n\n"
-            "📲 تابع الصفحة للبقاء على اطلاع دائم بأخبار هوليوود!\n\n"
-            "#أخبار_هوليوود #المشاهير #أفلام #هوليوود"
+            "📰 أخبار الألعاب من GameSea\n\n"
+            "لا توجد أخبار ألعاب رئيسية للإبلاغ عنها حالياً! "
+            "ما هي آخر لعبة لعبتها؟ شاركنا تجربتك! 👇\n\n"
+            "📲 تابع الصفحة للحصول على آخر أخبار وتحديثات الألعاب يومياً!\n\n"
         )
 
-    # Extract images for fallback
-    fallback_images = []
-    if entries:
-        for entry in entries[:3]:
-            fallback_images.extend(extract_images_from_entry(entry))
-    
+    # Add hashtags properly
+    fallback_hashtags = "#أخبار_الألعاب #ألعاب_فيديو #ألعاب_إندي #GameSea"
+    if generated_keywords:
+        fallback_hashtags += " " + " ".join(generated_keywords)
+        # Remove any duplicates
+        fallback_hashtags = " ".join(sorted(list(set(fallback_hashtags.split())))[:8])
+
+    # Clean the fallback message from any markdown but preserve hashtags
     cleaned_fallback = clean_facebook_text(fallback_message)
-    fb_post(cleaned_fallback, fallback_images[:3])
+    fb_post(f"{cleaned_fallback}{fallback_hashtags}", image_urls_to_post if image_urls_to_post else None)
 
 if __name__ == '__main__':
-    post_hollywood_news()
+    post_gaming_news()
