@@ -35,10 +35,26 @@ jobs:
           VIDEO_TITLE=""
           VIDEO_YEAR=""
 
-          QUERIES="1990s city street footage|1980s television commercial|vintage city footage 1970s|old new york city footage|1990s commercial television|vintage home video 1980s|old los angeles footage|1990s technology gadgets|vintage shopping mall footage|old city downtown footage|1980s music television|vintage airport footage|old street footage 1970s|1990s everyday life footage|vintage supermarket footage"
-          IFS='|' read -ra QUERY_ARR <<< "$QUERIES"
+          QUERIES=(
+            "1990s city street footage"
+            "1980s television commercial"
+            "vintage city footage 1970s"
+            "old new york city footage"
+            "1990s commercial television"
+            "vintage home video 1980s"
+            "old los angeles footage"
+            "1990s technology gadgets"
+            "vintage shopping mall footage"
+            "old city downtown footage"
+            "1980s music television"
+            "vintage airport footage"
+            "old street footage 1970s"
+            "1990s everyday life footage"
+            "vintage supermarket footage"
+          )
 
-          for QUERY in $(printf "%s\n" "${QUERY_ARR[@]}" | shuf); do
+          for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
+            QUERY="${QUERIES[$idx]}"
             echo "Searching: $QUERY"
             ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
             RESP=$(timeout 15 curl -sf --max-time 15 \
