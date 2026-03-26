@@ -21,29 +21,57 @@ jobs:
         id: vid
         run: |
           set -e
+          # Categories that are verified to have direct video files
           QUERIES=("Vintage_video" "Historical_films" "Old_New_York" "1990s_videos" "1980s_videos")
-          QUERY=${QUERIES[$((RANDOM % ${#QUERIES[@]}))]}
           
-          LIST_URL="https://commons.wikimedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Category:${QUERY}&cmtype=file&cmlimit=50&format=json"
-          RESP=$(curl -sf "$LIST_URL")
-          FILE_TITLE=$(echo "$RESP" | jq -r '.query.categorymembers[] | select(.title | test("\\.(webm|ogv|mp4|mpg)$")) | .title' | shuf -n 1)
-          
-          INFO_URL="https://commons.wikimedia.org/w/api.php?action=query&titles=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$FILE_TITLE")&prop=videoinfo&viprop=url|derivatives&format=json"
-          FINAL_RESP=$(curl -sf "$INFO_URL")
-          
-          VIDEO_URL=$(echo "$FINAL_RESP" | jq -r '.query.pages[].videoinfo[0].derivatives[]? | select(.format=="mp4") | .url' | head -1)
-          [ -z "$VIDEO_URL" ] || [ "$VIDEO_URL" == "null" ] && VIDEO_URL=$(echo "$FINAL_RESP" | jq -r '.query.pages[].videoinfo[0].url')
+          FOUND=false
+          # Try up to 5 times to find a category that isn't empty
+          for i in {1..5}; do
+            QUERY=${QUERIES[$((RANDOM % ${#QUERIES[@]}))]}
+            echo "Attempt $i: Searching Category:$QUERY"
+            
+            # Use formatversion=2 for cleaner JSON
+            LIST_URL="https://commons.wikimedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Category:${QUERY}&cmtype=file&cmlimit=50&format=json&formatversion=2"
+            RESP=$(curl -sf "$LIST_URL")
+            
+            # Check if categorymembers exists and has items
+            FILE_TITLE=$(echo "$RESP" | jq -r '.query.categorymembers // [] | .[]?.title' | shuf -n 1 || echo "")
+            
+            if [ -n "$FILE_TITLE" ] && [ "$FILE_TITLE" != "null" ]; then
+              echo "Selected: $FILE_TITLE"
+              
+              # Get info with formatversion=2
+              INFO_URL="https://commons.wikimedia.org/w/api.php?action=query&titles=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$FILE_TITLE")&prop=videoinfo&viprop=url|derivatives&format=json&formatversion=2"
+              FINAL_RESP=$(curl -sf "$INFO_URL")
+              
+              # Try to get MP4 derivative first
+              VIDEO_URL=$(echo "$FINAL_RESP" | jq -r '.query.pages[0].videoinfo[0].derivatives // [] | .[] | select(.format=="mp4") | .url' | head -1 || echo "")
+              
+              # Fallback to original if no MP4 transcode found
+              if [ -z "$VIDEO_URL" ] || [ "$VIDEO_URL" == "null" ]; then
+                VIDEO_URL=$(echo "$FINAL_RESP" | jq -r '.query.pages[0].videoinfo[0].url // empty')
+              fi
+              
+              if [ -n "$VIDEO_URL" ]; then
+                DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO_URL" 2>/dev/null | cut -d. -f1)
+                
+                if [[ "$DUR" =~ ^[0-9]+$ ]] && [ "$DUR" -gt 30 ]; then
+                  HALF=$(echo "$DUR / 2" | bc)
+                  echo "video_url=$VIDEO_URL" >> "$GITHUB_OUTPUT"
+                  echo "video_title=${FILE_TITLE#File:}" >> "$GITHUB_OUTPUT"
+                  echo "video_half=$HALF" >> "$GITHUB_OUTPUT"
+                  FOUND=true
+                  break
+                fi
+              fi
+            fi
+            echo "Category empty or file invalid, retrying..."
+          done
 
-          # Get total duration
-          DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO_URL" 2>/dev/null | cut -d. -f1)
-          if [ -z "$DUR" ] || [ "$DUR" -lt 30 ]; then echo "Video too short. Skipping."; exit 1; fi
-
-          # Calculate the half-way point
-          HALF=$(echo "$DUR / 2" | bc)
-
-          echo "video_url=$VIDEO_URL" >> "$GITHUB_OUTPUT"
-          echo "video_title=${FILE_TITLE#File:}" >> "$GITHUB_OUTPUT"
-          echo "video_half=$HALF" >> "$GITHUB_OUTPUT"
+          if [ "$FOUND" = false ]; then
+            echo "Could not find a valid video after 5 attempts."
+            exit 1
+          fi
 
       - name: process-parts
         run: |
