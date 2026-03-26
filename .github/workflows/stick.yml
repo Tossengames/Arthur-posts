@@ -1,0 +1,598 @@
+name: stickman-animation-post
+
+on:
+  workflow_dispatch:
+    inputs:
+      scene:
+        description: "Scene (dancing, tripping, parkour, running, random)"
+        required: false
+        default: "random"
+      speed:
+        description: "Speed (slow, normal, fast)"
+        required: false
+        default: "normal"
+      stick_color:
+        description: "Stick figure color (e.g. white, red, #00ff00)"
+        required: false
+        default: "white"
+      background:
+        description: "Background (city, park, stage, night, random)"
+        required: false
+        default: "random"
+      duration:
+        description: "Duration in seconds (5-10)"
+        required: false
+        default: "7"
+  schedule:
+    - cron: "0 18 * * *"
+
+jobs:
+  animate-and-post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install-dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg bc jq
+          pip install matplotlib Pillow numpy --quiet
+
+      - name: generate-animation
+        id: anim
+        env:
+          SCENE_INPUT: ${{ github.event.inputs.scene || 'random' }}
+          SPEED_INPUT: ${{ github.event.inputs.speed || 'normal' }}
+          COLOR_INPUT: ${{ github.event.inputs.stick_color || 'white' }}
+          BG_INPUT: ${{ github.event.inputs.background || 'random' }}
+          DURATION_INPUT: ${{ github.event.inputs.duration || '7' }}
+        run: |
+          python3 << 'PYEOF'
+          import os, random, math, subprocess, shutil
+          import matplotlib
+          matplotlib.use('Agg')
+          import matplotlib.pyplot as plt
+          import matplotlib.patches as patches
+          from matplotlib.patches import FancyArrowPatch, Arc
+          import numpy as np
+          from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
+          import tempfile
+
+          # ── Config ────────────────────────────────────────────────────────────
+          SCENE    = os.environ.get("SCENE_INPUT", "random").strip().lower()
+          SPEED    = os.environ.get("SPEED_INPUT", "normal").strip().lower()
+          COLOR    = os.environ.get("COLOR_INPUT", "white").strip()
+          BG       = os.environ.get("BG_INPUT", "random").strip().lower()
+          DURATION = max(5, min(10, int(os.environ.get("DURATION_INPUT", "7"))))
+
+          FPS = {"slow": 18, "fast": 30}.get(SPEED, 24)
+          SCENES = ["dancing", "tripping", "parkour", "running"]
+          BACKGROUNDS = ["city", "park", "stage", "night"]
+
+          if SCENE == "random":   SCENE = random.choice(SCENES)
+          if BG    == "random":   BG    = random.choice(BACKGROUNDS)
+
+          TOTAL_FRAMES = DURATION * FPS
+          W, H = 1280, 720
+          FRAMES_DIR = "/tmp/frames"
+          os.makedirs(FRAMES_DIR, exist_ok=True)
+
+          print(f"Scene={SCENE} BG={BG} Color={COLOR} FPS={FPS} Frames={TOTAL_FRAMES}")
+
+          # ── Colour helpers ────────────────────────────────────────────────────
+          def hex_to_rgb01(h):
+              h = h.lstrip('#')
+              return tuple(int(h[i:i+2], 16)/255 for i in (0,2,4))
+
+          def named_or_hex(c):
+              try:
+                  import matplotlib.colors as mc
+                  return mc.to_rgb(c)
+              except:
+                  return (1,1,1)
+
+          STICK_RGB = named_or_hex(COLOR)
+
+          # ── Background renderer ───────────────────────────────────────────────
+          def draw_background(ax, bg, frame, total):
+              t = frame / total
+              ax.set_facecolor('black')
+
+              if bg == "night":
+                  ax.set_facecolor('#050510')
+                  rng = np.random.RandomState(42)
+                  sx = rng.uniform(0,1,200); sy = rng.uniform(0.15,1,200)
+                  twinkle = 0.5 + 0.5*np.sin(np.linspace(0,20,200)+frame*0.15)
+                  ax.scatter(sx, sy, s=twinkle*4, c='white', alpha=0.7, zorder=1)
+                  moon = plt.Circle((0.82, 0.82), 0.055, color='#fffde7', zorder=2)
+                  ax.add_patch(moon)
+                  glow = plt.Circle((0.82, 0.82), 0.085, color='#fffde7', alpha=0.12, zorder=1)
+                  ax.add_patch(glow)
+                  ground = patches.Rectangle((0,0),1,0.18, color='#0a0a1a', zorder=3)
+                  ax.add_patch(ground)
+                  ax.plot([0.1,0.1],[0.18,0.6], color='#aaa', lw=3, zorder=4)
+                  ax.plot([0.1,0.14],[0.6,0.63], color='#aaa', lw=3, zorder=4)
+                  lamp = plt.Circle((0.14,0.64), 0.018, color='#fff9c4', zorder=5)
+                  ax.add_patch(lamp)
+                  lampglow = plt.Circle((0.14,0.64), 0.045, color='#fff9c4', alpha=0.18, zorder=4)
+                  ax.add_patch(lampglow)
+
+              elif bg == "city":
+                  sky_c = (0.53-0.1*t, 0.73-0.1*t, 0.92-0.05*t)
+                  ax.set_facecolor(sky_c)
+                  buildings = [(0.0,0.35,0.12),(0.11,0.45,0.10),(0.20,0.38,0.13),
+                               (0.32,0.50,0.09),(0.40,0.42,0.11),(0.50,0.55,0.10),
+                               (0.59,0.40,0.13),(0.71,0.48,0.10),(0.80,0.36,0.14),(0.93,0.44,0.09)]
+                  for bx,bh,bw in buildings:
+                      rect = patches.Rectangle((bx,0.18),bw,bh,color='#2a2a3a',zorder=2)
+                      ax.add_patch(rect)
+                      for wy in np.arange(0.22,0.18+bh,0.07):
+                          for wx in np.arange(bx+0.01,bx+bw-0.01,0.035):
+                              wc = random.choice(['#ffe082','#fff9c4','#2a2a3a'])
+                              wr = patches.Rectangle((wx,wy),0.018,0.03,color=wc,zorder=3)
+                              ax.add_patch(wr)
+                  ground = patches.Rectangle((0,0),1,0.18,color='#555566',zorder=4)
+                  ax.add_patch(ground)
+                  for rx in np.arange(0.05,1,0.12):
+                      ax.plot([rx,rx+0.06],[0.09,0.09],color='#ffe082',lw=2,zorder=5)
+
+              elif bg == "park":
+                  ax.set_facecolor('#87ceeb')
+                  for cx,cy,cs in [(0.15,0.75,0.06),(0.45,0.80,0.05),(0.75,0.72,0.07)]:
+                      drift = cx + 0.03*math.sin(frame*0.03)
+                      for ox,oy in [(0,0),(0.04,0.02),(-0.04,0.01),(0.02,-0.02)]:
+                          c = plt.Circle((drift+ox,cy+oy),cs,color='white',alpha=0.85,zorder=2)
+                          ax.add_patch(c)
+                  grass = patches.Rectangle((0,0),1,0.22,color='#4caf50',zorder=3)
+                  ax.add_patch(grass)
+                  darker = patches.Rectangle((0,0),1,0.10,color='#388e3c',zorder=3)
+                  ax.add_patch(darker)
+                  for tx in [0.08, 0.88]:
+                      ax.plot([tx,tx],[0.22,0.50],color='#5d4037',lw=6,zorder=4)
+                      tree = plt.Circle((tx,0.53),0.07,color='#2e7d32',zorder=5)
+                      ax.add_patch(tree)
+                  sun = plt.Circle((0.88,0.85),0.055,color='#ffd600',zorder=2)
+                  ax.add_patch(sun)
+                  for ang in range(0,360,40):
+                      rx=0.88+0.075*math.cos(math.radians(ang+frame*2))
+                      ry=0.85+0.075*math.sin(math.radians(ang+frame*2))
+                      ax.plot([0.88,rx],[0.85,ry],color='#ffd600',lw=2,alpha=0.7,zorder=2)
+
+              elif bg == "stage":
+                  ax.set_facecolor('#1a0033')
+                  stage = patches.Rectangle((0,0),1,0.22,color='#3e1a00',zorder=2)
+                  ax.add_patch(stage)
+                  spot_x = 0.5 + 0.1*math.sin(frame*0.08)
+                  from matplotlib.patches import Wedge
+                  spotlight = Wedge((spot_x,1.0),0.85,245,295,color='#fff9c4',alpha=0.10,zorder=1)
+                  ax.add_patch(spotlight)
+                  colors_disco = ['#ff1744','#00e5ff','#76ff03','#ff9100','#e040fb']
+                  for i,(lx,ly) in enumerate([(0.1,0.95),(0.3,0.97),(0.5,0.96),(0.7,0.97),(0.9,0.95)]):
+                      phase = (frame*0.2 + i*1.2) % (2*math.pi)
+                      alpha = 0.4 + 0.5*abs(math.sin(phase))
+                      lc = colors_disco[(i + int(frame*0.1)) % len(colors_disco)]
+                      beam = Wedge((lx,ly),0.6,250,290,color=lc,alpha=alpha*0.25,zorder=1)
+                      ax.add_patch(beam)
+                      dot = plt.Circle((lx,ly),0.015,color=lc,alpha=alpha,zorder=3)
+                      ax.add_patch(dot)
+                  curtain_l = patches.Rectangle((0,0),0.08,1,color='#880e4f',zorder=6)
+                  curtain_r = patches.Rectangle((0.92,0),0.08,1,color='#880e4f',zorder=6)
+                  ax.add_patch(curtain_l); ax.add_patch(curtain_r)
+
+          # ── Stick figure drawer ───────────────────────────────────────────────
+          def draw_stick(ax, x, y, scale, color, angles, alpha=1.0, shadow=False):
+              sc = scale
+              lw = max(2, sc * 22)
+              c = (0,0,0,0.3*alpha) if shadow else (*color, alpha)
+
+              leg_len   = sc * 0.22
+              body_len  = sc * 0.20
+              head_r    = sc * 0.055
+              arm_len   = sc * 0.14
+              neck_len  = sc * 0.04
+
+              lean      = angles.get('lean', 0)
+              neck_bend = angles.get('neck_bend', 0)
+
+              lf = np.array([x, y])
+              rf = np.array([x, y])
+
+              l_leg_ang = angles.get('l_leg', math.pi*0.08)
+              r_leg_ang = angles.get('r_leg', -math.pi*0.08)
+
+              lk = lf + leg_len*0.5 * np.array([math.sin(l_leg_ang+lean), math.cos(l_leg_ang+lean)])
+              rk = rf + leg_len*0.5 * np.array([math.sin(r_leg_ang+lean), math.cos(r_leg_ang+lean)])
+
+              lh = lf + leg_len * np.array([math.sin(l_leg_ang+lean), math.cos(l_leg_ang+lean)])
+              rh = rf + leg_len * np.array([math.sin(r_leg_ang+lean), math.cos(r_leg_ang+lean)])
+              hip = (lh + rh) / 2
+
+              shoulder = hip + body_len * np.array([math.sin(lean), math.cos(lean)])
+
+              neck_top = shoulder + neck_len * np.array([math.sin(lean+neck_bend), math.cos(lean+neck_bend)])
+              head_c   = neck_top + head_r * np.array([math.sin(lean+neck_bend), math.cos(lean+neck_bend)])
+
+              l_arm_ang = angles.get('l_arm', -math.pi*0.4)
+              r_arm_ang = angles.get('r_arm',  math.pi*0.4)
+              l_elbow = shoulder + arm_len*0.5 * np.array([math.sin(l_arm_ang), math.cos(l_arm_ang)])
+              r_elbow = shoulder + arm_len*0.5 * np.array([math.sin(r_arm_ang), math.cos(r_arm_ang)])
+              l_hand  = shoulder + arm_len     * np.array([math.sin(l_arm_ang), math.cos(l_arm_ang)])
+              r_hand  = shoulder + arm_len     * np.array([math.sin(r_arm_ang), math.cos(r_arm_ang)])
+
+              def line(p1,p2): ax.plot([p1[0],p2[0]],[p1[1],p2[1]], color=c, lw=lw, solid_capstyle='round', zorder=8 if not shadow else 6)
+
+              line(lf, lk); line(lk, lh)
+              line(rf, rk); line(rk, rh)
+              line(hip, shoulder)
+              line(shoulder, neck_top)
+              line(shoulder, l_elbow); line(l_elbow, l_hand)
+              line(shoulder, r_elbow); line(r_elbow, r_hand)
+              head = plt.Circle(head_c, head_r, color=c, fill=False if not shadow else True, lw=lw*0.7, zorder=8 if not shadow else 6)
+              ax.add_patch(head)
+
+              if not shadow:
+                  eye_off = head_r * 0.35
+                  for ex_off in [-eye_off, eye_off]:
+                      ep = head_c + np.array([ex_off, head_r*0.1])
+                      eye = plt.Circle(ep, head_r*0.12, color=color, zorder=9)
+                      ax.add_patch(eye)
+
+          # ── VFX helpers ───────────────────────────────────────────────────────
+          def draw_motion_blur(ax, x, y, scale, color, dx=0.015):
+              for i in range(1,4):
+                  alpha = 0.08 * (4-i)
+                  draw_stick(ax, x - dx*i, y, scale*0.98, color,
+                             {'lean':0,'l_leg':0,'r_leg':0,'l_arm':-0.6,'r_arm':0.6}, alpha=alpha)
+
+          def draw_speed_lines(ax, x, y, color=(1,1,1)):
+              for _ in range(8):
+                  lx = random.uniform(0.0, x-0.05)
+                  ly = random.uniform(y-0.05, y+0.2)
+                  length = random.uniform(0.04, 0.12)
+                  ax.plot([lx, lx+length],[ly,ly], color=color, lw=random.uniform(1,2.5), alpha=0.35, zorder=7)
+
+          def draw_dust(ax, x, y, frame, color='#aaa'):
+              for i in range(6):
+                  age = (frame + i*3) % 18
+                  ox = -age * 0.008 + random.uniform(-0.01,0.01)
+                  oy =  age * 0.006
+                  r  = 0.008 + age*0.001
+                  alpha = max(0, 0.4 - age*0.022)
+                  c = plt.Circle((x+ox, y+oy), r, color=color, alpha=alpha, zorder=7)
+                  ax.add_patch(c)
+
+          def draw_sweat_drops(ax, x, y, scale):
+              for _ in range(3):
+                  sx = x + random.uniform(-0.04, 0.04)
+                  sy = y + scale*0.35 + random.uniform(0, 0.05)
+                  ax.plot([sx, sx-0.008],[sy,sy-0.025], color='#90caf9', lw=2, alpha=0.7, zorder=9)
+
+          def draw_stars_hit(ax, x, y, frame, n=6):
+              for i in range(n):
+                  ang = 2*math.pi*i/n + frame*0.3
+                  r = 0.03 + 0.01*math.sin(frame*0.5)
+                  sx = x + r*math.cos(ang)
+                  sy = y + r*math.sin(ang)
+                  ax.plot(sx, sy, '*', color='#ffd600', markersize=8, zorder=10)
+
+          def draw_music_notes(ax, x, y, frame):
+              notes = ['♩','♪','♫','♬']
+              for i in range(3):
+                  phase = (frame*0.08 + i*2.1) % (2*math.pi)
+                  nx = x + 0.06 + i*0.04 + 0.01*math.sin(phase*2)
+                  ny = y + 0.25 + 0.04*abs(math.sin(phase))
+                  alpha = 0.4 + 0.6*abs(math.sin(phase))
+                  ax.text(nx, ny, notes[i%4], fontsize=16, color='#ff80ab', alpha=alpha,
+                          fontfamily='DejaVu Sans', zorder=10)
+
+          def draw_exclamation(ax, x, y):
+              ax.text(x+0.02, y+0.42, '!', fontsize=28, color='#ff1744',
+                      fontweight='bold', zorder=10, ha='center')
+
+          def draw_trail(ax, positions, color, alpha_base=0.18):
+              for i, (px,py) in enumerate(positions):
+                  a = alpha_base * (i+1) / len(positions)
+                  c = plt.Circle((px,py+0.05), 0.012, color=color, alpha=a, zorder=6)
+                  ax.add_patch(c)
+
+          # ── Scene: DANCING ────────────────────────────────────────────────────
+          def scene_dancing(frame, total, ax, color):
+              t  = frame / total
+              ph = frame * (2*math.pi / (FPS * 1.2))
+
+              x  = 0.5 + 0.04 * math.sin(ph * 0.5)
+              y  = 0.22 + 0.012 * abs(math.sin(ph))
+
+              lean = 0.08 * math.sin(ph)
+              la   = -math.pi*0.55 + 0.45*math.sin(ph)
+              ra   =  math.pi*0.55 - 0.45*math.sin(ph)
+              ll   =  math.pi*0.18 * math.sin(ph + 0.4)
+              rl   = -math.pi*0.18 * math.sin(ph - 0.4)
+
+              angles = dict(lean=lean, l_arm=la, r_arm=ra, l_leg=ll, r_leg=rl, neck_bend=0.08*math.sin(ph*2))
+
+              draw_stick(ax, x, 0.22, 0.28, color, angles, alpha=0.15, shadow=True)
+              draw_stick(ax, x, y,    0.28, color, angles)
+              draw_music_notes(ax, x, y, frame)
+              draw_sweat_drops(ax, x, y, 0.28)
+
+          # ── Scene: TRIPPING ───────────────────────────────────────────────────
+          def scene_tripping(frame, total, ax, color):
+              seg = total // 4
+              s   = frame // seg
+
+              if s == 0:
+                  p  = frame / seg
+                  x  = 0.15 + p * 0.28
+                  y  = 0.22
+                  ph = frame * 0.35
+                  angles = dict(lean=0.04*math.sin(ph), l_leg=0.22*math.sin(ph), r_leg=-0.22*math.sin(ph),
+                                l_arm= 0.3*math.sin(ph+math.pi), r_arm= 0.3*math.sin(ph), neck_bend=0)
+                  draw_stick(ax, x, y, 0.28, color, angles)
+                  rock = plt.Polygon([[0.45,0.22],[0.48,0.22],[0.47,0.255],[0.44,0.255]], color='#78909c', zorder=5)
+                  ax.add_patch(rock)
+
+              elif s == 1:
+                  p  = (frame - seg) / seg
+                  x  = 0.43 + p * 0.07
+                  y  = 0.22
+                  lean = math.pi*0.15 * p
+                  angles = dict(lean=lean, l_leg=0.6*p, r_leg=-0.2,
+                                l_arm=-math.pi*0.2, r_arm=math.pi*0.7*p, neck_bend=lean*0.5)
+                  draw_exclamation(ax, x, y)
+                  draw_stick(ax, x, y, 0.28, color, angles)
+                  draw_stars_hit(ax, x, y+0.35, frame)
+
+              elif s == 2:
+                  p  = (frame - 2*seg) / seg
+                  x  = 0.50 + p * 0.15
+                  y  = 0.22 + 0.04 * math.sin(math.pi*p) - p*0.02
+                  lean = math.pi*0.5 * p
+                  angles = dict(lean=lean, l_leg=0.8, r_leg=-0.3,
+                                l_arm=-math.pi*0.9, r_arm=math.pi*0.5, neck_bend=0.3)
+                  draw_stick(ax, x, max(0.22,y), 0.28, color, angles)
+                  draw_dust(ax, x, 0.22, frame)
+                  draw_stars_hit(ax, x, 0.22+0.3, frame)
+
+              else:
+                  p  = (frame - 3*seg) / max(1, total - 3*seg)
+                  x  = 0.65
+                  y  = 0.22 + 0.06*(1 - math.cos(math.pi*p))
+                  lean = math.pi*0.5*(1-p)
+                  angles = dict(lean=lean, l_leg=0.3*(1-p), r_leg=-0.1,
+                                l_arm=-math.pi*0.6*(1-p) - 0.3*p, r_arm=math.pi*0.3, neck_bend=0.1)
+                  draw_stick(ax, x, max(0.22,y), 0.28, color, angles)
+                  if p > 0.5:
+                      draw_stars_hit(ax, x, 0.22+0.35, frame)
+
+          # ── Scene: PARKOUR ────────────────────────────────────────────────────
+          def scene_parkour(frame, total, ax, color):
+              seg  = total // 5
+              s    = frame // seg
+
+              plat = patches.Rectangle((0.35,0.38),0.18,0.03,color='#546e7a',zorder=4)
+              ax.add_patch(plat)
+              wall  = patches.Rectangle((0.62,0.22),0.04,0.28,color='#455a64',zorder=4)
+              ax.add_patch(wall)
+              plat2 = patches.Rectangle((0.72,0.50),0.15,0.03,color='#546e7a',zorder=4)
+              ax.add_patch(plat2)
+
+              if s == 0:
+                  p = frame/seg
+                  x = 0.10 + p*0.28; y = 0.22
+                  ph = frame*0.45
+                  angles = dict(lean=0.15, l_leg=0.3*math.sin(ph), r_leg=-0.3*math.sin(ph),
+                                l_arm=-0.4*math.sin(ph), r_arm=0.4*math.sin(ph), neck_bend=0.1)
+                  draw_speed_lines(ax, x, y)
+                  draw_motion_blur(ax, x, y, 0.28, color)
+                  draw_stick(ax, x, y, 0.28, color, angles)
+
+              elif s == 1:
+                  p = (frame-seg)/seg
+                  x = 0.38+p*0.1
+                  y = 0.22 + 0.22*math.sin(math.pi*p)
+                  angles = dict(lean=0, l_leg=-0.5, r_leg=0.4, l_arm=-1.2, r_arm=0.8, neck_bend=-0.1)
+                  draw_trail(ax, [(x-0.02*i, y-0.01*i) for i in range(1,5)], color)
+                  draw_stick(ax, x, max(0.22,y), 0.28, color, angles)
+
+              elif s == 2:
+                  p = (frame-2*seg)/seg
+                  x = 0.62; y = 0.28+p*0.18
+                  ph = frame*0.5
+                  angles = dict(lean=-math.pi*0.45, l_leg=0.4*math.sin(ph), r_leg=-0.4*math.sin(ph),
+                                l_arm=-0.6, r_arm=0.2, neck_bend=-0.2)
+                  draw_stick(ax, x, max(0.22,y), 0.28, color, angles)
+                  draw_dust(ax, x, y, frame, '#90a4ae')
+
+              elif s == 3:
+                  p = (frame-3*seg)/seg
+                  x = 0.66+p*0.10
+                  y = 0.50+0.12*math.sin(math.pi*p)
+                  flip = -2*math.pi*p
+                  angles = dict(lean=flip, l_leg=0.5, r_leg=-0.5, l_arm=-1.0, r_arm=1.0, neck_bend=0)
+                  draw_trail(ax, [(x-0.02*i, y) for i in range(1,6)], color)
+                  draw_stick(ax, x, max(0.22,y), 0.28, color, angles)
+
+              else:
+                  p = (frame-4*seg)/max(1,total-4*seg)
+                  x = 0.76; y = 0.22+0.04*(1-p)
+                  angles = dict(lean=0, l_leg=0.15, r_leg=-0.15, l_arm=-1.4, r_arm=1.4, neck_bend=-0.1)
+                  draw_stick(ax, x, max(0.22,y), 0.28, color, angles)
+                  draw_dust(ax, x, 0.22, frame)
+                  if p > 0.5:
+                      ax.text(0.68, 0.62, '💥', fontsize=22, zorder=10)
+
+          # ── Scene: RUNNING ────────────────────────────────────────────────────
+          def scene_running(frame, total, ax, color):
+              t  = frame / total
+              x  = 0.15 + t * 0.65
+              y  = 0.22
+              ph = frame * 0.55
+
+              bx = max(0.0, x - 0.18 + 0.02*math.sin(frame*0.4))
+              boulder = plt.Circle((bx, 0.255), 0.065, color='#78909c', zorder=5)
+              ax.add_patch(boulder)
+              for ang in [30,100,200,300]:
+                  bx2 = bx + 0.05*math.cos(math.radians(ang))
+                  by2 = 0.255 + 0.05*math.sin(math.radians(ang))
+                  ax.plot([bx,bx2],[0.255,by2],color='#546e7a',lw=1.5,zorder=6)
+
+              lean = 0.22
+              la   = -0.5 + 0.5*math.sin(ph + math.pi)
+              ra   =  0.5 - 0.5*math.sin(ph)
+              ll   =  0.45*math.sin(ph)
+              rl   = -0.45*math.sin(ph)
+
+              angles = dict(lean=lean, l_arm=la, r_arm=ra, l_leg=ll, r_leg=rl, neck_bend=0.2)
+
+              draw_speed_lines(ax, x, y)
+              draw_motion_blur(ax, x, y, 0.28, color, dx=0.02)
+              draw_stick(ax, x, y, 0.28, color, angles)
+              draw_sweat_drops(ax, x, y+0.02, 0.28)
+
+              if frame % 20 < 10:
+                  ax.text(x+0.02, y+0.40, '😱', fontsize=16, zorder=10)
+
+              draw_dust(ax, bx-0.05, 0.22, frame, '#a1887f')
+
+          # ── Caption watermark ─────────────────────────────────────────────────
+          def draw_ui(ax, scene, frame, total):
+              labels = {
+                  'dancing': '🕺 FEELING THE BEAT',
+                  'tripping': '😵 WATCH YOUR STEP',
+                  'parkour': '🤸 PARKOUR PRO',
+                  'running': '🏃 RUN FOR YOUR LIFE'
+              }
+              label = labels.get(scene, '🎬 STICKMAN')
+              prog = frame / total
+              bar_bg = patches.Rectangle((0.05,0.96),0.90,0.018,color='#ffffff22',zorder=20)
+              bar_fg = patches.Rectangle((0.05,0.96),0.90*prog,0.018,color='#ff4081',zorder=21)
+              ax.add_patch(bar_bg); ax.add_patch(bar_fg)
+              ax.text(0.5, 0.925, label, transform=ax.transAxes,
+                      fontsize=13, color='white', fontweight='bold',
+                      ha='center', va='center', zorder=22,
+                      bbox=dict(boxstyle='round,pad=0.3', facecolor='#00000055', edgecolor='none'))
+
+          # ── Frame renderer ────────────────────────────────────────────────────
+          scene_fn = {
+              'dancing':  scene_dancing,
+              'tripping': scene_tripping,
+              'parkour':  scene_parkour,
+              'running':  scene_running,
+          }[SCENE]
+
+          for f in range(TOTAL_FRAMES):
+              fig, ax = plt.subplots(figsize=(W/100, H/100), dpi=100)
+              fig.patch.set_facecolor('black')
+              ax.set_xlim(0,1); ax.set_ylim(0,1)
+              ax.set_aspect('equal')
+              ax.axis('off')
+              plt.subplots_adjust(left=0,right=1,top=1,bottom=0)
+
+              draw_background(ax, BG, f, TOTAL_FRAMES)
+              scene_fn(f, TOTAL_FRAMES, ax, STICK_RGB)
+              draw_ui(ax, SCENE, f, TOTAL_FRAMES)
+
+              frame_path = os.path.join(FRAMES_DIR, f"{f:05d}.png")
+              plt.savefig(frame_path, dpi=100, bbox_inches='tight', pad_inches=0,
+                          facecolor='black')
+              plt.close(fig)
+
+              if f % 20 == 0:
+                  print(f"  Frame {f}/{TOTAL_FRAMES}")
+
+          print("All frames rendered. Stitching video...")
+
+          subprocess.run([
+              "ffmpeg", "-y",
+              "-framerate", str(FPS),
+              "-i", f"{FRAMES_DIR}/%05d.png",
+              "-c:v", "libx264",
+              "-preset", "slow",
+              "-crf", "18",
+              "-pix_fmt", "yuv420p",
+              "-movflags", "+faststart",
+              "-vf", f"scale={W}:{H}:flags=lanczos",
+              "/tmp/stickman_raw.mp4"
+          ], check=True)
+
+          sfx_map = {
+              'dancing': "sine=frequency=120:duration={}".format(DURATION),
+              'tripping': "sine=frequency=80:duration={}".format(DURATION),
+              'parkour': "sine=frequency=200:duration={}".format(DURATION),
+              'running': "sine=frequency=100:duration={}".format(DURATION),
+          }
+          afilt = sfx_map.get(SCENE, "sine=frequency=120:duration={}".format(DURATION))
+
+          subprocess.run([
+              "ffmpeg", "-y",
+              "-i", "/tmp/stickman_raw.mp4",
+              "-f", "lavfi",
+              "-i", afilt,
+              "-c:v", "copy",
+              "-c:a", "aac",
+              "-b:a", "128k",
+              "-shortest",
+              "/tmp/stickman_final.mp4"
+          ], check=True)
+
+          print("Video ready: /tmp/stickman_final.mp4")
+
+          with open("/tmp/scene_name.txt","w") as fh:
+              fh.write(SCENE)
+
+          PYEOF
+
+          echo "scene_name=$(cat /tmp/scene_name.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: pick-caption
+        id: caption
+        run: |
+          SCENE="${{ steps.anim.outputs.scene_name }}"
+
+          declare -A HOOKS
+          HOOKS[dancing]="This stick man said FORGET PROBLEMS, just DANCE 🕺🔥 #StickMan #Dancing #Funny #Shorts"
+          HOOKS[tripping]="Me walking to the fridge at 3am 😵💥 #StickMan #Relatable #Funny #Fail #Shorts"
+          HOOKS[parkour]="POV: You watched one parkour video 🤸💨 #StickMan #Parkour #Satisfying #Shorts"
+          HOOKS[running]="When Monday morning hits different 🏃😱 #StickMan #Running #Funny #Shorts"
+
+          CAPTION="${HOOKS[$SCENE]:-"My stick man said lets go 🎬 #StickMan #Animation #Funny #Shorts"}"
+          echo "caption=${CAPTION}" >> "$GITHUB_OUTPUT"
+
+      - name: post-to-facebook
+        timeout-minutes: 5
+        env:
+          PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          CAPTION: ${{ steps.caption.outputs.caption }}
+        run: |
+          FILE="/tmp/stickman_final.mp4"
+          API="https://graph.facebook.com/v19.0"
+
+          echo "Posting stickman animation to Facebook Page..."
+          RESPONSE=$(curl -s -X POST "${API}/${PAGE_ID}/videos" \
+            -F "description=${CAPTION}" \
+            -F "source=@${FILE}" \
+            -F "access_token=${PAGE_TOKEN}")
+
+          echo "Facebook API response: $RESPONSE"
+
+          VIDEO_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+          if [ -z "$VIDEO_ID" ]; then
+            echo "❌ Upload failed or no video ID returned."
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "✅ Posted! Video ID: $VIDEO_ID"
+
+      - name: upload-artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stickman-animation-${{ steps.anim.outputs.scene_name }}-${{ github.run_number }}
+          path: /tmp/stickman_final.mp4
+          retention-days: 30
