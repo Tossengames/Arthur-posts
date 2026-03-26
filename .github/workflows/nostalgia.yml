@@ -1,4 +1,4 @@
-name: nostalgia-post
+name: nostalgia-half-split
 
 on:
   workflow_dispatch:
@@ -8,120 +8,72 @@ on:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 25 # Increased for 5-min processing + uploads
+    timeout-minutes: 25
 
     steps:
       - name: checkout
         uses: actions/checkout@v4
 
-      - name: verify-and-install-deps
-        run: |
-          # FFmpeg and jq are pre-installed; we just ensure bc is there
-          sudo apt-get update -qq
-          sudo apt-get install -y bc jq
+      - name: install-deps
+        run: sudo apt-get update -qq && sudo apt-get install -y jq bc
 
       - name: find-video
         id: vid
-        timeout-minutes: 12
         run: |
           set -e
-          MAX_DURATION=300 # 5 Minutes
-          MIN_DURATION=15
-          VIDEO_URL=""
-
-          QUERIES=(
-            "1990s city street footage"
-            "1980s television commercial"
-            "vintage home video 1980s"
-            "1990s technology gadgets"
-            "vintage shopping mall"
-            "80s arcade footage"
-            "90s toy commercials"
-            "vintage supermarket 1970s"
-            "old airport footage 1980s"
-          )
-
-          for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
-            QUERY="${QUERIES[$idx]}"
-            echo "Searching: $QUERY"
-            ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
-            
-            # Deep search: 50 rows per query
-            RESP=$(timeout 20 curl -sf "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Amovies&fl[]=identifier,title,date&rows=50&page=1&output=json" 2>/dev/null) || continue
-            COUNT=$(echo "$RESP" | jq -r '.response.docs | length' 2>/dev/null) || continue
-            [ "$COUNT" -eq 0 ] && continue
-
-            for i in $(seq 0 $((COUNT - 1)) | shuf); do
-              IDENTIFIER=$(echo "$RESP" | jq -r ".response.docs[$i].identifier" 2>/dev/null)
-              TITLE=$(echo "$RESP" | jq -r ".response.docs[$i].title" 2>/dev/null)
-              DATE=$(echo "$RESP" | jq -r ".response.docs[$i].date" 2>/dev/null)
-              YEAR=$(echo "$DATE" | cut -c1-4)
-
-              FILES=$(timeout 15 curl -sf "https://archive.org/metadata/${IDENTIFIER}/files" 2>/dev/null) || continue
-
-              # Filter for direct MP4 files
-              VURL=$(echo "$FILES" | jq -r '.result[] | select(.name | test("(?i)\\.mp4$") and (test("__ia_thumb")|not)) | .name' 2>/dev/null | head -1)
-              [ -z "$VURL" ] || [ "$VURL" = "null" ] && continue
-
-              FULL_URL="https://archive.org/download/${IDENTIFIER}/${VURL}"
-
-              # Probe for duration
-              DUR_RAW=$(timeout 15 ffprobe -v error -show_entries format=duration -of csv=p=0 "$FULL_URL" 2>/dev/null | cut -d. -f1)
-              
-              if [[ ! "$DUR_RAW" =~ ^[0-9]+$ ]]; then continue; fi
-              if [ "$DUR_RAW" -gt "$MAX_DURATION" ] || [ "$DUR_RAW" -lt "$MIN_DURATION" ]; then continue; fi
-
-              echo "Found: $TITLE ($YEAR) - $DUR_RAW sec"
-              echo "video_url=$FULL_URL" >> "$GITHUB_OUTPUT"
-              echo "video_title=$TITLE" >> "$GITHUB_OUTPUT"
-              echo "video_year=$YEAR" >> "$GITHUB_OUTPUT"
-              echo "video_dur=$DUR_RAW" >> "$GITHUB_OUTPUT"
-              exit 0 
-            done
-          done
-          echo "No valid video found." && exit 1
-
-      - name: pick-caption
-        id: caption
-        run: |
-          YEAR="${{ steps.vid.outputs.video_year }}"
-          TITLE="${{ steps.vid.outputs.video_title }}"
-          HOOKS=("Who remembers this? 👇" "Pure nostalgia. 😍" "The good old days. 🕰️" "This hit different. 😢")
-          HOOK="${HOOKS[$((RANDOM % ${#HOOKS[@]}))]}"
+          QUERIES=("Vintage_video" "Historical_films" "Old_New_York" "1990s_videos" "1980s_videos")
+          QUERY=${QUERIES[$((RANDOM % ${#QUERIES[@]}))]}
           
-          # Handle missing dates gracefully
-          if [[ "$YEAR" == "null" || -z "$YEAR" ]]; then
-            CAPTION="📼 Throwback — ${TITLE} | ${HOOK}"
-          else
-            CAPTION="📼 ${YEAR} — ${TITLE} | ${HOOK}"
-          fi
-          echo "caption=${CAPTION} #Nostalgia #Throwback #Vintage" >> "$GITHUB_OUTPUT"
+          LIST_URL="https://commons.wikimedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Category:${QUERY}&cmtype=file&cmlimit=50&format=json"
+          RESP=$(curl -sf "$LIST_URL")
+          FILE_TITLE=$(echo "$RESP" | jq -r '.query.categorymembers[] | select(.title | test("\\.(webm|ogv|mp4|mpg)$")) | .title' | shuf -n 1)
+          
+          INFO_URL="https://commons.wikimedia.org/w/api.php?action=query&titles=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$FILE_TITLE")&prop=videoinfo&viprop=url|derivatives&format=json"
+          FINAL_RESP=$(curl -sf "$INFO_URL")
+          
+          VIDEO_URL=$(echo "$FINAL_RESP" | jq -r '.query.pages[].videoinfo[0].derivatives[]? | select(.format=="mp4") | .url' | head -1)
+          [ -z "$VIDEO_URL" ] || [ "$VIDEO_URL" == "null" ] && VIDEO_URL=$(echo "$FINAL_RESP" | jq -r '.query.pages[].videoinfo[0].url')
 
-      - name: process-video
-        timeout-minutes: 10
+          # Get total duration
+          DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO_URL" 2>/dev/null | cut -d. -f1)
+          if [ -z "$DUR" ] || [ "$DUR" -lt 30 ]; then echo "Video too short. Skipping."; exit 1; fi
+
+          # Calculate the half-way point
+          HALF=$(echo "$DUR / 2" | bc)
+
+          echo "video_url=$VIDEO_URL" >> "$GITHUB_OUTPUT"
+          echo "video_title=${FILE_TITLE#File:}" >> "$GITHUB_OUTPUT"
+          echo "video_half=$HALF" >> "$GITHUB_OUTPUT"
+
+      - name: process-parts
         run: |
           URL="${{ steps.vid.outputs.video_url }}"
-          YEAR="${{ steps.vid.outputs.video_year }}"
-          [[ "$YEAR" == "null" || -z "$YEAR" ]] && LABEL="📼 Throwback" || LABEL="📼 ${YEAR}"
+          TITLE="${{ steps.vid.outputs.video_title }}"
+          HALF="${{ steps.vid.outputs.video_half }}"
+          CLEAN_TITLE=$(echo "$TITLE" | sed 's/\.[^.]*$//' | tr '_' ' ')
 
-          echo "Downloading..."
-          curl -L -o full.mp4 "$URL"
+          echo "Processing Part 1 (Length: ${HALF}s)..."
+          ffmpeg -hide_banner -loglevel error -y -i "$URL" -ss 0 -t "$HALF" \
+            -vf "pad=iw:ih+100:0:50:black,drawtext=text='${CLEAN_TITLE}':fontcolor=white:fontsize=24:x=(w-text_w)/2:y=15,drawtext=text='PART 1':fontcolor=yellow:fontsize=32:x=(w-text_w)/2:y=h-45" \
+            -c:v libx264 -preset superfast -crf 23 -c:a aac -b:a 128k -movflags +faststart part1.mp4
 
-          echo "Applying overlays..."
-          # Preset superfast is key for 5-minute high-res clips
-          ffmpeg -hide_banner -loglevel error -y -i full.mp4 \
-            -vf "pad=iw:ih+100:0:50:black,drawtext=text='${LABEL}':fontcolor=white:fontsize=32:x=(w-text_w)/2:y=10,drawtext=text='Who remembers this?':fontcolor=white:fontsize=22:x=(w-text_w)/2:y=h-40" \
-            -c:v libx264 -preset superfast -crf 23 -c:a aac -b:a 128k -movflags +faststart final.mp4
+          echo "Processing Part 2 (Starting at: ${HALF}s)..."
+          ffmpeg -hide_banner -loglevel error -y -i "$URL" -ss "$HALF" \
+            -vf "pad=iw:ih+100:0:50:black,drawtext=text='${CLEAN_TITLE}':fontcolor=white:fontsize=24:x=(w-text_w)/2:y=15,drawtext=text='PART 2':fontcolor=yellow:fontsize=32:x=(w-text_w)/2:y=h-45" \
+            -c:v libx264 -preset superfast -crf 23 -c:a aac -b:a 128k -movflags +faststart part2.mp4
 
       - name: post-to-facebook
-        timeout-minutes: 5
         env:
           PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-          CAPTION: ${{ steps.caption.outputs.caption }}
         run: |
-          # Using source=@ method for reliability with files under 1GB
-          curl -X POST "https://graph.facebook.com/v19.0/${PAGE_ID}/videos" \
-            -F "description=${CAPTION}" \
-            -F "source=@final.mp4" \
-            -F "access_token=${PAGE_TOKEN}"
+          API_URL="https://graph.facebook.com/v19.0/${PAGE_ID}/videos"
+          TITLE_CLEAN=$(echo "${{ steps.vid.outputs.video_title }}" | tr '_' ' ')
+
+          echo "Posting Part 1..."
+          curl -X POST "$API_URL" -F "description=📼 ${TITLE_CLEAN} (Part 1) #Nostalgia" -F "source=@part1.mp4" -F "access_token=${PAGE_TOKEN}"
+          
+          sleep 15
+
+          echo "Posting Part 2..."
+          curl -X POST "$API_URL" -F "description=📼 ${TITLE_CLEAN} (Part 2) #Nostalgia" -F "source=@part2.mp4" -F "access_token=${PAGE_TOKEN}"
