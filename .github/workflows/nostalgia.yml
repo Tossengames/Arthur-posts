@@ -1,4 +1,4 @@
-name: nostalgia-footage
+name: nostalgia-footage-fast
 
 "on":
   workflow_dispatch:
@@ -8,26 +8,15 @@ name: nostalgia-footage
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10 # Buffer for slow downloads
 
     steps:
       - name: checkout
         uses: actions/checkout@v4
 
-      - name: cache-deps
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt/archives
-          key: apt-ffmpeg-${{ runner.os }}
-
-      - name: install-deps
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg bc jq python3
-
       - name: find-video
         id: vid
-        timeout-minutes: 1
+        timeout-minutes: 2
         run: |
           set -e
           MAX_DURATION=300
@@ -74,12 +63,6 @@ jobs:
 
               FULL_URL="https://archive.org/download/${IDENTIFIER}/${VURL}"
 
-              FILE_SIZE=$(timeout 8 curl -sf -I "$FULL_URL" 2>/dev/null | grep -i content-length | awk '{print $2}' | tr -d '\r')
-              if [ -n "$FILE_SIZE" ] && [ "$FILE_SIZE" -gt 314572800 ]; then
-                echo "Too large, skipping..."
-                continue
-              fi
-
               DUR_RAW=$(timeout 10 ffprobe -v error -show_entries format=duration -of csv=p=0 "$FULL_URL" 2>/dev/null | cut -d. -f1)
               [[ "$DUR_RAW" =~ ^[0-9]+$ ]] || continue
               [ "$DUR_RAW" -gt "$MAX_DURATION" ] && continue
@@ -99,156 +82,47 @@ jobs:
           fi
 
       - name: download-and-split
-        timeout-minutes: 8
+        timeout-minutes: 3
         run: |
           URL="${{ steps.vid.outputs.video_url }}"
           DUR="${{ steps.vid.outputs.video_dur }}"
           HALF=$((DUR / 2))
 
-          echo "Downloading full video..."
-          timeout 240 ffmpeg -hide_banner -loglevel error -y -i "$URL" -c copy full.mp4
+          echo "Downloading..."
+          timeout 120 ffmpeg -hide_banner -loglevel error -y -i "$URL" -c copy full.mp4
 
-          echo "Creating Part 1..."
-          timeout 120 ffmpeg -hide_banner -loglevel error -y \
-            -i full.mp4 \
-            -t "$HALF" \
-            -vf "pad=iw:ih+160:0:80:black,drawtext=text='NOSTALGIA PT 1':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=40:x=(w-text_w)/2:y=20,drawtext=text='Part 2 posted right after this':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=28:x=(w-text_w)/2:y=h-60" \
-            -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k -movflags +faststart part1.mp4
+          echo "Processing Part 1 (Superfast)..."
+          ffmpeg -hide_banner -loglevel error -y -i full.mp4 -t "$HALF" \
+            -vf "pad=iw:ih+160:0:80:black,drawtext=text='NOSTALGIA PT 1':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=40:x=(w-text_w)/2:y=20" \
+            -c:v libx264 -preset superfast -crf 23 -c:a aac -movflags +faststart part1.mp4
 
-          echo "Creating Part 2..."
-          timeout 120 ffmpeg -hide_banner -loglevel error -y \
-            -i full.mp4 \
-            -ss "$HALF" \
-            -vf "pad=iw:ih+160:0:80:black,drawtext=text='NOSTALGIA PT 2':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=40:x=(w-text_w)/2:y=20,drawtext=text='Find Part 1 on our page':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=28:x=(w-text_w)/2:y=h-60" \
-            -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k -movflags +faststart part2.mp4
+          echo "Processing Part 2 (Superfast)..."
+          ffmpeg -hide_banner -loglevel error -y -i full.mp4 -ss "$HALF" \
+            -vf "pad=iw:ih+160:0:80:black,drawtext=text='NOSTALGIA PT 2':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=40:x=(w-text_w)/2:y=20" \
+            -c:v libx264 -preset superfast -crf 23 -c:a aac -movflags +faststart part2.mp4
 
-          ls -lh part1.mp4 part2.mp4
-
-      - name: post-part1
-        timeout-minutes: 3
+      - name: post-to-facebook
+        timeout-minutes: 4
         env:
           PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           TITLE: ${{ steps.vid.outputs.video_title }}
         run: |
           set -e
-          FILE="part1.mp4"
-          SIZE=$(stat -c%s "$FILE")
           API="https://graph.facebook.com/v19.0"
-          CAPTION="NOSTALGIA PT 1 📺 ${TITLE} | Part 2 coming up! #90s #2000s #Nostalgia #Retro #Throwback | Sourced via archive.org"
+          
+          # POST PART 1
+          echo "Posting Part 1..."
+          CAPTION1="NOSTALGIA PT 1 📺 ${TITLE} | Part 2 coming up! #90s #2000s #Nostalgia #Retro #Throwback"
+          curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+            -F "video_file_chunk=@part1.mp4" \
+            -F "description=${CAPTION1}" \
+            -F "access_token=${PAGE_TOKEN}" > /dev/null
 
-          for attempt in 1 2 3; do
-            echo "Posting Part 1 attempt $attempt..."
-            INIT=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/video_reels" \
-              -H "Content-Type: application/json" \
-              -d "{\"upload_phase\":\"start\",\"access_token\":\"${PAGE_TOKEN}\"}") || true
-            SESSION=$(echo "$INIT" | jq -r '.upload_session_id' 2>/dev/null)
-            VID_ID=$(echo "$INIT" | jq -r '.video_id' 2>/dev/null)
-
-            if [ "$SESSION" = "null" ] || [ -z "$SESSION" ]; then
-              INIT=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
-                -H "Content-Type: application/json" \
-                -d "{\"upload_phase\":\"start\",\"file_size\":${SIZE},\"access_token\":\"${PAGE_TOKEN}\"}") || true
-              SESSION=$(echo "$INIT" | jq -r '.upload_session_id' 2>/dev/null)
-              VID_ID=$(echo "$INIT" | jq -r '.video_id' 2>/dev/null)
-              S_OFF=$(echo "$INIT" | jq -r '.start_offset' 2>/dev/null)
-              if [ "$SESSION" = "null" ] || [ -z "$SESSION" ]; then
-                echo "Session failed: $INIT"
-                sleep 10
-                continue
-              fi
-              timeout 90 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
-                -F "upload_phase=transfer" \
-                -F "upload_session_id=${SESSION}" \
-                -F "start_offset=${S_OFF}" \
-                -F "video_file_chunk=@${FILE};type=video/mp4" \
-                -F "access_token=${PAGE_TOKEN}" > /dev/null || true
-              FINISH=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
-                -H "Content-Type: application/json" \
-                -d "{\"upload_phase\":\"finish\",\"upload_session_id\":\"${SESSION}\",\"description\":\"${CAPTION}\",\"published\":true,\"access_token\":\"${PAGE_TOKEN}\"}") || true
-            else
-              UPLOAD_URL=$(echo "$INIT" | jq -r '.upload_url' 2>/dev/null)
-              timeout 90 curl -sf -X POST "$UPLOAD_URL" \
-                -H "Authorization: OAuth ${PAGE_TOKEN}" \
-                -H "offset: 0" \
-                -H "file_size: ${SIZE}" \
-                --data-binary "@${FILE}" > /dev/null || true
-              FINISH=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/video_reels" \
-                -H "Content-Type: application/json" \
-                -d "{\"upload_phase\":\"finish\",\"video_id\":\"${VID_ID}\",\"description\":\"${CAPTION}\",\"published\":true,\"access_token\":\"${PAGE_TOKEN}\"}") || true
-            fi
-
-            OK=$(echo "$FINISH" | jq -r '.success // .id // empty' 2>/dev/null)
-            if [ -n "$OK" ]; then
-              echo "Part 1 posted! ID: $VID_ID"
-              break
-            fi
-            echo "Failed attempt $attempt: $FINISH"
-            sleep 10
-          done
-
-      - name: post-part2
-        timeout-minutes: 3
-        env:
-          PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-          PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-          TITLE: ${{ steps.vid.outputs.video_title }}
-        run: |
-          set -e
-          FILE="part2.mp4"
-          SIZE=$(stat -c%s "$FILE")
-          API="https://graph.facebook.com/v19.0"
-          CAPTION="NOSTALGIA PT 2 📺 ${TITLE} | Did this bring back memories? #90s #2000s #Nostalgia #Retro #Throwback | Sourced via archive.org"
-
-          for attempt in 1 2 3; do
-            echo "Posting Part 2 attempt $attempt..."
-            INIT=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/video_reels" \
-              -H "Content-Type: application/json" \
-              -d "{\"upload_phase\":\"start\",\"access_token\":\"${PAGE_TOKEN}\"}") || true
-            SESSION=$(echo "$INIT" | jq -r '.upload_session_id' 2>/dev/null)
-            VID_ID=$(echo "$INIT" | jq -r '.video_id' 2>/dev/null)
-
-            if [ "$SESSION" = "null" ] || [ -z "$SESSION" ]; then
-              INIT=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
-                -H "Content-Type: application/json" \
-                -d "{\"upload_phase\":\"start\",\"file_size\":${SIZE},\"access_token\":\"${PAGE_TOKEN}\"}") || true
-              SESSION=$(echo "$INIT" | jq -r '.upload_session_id' 2>/dev/null)
-              VID_ID=$(echo "$INIT" | jq -r '.video_id' 2>/dev/null)
-              S_OFF=$(echo "$INIT" | jq -r '.start_offset' 2>/dev/null)
-              if [ "$SESSION" = "null" ] || [ -z "$SESSION" ]; then
-                echo "Session failed: $INIT"
-                sleep 10
-                continue
-              fi
-              timeout 90 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
-                -F "upload_phase=transfer" \
-                -F "upload_session_id=${SESSION}" \
-                -F "start_offset=${S_OFF}" \
-                -F "video_file_chunk=@${FILE};type=video/mp4" \
-                -F "access_token=${PAGE_TOKEN}" > /dev/null || true
-              FINISH=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
-                -H "Content-Type: application/json" \
-                -d "{\"upload_phase\":\"finish\",\"upload_session_id\":\"${SESSION}\",\"description\":\"${CAPTION}\",\"published\":true,\"access_token\":\"${PAGE_TOKEN}\"}") || true
-            else
-              UPLOAD_URL=$(echo "$INIT" | jq -r '.upload_url' 2>/dev/null)
-              timeout 90 curl -sf -X POST "$UPLOAD_URL" \
-                -H "Authorization: OAuth ${PAGE_TOKEN}" \
-                -H "offset: 0" \
-                -H "file_size: ${SIZE}" \
-                --data-binary "@${FILE}" > /dev/null || true
-              FINISH=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/video_reels" \
-                -H "Content-Type: application/json" \
-                -d "{\"upload_phase\":\"finish\",\"video_id\":\"${VID_ID}\",\"description\":\"${CAPTION}\",\"published\":true,\"access_token\":\"${PAGE_TOKEN}\"}") || true
-            fi
-
-            OK=$(echo "$FINISH" | jq -r '.success // .id // empty' 2>/dev/null)
-            if [ -n "$OK" ]; then
-              echo "Part 2 posted! ID: $VID_ID"
-              exit 0
-            fi
-            echo "Failed attempt $attempt: $FINISH"
-            sleep 10
-          done
-
-          echo "All post attempts failed"
-          exit 1
+          # POST PART 2
+          echo "Posting Part 2..."
+          CAPTION2="NOSTALGIA PT 2 📺 ${TITLE} | Did this bring back memories? #90s #2000s #Nostalgia #Retro #Throwback"
+          curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+            -F "video_file_chunk=@part2.mp4" \
+            -F "description=${CAPTION2}" \
+            -F "access_token=${PAGE_TOKEN}" > /dev/null
