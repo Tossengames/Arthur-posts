@@ -8,7 +8,7 @@ name: nostalgia-footage-fast
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # Buffer for slow downloads
+    timeout-minutes: 10
 
     steps:
       - name: checkout
@@ -16,113 +16,104 @@ jobs:
 
       - name: find-video
         id: vid
-        timeout-minutes: 2
+        timeout-minutes: 3
         run: |
           set -e
-          MAX_DURATION=300
-          MIN_DURATION=30
+          MAX_DURATION=600
+          MIN_DURATION=20
           VIDEO_URL=""
 
+          # These are real high-traffic Archive.org collection/subject tags
           QUERIES=(
-            "90s commercials"
-            "2000s commercials"
-            "90s home movies"
-            "y2k aesthetic"
-            "retro gaming footage"
-            "90s cartoons"
-            "vintage vhs"
-            "2000s tech"
-            "nostalgia footage"
-            "classic tv clips"
+            "collection:vhsvault"
+            "collection:classic_tv_commercials"
+            "subject:\"90s commercials\""
+            "subject:\"2000s commercials\""
+            "80s 90s 2000s commercial compilation"
+            "USATVCommercialCollection"
+            "subject:\"retro gaming\""
+            "subject:\"VHS recording\""
+            "collection:prelinger AND subject:\"television\""
           )
 
-          for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
+          for QUERY in $(echo "${QUERIES[@]}" | tr ' ' '\n' | shuf); do
             [ -n "$VIDEO_URL" ] && break
-            QUERY="${QUERIES[$idx]}"
-            echo "Searching: $QUERY"
+            echo "Searching Archive.org for: $QUERY"
+            
             ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
-
-            RESP=$(timeout 8 curl -sf --max-time 8 \
-              "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Amovies&fl[]=identifier,title&rows=10&page=1&output=json" \
-              2>/dev/null) || continue
+            
+            # Increased rows to 50 to give more chances of finding a valid MP4
+            RESP=$(timeout 10 curl -sf "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Amovies&fl[]=identifier,title&rows=50&page=1&output=json") || continue
 
             COUNT=$(echo "$RESP" | jq -r '.response.docs | length' 2>/dev/null) || continue
             [ "$COUNT" -eq 0 ] && continue
 
-            for i in $(seq 0 $((COUNT - 1)) | shuf); do
-              [ -n "$VIDEO_URL" ] && break
+            # Try up to 5 random items from the results
+            for i in $(seq 0 $((COUNT - 1)) | shuf | head -n 5); do
               IDENTIFIER=$(echo "$RESP" | jq -r ".response.docs[$i].identifier" 2>/dev/null)
               TITLE=$(echo "$RESP" | jq -r ".response.docs[$i].title" 2>/dev/null)
+              
               [ -z "$IDENTIFIER" ] || [ "$IDENTIFIER" = "null" ] && continue
 
-              FILES=$(timeout 8 curl -sf --max-time 8 \
-                "https://archive.org/metadata/${IDENTIFIER}/files" 2>/dev/null) || continue
-
+              # Check files for an MP4
+              FILES=$(timeout 10 curl -sf "https://archive.org/metadata/${IDENTIFIER}/files") || continue
               VURL=$(echo "$FILES" | jq -r '.result[] | select(.name | test("\\.(mp4|MP4)$")) | .name' 2>/dev/null | head -1)
+              
               [ -z "$VURL" ] || [ "$VURL" = "null" ] && continue
-
               FULL_URL="https://archive.org/download/${IDENTIFIER}/${VURL}"
 
-              DUR_RAW=$(timeout 10 ffprobe -v error -show_entries format=duration -of csv=p=0 "$FULL_URL" 2>/dev/null | cut -d. -f1)
+              # Validate duration with ffprobe
+              DUR_RAW=$(timeout 12 ffprobe -v error -show_entries format=duration -of csv=p=0 "$FULL_URL" 2>/dev/null | cut -d. -f1)
               [[ "$DUR_RAW" =~ ^[0-9]+$ ]] || continue
               [ "$DUR_RAW" -gt "$MAX_DURATION" ] && continue
               [ "$DUR_RAW" -lt "$MIN_DURATION" ] && continue
 
               VIDEO_URL="$FULL_URL"
-              echo "Found: $TITLE (${DUR_RAW}s)"
+              echo "SUCCESS: Found $TITLE"
               echo "video_url=$VIDEO_URL" >> "$GITHUB_OUTPUT"
               echo "video_title=$TITLE" >> "$GITHUB_OUTPUT"
               echo "video_dur=$DUR_RAW" >> "$GITHUB_OUTPUT"
+              break 2
             done
           done
 
           if [ -z "$VIDEO_URL" ]; then
-            echo "No valid video found"
+            echo "Error: No valid video found after trying all queries."
             exit 1
           fi
 
       - name: download-and-split
-        timeout-minutes: 3
         run: |
           URL="${{ steps.vid.outputs.video_url }}"
           DUR="${{ steps.vid.outputs.video_dur }}"
           HALF=$((DUR / 2))
 
-          echo "Downloading..."
-          timeout 120 ffmpeg -hide_banner -loglevel error -y -i "$URL" -c copy full.mp4
+          ffmpeg -hide_banner -loglevel error -y -i "$URL" -t "$DUR" -c copy full.mp4
 
-          echo "Processing Part 1 (Superfast)..."
+          # Part 1
           ffmpeg -hide_banner -loglevel error -y -i full.mp4 -t "$HALF" \
             -vf "pad=iw:ih+160:0:80:black,drawtext=text='NOSTALGIA PT 1':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=40:x=(w-text_w)/2:y=20" \
-            -c:v libx264 -preset superfast -crf 23 -c:a aac -movflags +faststart part1.mp4
+            -c:v libx264 -preset superfast -crf 24 -c:a aac -movflags +faststart part1.mp4
 
-          echo "Processing Part 2 (Superfast)..."
+          # Part 2
           ffmpeg -hide_banner -loglevel error -y -i full.mp4 -ss "$HALF" \
             -vf "pad=iw:ih+160:0:80:black,drawtext=text='NOSTALGIA PT 2':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=40:x=(w-text_w)/2:y=20" \
-            -c:v libx264 -preset superfast -crf 23 -c:a aac -movflags +faststart part2.mp4
+            -c:v libx264 -preset superfast -crf 24 -c:a aac -movflags +faststart part2.mp4
 
       - name: post-to-facebook
-        timeout-minutes: 4
         env:
           PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           TITLE: ${{ steps.vid.outputs.video_title }}
         run: |
           set -e
-          API="https://graph.facebook.com/v19.0"
-          
-          # POST PART 1
-          echo "Posting Part 1..."
-          CAPTION1="NOSTALGIA PT 1 📺 ${TITLE} | Part 2 coming up! #90s #2000s #Nostalgia #Retro #Throwback"
-          curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+          # Basic upload (Small files only)
+          curl -sf -X POST "https://graph.facebook.com/v19.0/${PAGE_ID}/videos" \
             -F "video_file_chunk=@part1.mp4" \
-            -F "description=${CAPTION1}" \
-            -F "access_token=${PAGE_TOKEN}" > /dev/null
-
-          # POST PART 2
-          echo "Posting Part 2..."
-          CAPTION2="NOSTALGIA PT 2 📺 ${TITLE} | Did this bring back memories? #90s #2000s #Nostalgia #Retro #Throwback"
-          curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+            -F "description=PT 1: ${TITLE} #90s #2000s #Retro" \
+            -F "access_token=${PAGE_TOKEN}"
+          
+          curl -sf -X POST "https://graph.facebook.com/v19.0/${PAGE_ID}/videos" \
             -F "video_file_chunk=@part2.mp4" \
-            -F "description=${CAPTION2}" \
-            -F "access_token=${PAGE_TOKEN}" > /dev/null
+            -F "description=PT 2: ${TITLE} #90s #2000s #Retro" \
+            -F "access_token=${PAGE_TOKEN}"
