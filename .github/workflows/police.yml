@@ -35,17 +35,17 @@ jobs:
           VIDEO_URL=""
 
           QUERIES=(
-            "police"
-            "bodycam"
-            "dashcam"
-            "police chase"
-            "body cam"
-            "dash cam"
-            "police footage"
-            "law enforcement"
-            "police stop"
+            "police traffic stop"
+            "police dashcam"
+            "dash cam police"
+            "police car chase"
             "police pursuit"
+            "police stop dashcam"
+            "police pullover"
+            "police speed chase"
           )
+
+          BAD_WORDS="fatal|death|killed|shooting|shot|homicide|murder|deceased|graphic|stabbing|suicide|injury|injured|dead|autopsy|violent|brutality"
 
           for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
             [ -n "$VIDEO_URL" ] && break
@@ -65,6 +65,12 @@ jobs:
               IDENTIFIER=$(echo "$RESP" | jq -r ".response.docs[$i].identifier" 2>/dev/null)
               TITLE=$(echo "$RESP" | jq -r ".response.docs[$i].title" 2>/dev/null)
               [ -z "$IDENTIFIER" ] || [ "$IDENTIFIER" = "null" ] && continue
+
+              TITLE_LOWER=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]')
+              if echo "$TITLE_LOWER" | grep -qiE "$BAD_WORDS"; then
+                echo "Skipping bad title: $TITLE"
+                continue
+              fi
 
               FILES=$(timeout 8 curl -sf --max-time 8 \
                 "https://archive.org/metadata/${IDENTIFIER}/files" 2>/dev/null) || continue
@@ -135,7 +141,7 @@ jobs:
           FILE="part1.mp4"
           SIZE=$(stat -c%s "$FILE")
           API="https://graph.facebook.com/v19.0"
-          CAPTION="PT 1 OF 2 👮 ${TITLE} | Part 2 posted right after this 👇 #PoliceFootage #BodyCam #RealFootage | Disclaimer: Footage sourced from public records via archive.org"
+          CAPTION="PT 1 OF 2 👮 ${TITLE} | Part 2 posted right after this 👇 #PoliceFootage #BodyCam #DashCam #RealFootage | Disclaimer: Footage sourced from public records via archive.org"
 
           for attempt in 1 2 3; do
             echo "Posting Part 1 attempt $attempt..."
@@ -198,7 +204,7 @@ jobs:
           FILE="part2.mp4"
           SIZE=$(stat -c%s "$FILE")
           API="https://graph.facebook.com/v19.0"
-          CAPTION="PT 2 OF 2 👮 ${TITLE} | Find Part 1 on our page 👆 #PoliceFootage #BodyCam #RealFootage | Disclaimer: Footage sourced from public records via archive.org"
+          CAPTION="PT 2 OF 2 👮 ${TITLE} | Find Part 1 on our page 👆 #PoliceFootage #BodyCam #DashCam #RealFootage | Disclaimer: Footage sourced from public records via archive.org"
 
           for attempt in 1 2 3; do
             echo "Posting Part 2 attempt $attempt..."
