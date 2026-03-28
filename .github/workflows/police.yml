@@ -18,12 +18,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /var/cache/apt/archives
-          key: apt-ffmpeg-${{ runner.os }}
+          key: apt-ffmpeg-${{ runner.os }}-v1
 
       - name: install-deps
+        timeout-minutes: 3
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg bc jq python3
+          sudo apt-get install -y --no-install-recommends ffmpeg bc jq python3
 
       - name: find-video
         id: vid
@@ -45,7 +46,7 @@ jobs:
             "police speed chase"
           )
 
-          BAD_WORDS="fatal|death|killed|shooting|shot|homicide|murder|deceased|graphic|stabbing|suicide|injury|injured|dead|autopsy|violent|brutality"
+          BAD_WORDS="fatal|death|killed|shooting|shot|homicide|murder|deceased|graphic|stabbing|suicide|injury|injured|dead|autopsy|violent|brutality|war|combat|attack|explicit|adult|nudity|DIS|officer involved|use of force|taser|OIS"
 
           for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
             [ -n "$VIDEO_URL" ] && break
