@@ -48,7 +48,7 @@ jobs:
             "throwback footage"
           )
 
-          BAD_WORDS="fatal|death|killed|shooting|shot|homicide|murder|deceased|graphic|stabbing|suicide|injury|injured|dead|autopsy|violent|brutality|war|combat|attack|explicit|adult|nudity|2010|2011|2012|2013|2014|2015|2016|2017|2018|2019|2020|2021|2022|2023|2024"
+          BAD_WORDS="fatal|death|killed|shooting|shot|homicide|murder|deceased|graphic|stabbing|suicide|injury|injured|dead|autopsy|violent|brutality|war|combat|attack|explicit|adult|nudity"
 
           for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
             [ -n "$VIDEO_URL" ] && break
@@ -121,27 +121,23 @@ jobs:
           YEAR="${{ steps.vid.outputs.video_year }}"
           TITLE="${{ steps.vid.outputs.video_title }}"
 
-          HOOKS=(
-            "Who remembers this? 👇"
-            "This hit different back then. 😢"
-            "Tag someone who grew up with this. 👇"
-            "They dont make it like this anymore. 😮"
-            "This is pure nostalgia. 😍"
-            "Different times. 😢"
-            "Back when life was simple. 🕰️"
-            "Drop a 🙋 if you remember this."
-            "This unlocked a memory. 😮"
-            "Who else misses this era? 👇"
-            "The good old days. 🕰️"
-            "Simpler times. Comment if you remember. 👇"
+          CAPTIONS=(
+            "Save this. 🤍 #Vibes #Aesthetic #Chill"
+            "Watch this one. ✨ #Mood #Vibes #Aesthetic"
+            "Just look at this. 🤍 #Chill #Aesthetic #Vibes"
+            "This one is special. ✨ #Vibes #Mood #Aesthetic"
+            "Take a moment for this. 🤍 #Aesthetic #Chill #Vibes"
+            "Worth watching. ✨ #Mood #Aesthetic #Vibes"
+            "Comment below. 🤍 #Vibes #Chill #Aesthetic"
+            "Tag someone. ✨ #Aesthetic #Mood #Vibes"
           )
-          IDX=$((RANDOM % ${#HOOKS[@]}))
-          HOOK="${HOOKS[$IDX]}"
+          IDX=$((RANDOM % ${#CAPTIONS[@]}))
+          HOOK="${CAPTIONS[$IDX]}"
 
           if [ -n "$YEAR" ] && [ "$YEAR" != "null" ]; then
-            CAPTION="📼 ${YEAR} — ${TITLE} | ${HOOK} #Nostalgia #Throwback #OldDays #Memories #Vintage #Retro"
+            CAPTION="📼 ${YEAR} — ${TITLE} | ${HOOK}"
           else
-            CAPTION="📼 Throwback — ${TITLE} | ${HOOK} #Nostalgia #Throwback #OldDays #Memories #Vintage #Retro"
+            CAPTION="📼 ${TITLE} | ${HOOK}"
           fi
 
           echo "caption=$CAPTION" >> "$GITHUB_OUTPUT"
@@ -156,7 +152,7 @@ jobs:
           if [ -n "$YEAR" ] && [ "$YEAR" != "null" ]; then
             LABEL="📼 ${YEAR}"
           else
-            LABEL="📼 Throwback"
+            LABEL="📼 Archive"
           fi
 
           echo "Downloading video..."
@@ -165,7 +161,7 @@ jobs:
           echo "Processing..."
           timeout 120 ffmpeg -hide_banner -loglevel error -y \
             -i full.mp4 \
-            -vf "pad=iw:ih+120:0:60:black,drawtext=text='${LABEL}':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=38:x=(w-text_w)/2:y=15,drawtext=text='Who remembers this?':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=26:x=(w-text_w)/2:y=h-45" \
+            -vf "pad=iw:ih+120:0:60:black,drawtext=text='${LABEL}':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=38:x=(w-text_w)/2:y=15,drawtext=text='Follow for more':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=26:x=(w-text_w)/2:y=h-45" \
             -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k -movflags +faststart final.mp4
 
           ls -lh final.mp4
@@ -235,4 +231,3 @@ jobs:
 
           echo "All post attempts failed"
           exit 1
-
