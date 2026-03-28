@@ -1,0 +1,215 @@
+name: funny-post
+
+"on":
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * *"
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ffmpeg-${{ runner.os }}-v1
+
+      - name: install-deps
+        timeout-minutes: 3
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg bc jq python3
+
+      - name: find-video
+        id: vid
+        timeout-minutes: 1
+        run: |
+          set -e
+          MAX_DURATION=300
+          MIN_DURATION=20
+          VIDEO_URL=""
+
+          QUERIES=(
+            "bloopers"
+            "funny moments"
+            "comedy outtakes"
+            "fails funny"
+            "blooper reel"
+            "funny animals"
+            "comedy clips"
+            "funny commercials"
+            "pranks funny"
+            "outtakes comedy"
+          )
+
+          BAD_WORDS="fatal|death|killed|shooting|shot|homicide|murder|deceased|graphic|stabbing|suicide|injury|injured|dead|autopsy|violent|brutality|war|combat|attack|explicit|adult|nudity"
+
+          for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
+            [ -n "$VIDEO_URL" ] && break
+            QUERY="${QUERIES[$idx]}"
+            echo "Searching: $QUERY"
+            ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
+
+            RESP=$(timeout 8 curl -sf --max-time 8 \
+              "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Amovies&fl[]=identifier,title,date&rows=10&page=1&output=json" \
+              2>/dev/null) || continue
+
+            COUNT=$(echo "$RESP" | jq -r '.response.docs | length' 2>/dev/null) || continue
+            [ "$COUNT" -eq 0 ] && continue
+
+            for i in $(seq 0 $((COUNT - 1)) | shuf); do
+              [ -n "$VIDEO_URL" ] && break
+              IDENTIFIER=$(echo "$RESP" | jq -r ".response.docs[$i].identifier" 2>/dev/null)
+              TITLE=$(echo "$RESP" | jq -r ".response.docs[$i].title" 2>/dev/null)
+              [ -z "$IDENTIFIER" ] || [ "$IDENTIFIER" = "null" ] && continue
+
+              TITLE_LOWER=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]')
+              if echo "$TITLE_LOWER" | grep -qiE "$BAD_WORDS"; then
+                echo "Skipping bad title: $TITLE"
+                continue
+              fi
+
+              FILES=$(timeout 8 curl -sf --max-time 8 \
+                "https://archive.org/metadata/${IDENTIFIER}/files" 2>/dev/null) || continue
+
+              VURL=$(echo "$FILES" | jq -r '.result[] | select(.name | test("\\.(mp4|MP4)$")) | .name' 2>/dev/null | head -1)
+              [ -z "$VURL" ] || [ "$VURL" = "null" ] && continue
+
+              FULL_URL="https://archive.org/download/${IDENTIFIER}/${VURL}"
+
+              FILE_SIZE=$(timeout 8 curl -sf -I "$FULL_URL" 2>/dev/null | grep -i content-length | awk '{print $2}' | tr -d '\r')
+              if [ -n "$FILE_SIZE" ] && [ "$FILE_SIZE" -gt 314572800 ]; then
+                echo "Too large, skipping..."
+                continue
+              fi
+
+              DUR_RAW=$(timeout 10 ffprobe -v error -show_entries format=duration -of csv=p=0 "$FULL_URL" 2>/dev/null | cut -d. -f1)
+              [[ "$DUR_RAW" =~ ^[0-9]+$ ]] || continue
+              [ "$DUR_RAW" -gt "$MAX_DURATION" ] && continue
+              [ "$DUR_RAW" -lt "$MIN_DURATION" ] && continue
+
+              VIDEO_URL="$FULL_URL"
+              echo "Found: $TITLE ${DUR_RAW}s"
+              echo "video_url=$VIDEO_URL" >> "$GITHUB_OUTPUT"
+              echo "video_title=$TITLE" >> "$GITHUB_OUTPUT"
+              echo "video_dur=$DUR_RAW" >> "$GITHUB_OUTPUT"
+            done
+          done
+
+          if [ -z "$VIDEO_URL" ]; then
+            echo "No valid video found"
+            exit 1
+          fi
+
+      - name: pick-caption
+        id: caption
+        run: |
+          TITLE="${{ steps.vid.outputs.video_title }}"
+
+          HOOKS=(
+            "I cannot stop laughing 😂"
+            "Tag someone who needs this today 😂"
+            "This got me dead 💀"
+            "Watch till the end 😂"
+            "I was not ready for this 😂"
+            "Send this to your group chat 😂"
+            "The ending got me 💀"
+            "Try not to laugh 😂"
+            "This is too good 😂"
+            "Who can relate? 😂"
+            "Comment if you laughed 😂"
+            "This made my day 😂"
+          )
+          IDX=$((RANDOM % ${#HOOKS[@]}))
+          HOOK="${HOOKS[$IDX]}"
+          CAPTION="😂 ${TITLE} | ${HOOK} #Funny #Comedy #LOL #Humor #FunnyVideos #Laugh"
+          echo "caption=$CAPTION" >> "$GITHUB_OUTPUT"
+
+      - name: process-video
+        timeout-minutes: 5
+        run: |
+          URL="${{ steps.vid.outputs.video_url }}"
+          DUR="${{ steps.vid.outputs.video_dur }}"
+
+          echo "Downloading video..."
+          timeout 180 ffmpeg -hide_banner -loglevel error -y -i "$URL" -c copy full.mp4
+
+          echo "Processing..."
+          timeout 120 ffmpeg -hide_banner -loglevel error -y \
+            -i full.mp4 \
+            -vf "pad=iw:ih+120:0:60:black,drawtext=text='😂 Watch till the end':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=36:x=(w-text_w)/2:y=15,drawtext=text='Follow for more funny videos':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=26:x=(w-text_w)/2:y=h-45" \
+            -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k -movflags +faststart final.mp4
+
+          ls -lh final.mp4
+
+      - name: post-to-facebook
+        timeout-minutes: 3
+        env:
+          PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          CAPTION: ${{ steps.caption.outputs.caption }}
+        run: |
+          set -e
+          FILE="final.mp4"
+          SIZE=$(stat -c%s "$FILE")
+          API="https://graph.facebook.com/v19.0"
+
+          for attempt in 1 2 3; do
+            echo "Facebook post attempt $attempt..."
+            INIT=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/video_reels" \
+              -H "Content-Type: application/json" \
+              -d "{\"upload_phase\":\"start\",\"access_token\":\"${PAGE_TOKEN}\"}") || true
+            SESSION=$(echo "$INIT" | jq -r '.upload_session_id' 2>/dev/null)
+            VID_ID=$(echo "$INIT" | jq -r '.video_id' 2>/dev/null)
+
+            if [ "$SESSION" = "null" ] || [ -z "$SESSION" ]; then
+              INIT=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+                -H "Content-Type: application/json" \
+                -d "{\"upload_phase\":\"start\",\"file_size\":${SIZE},\"access_token\":\"${PAGE_TOKEN}\"}") || true
+              SESSION=$(echo "$INIT" | jq -r '.upload_session_id' 2>/dev/null)
+              VID_ID=$(echo "$INIT" | jq -r '.video_id' 2>/dev/null)
+              S_OFF=$(echo "$INIT" | jq -r '.start_offset' 2>/dev/null)
+              if [ "$SESSION" = "null" ] || [ -z "$SESSION" ]; then
+                echo "Session failed: $INIT"
+                sleep 10
+                continue
+              fi
+              timeout 90 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+                -F "upload_phase=transfer" \
+                -F "upload_session_id=${SESSION}" \
+                -F "start_offset=${S_OFF}" \
+                -F "video_file_chunk=@${FILE};type=video/mp4" \
+                -F "access_token=${PAGE_TOKEN}" > /dev/null || true
+              FINISH=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+                -H "Content-Type: application/json" \
+                -d "{\"upload_phase\":\"finish\",\"upload_session_id\":\"${SESSION}\",\"description\":\"${CAPTION}\",\"published\":true,\"access_token\":\"${PAGE_TOKEN}\"}") || true
+            else
+              UPLOAD_URL=$(echo "$INIT" | jq -r '.upload_url' 2>/dev/null)
+              timeout 90 curl -sf -X POST "$UPLOAD_URL" \
+                -H "Authorization: OAuth ${PAGE_TOKEN}" \
+                -H "offset: 0" \
+                -H "file_size: ${SIZE}" \
+                --data-binary "@${FILE}" > /dev/null || true
+              FINISH=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/video_reels" \
+                -H "Content-Type: application/json" \
+                -d "{\"upload_phase\":\"finish\",\"video_id\":\"${VID_ID}\",\"description\":\"${CAPTION}\",\"published\":true,\"access_token\":\"${PAGE_TOKEN}\"}") || true
+            fi
+
+            OK=$(echo "$FINISH" | jq -r '.success // .id // empty' 2>/dev/null)
+            if [ -n "$OK" ]; then
+              echo "Posted! Video ID: $VID_ID"
+              exit 0
+            fi
+
+            echo "Post failed attempt $attempt: $FINISH"
+            sleep 10
+          done
+
+          echo "All post attempts failed"
+          exit 1
