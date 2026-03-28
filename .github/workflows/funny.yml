@@ -36,16 +36,18 @@ jobs:
           VIDEO_URL=""
 
           QUERIES=(
-            "bloopers"
-            "funny moments"
-            "comedy outtakes"
-            "fails funny"
+            "cartoon"
+            "animated cartoon"
+            "classic cartoon"
+            "looney tunes"
+            "vintage cartoon"
+            "old cartoon show"
+            "animation classic"
+            "cartoon comedy"
+            "slapstick comedy"
+            "comedy short film"
             "blooper reel"
-            "funny animals"
-            "comedy clips"
-            "funny commercials"
-            "pranks funny"
-            "outtakes comedy"
+            "outtakes"
           )
 
           BAD_WORDS="fatal|death|killed|shooting|shot|homicide|murder|deceased|graphic|stabbing|suicide|injury|injured|dead|autopsy|violent|brutality|war|combat|attack|explicit|adult|nudity"
@@ -112,23 +114,22 @@ jobs:
         run: |
           TITLE="${{ steps.vid.outputs.video_title }}"
 
-          HOOKS=(
-            "I cannot stop laughing 😂"
-            "Tag someone who needs this today 😂"
-            "This got me dead 💀"
-            "Watch till the end 😂"
-            "I was not ready for this 😂"
-            "Send this to your group chat 😂"
-            "The ending got me 💀"
-            "Try not to laugh 😂"
-            "This is too good 😂"
-            "Who can relate? 😂"
-            "Comment if you laughed 😂"
-            "This made my day 😂"
+          CAPTIONS=(
+            "Save this one. 🤍 #Vibes #Chill #Mood"
+            "Watch till the end. ✨ #Aesthetic #Vibes #Chill"
+            "This one got me. 🤍 #Mood #Vibes #Aesthetic"
+            "Tag someone who would enjoy this. ✨ #Vibes #Chill #Mood"
+            "Just watch. 🤍 #Aesthetic #Vibes #Chill"
+            "Send this to a friend. ✨ #Mood #Vibes #Aesthetic"
+            "This is everything. 🤍 #Chill #Aesthetic #Vibes"
+            "The ending though. ✨ #Vibes #Mood #Aesthetic"
+            "Comment what you think. 🤍 #Aesthetic #Chill #Vibes"
+            "Tell me you felt that. ✨ #Mood #Aesthetic #Vibes"
+            "This made my day. 🤍 #Vibes #Chill #Aesthetic"
+            "Drop a comment below. ✨ #Aesthetic #Mood #Vibes"
           )
-          IDX=$((RANDOM % ${#HOOKS[@]}))
-          HOOK="${HOOKS[$IDX]}"
-          CAPTION="😂 ${TITLE} | ${HOOK} #Funny #Comedy #LOL #Humor #FunnyVideos #Laugh"
+          IDX=$((RANDOM % ${#CAPTIONS[@]}))
+          CAPTION="${CAPTIONS[$IDX]}"
           echo "caption=$CAPTION" >> "$GITHUB_OUTPUT"
 
       - name: process-video
@@ -143,7 +144,7 @@ jobs:
           echo "Processing..."
           timeout 120 ffmpeg -hide_banner -loglevel error -y \
             -i full.mp4 \
-            -vf "pad=iw:ih+120:0:60:black,drawtext=text='😂 Watch till the end':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=36:x=(w-text_w)/2:y=15,drawtext=text='Follow for more funny videos':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=26:x=(w-text_w)/2:y=h-45" \
+            -vf "pad=iw:ih+120:0:60:black,drawtext=text='Watch till the end':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=36:x=(w-text_w)/2:y=15,drawtext=text='Follow for more':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=26:x=(w-text_w)/2:y=h-45" \
             -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k -movflags +faststart final.mp4
 
           ls -lh final.mp4
