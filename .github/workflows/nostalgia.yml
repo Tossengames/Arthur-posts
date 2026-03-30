@@ -1,4 +1,4 @@
-name: nostalgia-post
+name: cartoon-nostalgia-post
 
 "on":
   workflow_dispatch:
@@ -14,12 +14,6 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
 
-      - name: cache-deps
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt/archives
-          key: apt-ffmpeg-${{ runner.os }}-v1
-
       - name: install-deps
         timeout-minutes: 3
         run: |
@@ -28,27 +22,30 @@ jobs:
 
       - name: find-video
         id: vid
-        timeout-minutes: 1
+        timeout-minutes: 5
         run: |
           set -e
           MAX_DURATION=300
-          MIN_DURATION=20
+          MIN_DURATION=30
           VIDEO_URL=""
 
           QUERIES=(
-            "1990s footage"
-            "1980s footage"
-            "1970s footage"
-            "vintage commercial"
-            "retro television"
-            "vintage city"
-            "old advertisement"
-            "classic television"
-            "vintage documentary"
-            "throwback footage"
+            "fleischer cartoon"
+            "betty boop cartoon"
+            "popeye cartoon"
+            "felix the cat cartoon"
+            "looney tunes cartoon"
+            "merrie melodies cartoon"
+            "woody woodpecker cartoon"
+            "casper cartoon"
+            "mighty mouse cartoon"
+            "terrytoons cartoon"
+            "van beuren cartoon"
+            "inkwell cartoon"
+            "screen gems cartoon"
+            "superman fleischer cartoon"
+            "classic animation 1930s"
           )
-
-          BAD_WORDS="fatal|death|killed|shooting|shot|homicide|murder|deceased|graphic|stabbing|suicide|injury|injured|dead|autopsy|violent|brutality|war|combat|attack|explicit|adult|nudity"
 
           for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
             [ -n "$VIDEO_URL" ] && break
@@ -57,7 +54,7 @@ jobs:
             ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
 
             RESP=$(timeout 8 curl -sf --max-time 8 \
-              "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Amovies+AND+year%3A%5B1950+TO+2009%5D&fl[]=identifier,title,date&rows=10&page=1&output=json" \
+              "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Amovies+AND+year%3A%5B1920+TO+1960%5D&fl[]=identifier,title,date&rows=20&page=1&output=json" \
               2>/dev/null) || continue
 
             COUNT=$(echo "$RESP" | jq -r '.response.docs | length' 2>/dev/null) || continue
@@ -71,17 +68,6 @@ jobs:
               YEAR=$(echo "$DATE" | cut -c1-4)
               [ -z "$IDENTIFIER" ] || [ "$IDENTIFIER" = "null" ] && continue
 
-              if [[ "$YEAR" =~ ^[0-9]{4}$ ]] && [ "$YEAR" -ge 2010 ]; then
-                echo "Skipping too recent: $YEAR"
-                continue
-              fi
-
-              TITLE_LOWER=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]')
-              if echo "$TITLE_LOWER" | grep -qiE "$BAD_WORDS"; then
-                echo "Skipping bad title: $TITLE"
-                continue
-              fi
-
               FILES=$(timeout 8 curl -sf --max-time 8 \
                 "https://archive.org/metadata/${IDENTIFIER}/files" 2>/dev/null) || continue
 
@@ -91,7 +77,7 @@ jobs:
               FULL_URL="https://archive.org/download/${IDENTIFIER}/${VURL}"
 
               FILE_SIZE=$(timeout 8 curl -sf -I "$FULL_URL" 2>/dev/null | grep -i content-length | awk '{print $2}' | tr -d '\r')
-              if [ -n "$FILE_SIZE" ] && [ "$FILE_SIZE" -gt 314572800 ]; then
+              if [ -n "$FILE_SIZE" ] && [ "$FILE_SIZE" -gt 209715200 ]; then
                 echo "Too large, skipping..."
                 continue
               fi
@@ -122,37 +108,38 @@ jobs:
           TITLE="${{ steps.vid.outputs.video_title }}"
 
           CAPTIONS=(
-            "Save this. 🤍 #Vibes #Aesthetic #Chill"
-            "Watch this one. ✨ #Mood #Vibes #Aesthetic"
-            "Just look at this. 🤍 #Chill #Aesthetic #Vibes"
-            "This one is special. ✨ #Vibes #Mood #Aesthetic"
-            "Take a moment for this. 🤍 #Aesthetic #Chill #Vibes"
-            "Worth watching. ✨ #Mood #Aesthetic #Vibes"
-            "Comment below. 🤍 #Vibes #Chill #Aesthetic"
-            "Tag someone. ✨ #Aesthetic #Mood #Vibes"
+            "Follow for more 🤍"
+            "Save this ✨"
+            "Share this 🤍"
+            "Tag someone ✨"
+            "Follow us 🤍"
+            "Like this ✨"
+            "Don't miss this 🤍"
+            "Share with a friend ✨"
+            "Follow for daily posts 🤍"
+            "You need to see this ✨"
           )
           IDX=$((RANDOM % ${#CAPTIONS[@]}))
           HOOK="${CAPTIONS[$IDX]}"
 
           if [ -n "$YEAR" ] && [ "$YEAR" != "null" ]; then
-            CAPTION="📼 ${YEAR} — ${TITLE} | ${HOOK}"
+            CAPTION="📺 ${YEAR} — ${TITLE} | ${HOOK}"
           else
-            CAPTION="📼 ${TITLE} | ${HOOK}"
+            CAPTION="📺 ${TITLE} | ${HOOK}"
           fi
 
           echo "caption=$CAPTION" >> "$GITHUB_OUTPUT"
 
       - name: process-video
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
           URL="${{ steps.vid.outputs.video_url }}"
-          DUR="${{ steps.vid.outputs.video_dur }}"
           YEAR="${{ steps.vid.outputs.video_year }}"
 
           if [ -n "$YEAR" ] && [ "$YEAR" != "null" ]; then
-            LABEL="📼 ${YEAR}"
+            LABEL="📺 ${YEAR}"
           else
-            LABEL="📼 Archive"
+            LABEL="📺 Classic Cartoon"
           fi
 
           echo "Downloading video..."
@@ -161,7 +148,7 @@ jobs:
           echo "Processing..."
           timeout 120 ffmpeg -hide_banner -loglevel error -y \
             -i full.mp4 \
-            -vf "pad=iw:ih+120:0:60:black,drawtext=text='${LABEL}':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=38:x=(w-text_w)/2:y=15,drawtext=text='Follow for more':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=26:x=(w-text_w)/2:y=h-45" \
+            -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,drawtext=text='${LABEL}':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=42:x=(w-text_w)/2:y=20,drawtext=text='Follow for more':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=30:x=(w-text_w)/2:y=h-50" \
             -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k -movflags +faststart final.mp4
 
           ls -lh final.mp4
