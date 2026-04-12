@@ -1,4 +1,4 @@
-name: cartoon-nostalgia-post
+name: nostalgia-video
 
 "on":
   workflow_dispatch:
@@ -8,7 +8,7 @@ name: cartoon-nostalgia-post
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: checkout
@@ -22,29 +22,27 @@ jobs:
 
       - name: find-video
         id: vid
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
           set -e
-          MAX_DURATION=300
-          MIN_DURATION=30
+          MAX_DURATION=180
+          MIN_DURATION=15
           VIDEO_URL=""
 
+          # General nostalgia terms
           QUERIES=(
-            "fleischer cartoon"
-            "betty boop cartoon"
-            "popeye cartoon"
-            "felix the cat cartoon"
-            "looney tunes cartoon"
-            "merrie melodies cartoon"
-            "woody woodpecker cartoon"
-            "casper cartoon"
-            "mighty mouse cartoon"
-            "terrytoons cartoon"
-            "van beuren cartoon"
-            "inkwell cartoon"
-            "screen gems cartoon"
-            "superman fleischer cartoon"
-            "classic animation 1930s"
+            "old cartoon"
+            "vintage commercial"
+            "retro tv show"
+            "classic toy commercial"
+            "old movie clip"
+            "vintage advertisement"
+            "retro game show"
+            "old tv intro"
+            "classic 80s commercial"
+            "vintage public service announcement"
+            "old school cartoon"
+            "retro 90s commercial"
           )
 
           for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
@@ -53,8 +51,8 @@ jobs:
             echo "Searching: $QUERY"
             ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
 
-            RESP=$(timeout 8 curl -sf --max-time 8 \
-              "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Amovies+AND+year%3A%5B1920+TO+1960%5D&fl[]=identifier,title,date&rows=20&page=1&output=json" \
+            RESP=$(timeout 15 curl -sf --max-time 15 \
+              "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Amovies&fl[]=identifier,title&rows=40&page=1&output=json" \
               2>/dev/null) || continue
 
             COUNT=$(echo "$RESP" | jq -r '.response.docs | length' 2>/dev/null) || continue
@@ -62,37 +60,40 @@ jobs:
 
             for i in $(seq 0 $((COUNT - 1)) | shuf); do
               [ -n "$VIDEO_URL" ] && break
+              
               IDENTIFIER=$(echo "$RESP" | jq -r ".response.docs[$i].identifier" 2>/dev/null)
               TITLE=$(echo "$RESP" | jq -r ".response.docs[$i].title" 2>/dev/null)
-              DATE=$(echo "$RESP" | jq -r ".response.docs[$i].date" 2>/dev/null)
-              YEAR=$(echo "$DATE" | cut -c1-4)
               [ -z "$IDENTIFIER" ] || [ "$IDENTIFIER" = "null" ] && continue
 
-              FILES=$(timeout 8 curl -sf --max-time 8 \
+              # Skip modern/game/political content
+              if echo "$TITLE" | grep -qiE "2020|2021|2022|2023|2024|2025|game|gaming|minecraft|fortnite|roblox|trump|biden|news|today"; then
+                echo "Skipping modern content: $TITLE"
+                continue
+              fi
+
+              FILES=$(timeout 10 curl -sf --max-time 10 \
                 "https://archive.org/metadata/${IDENTIFIER}/files" 2>/dev/null) || continue
 
-              VURL=$(echo "$FILES" | jq -r '.result[] | select(.name | test("\\.(mp4|MP4)$")) | .name' 2>/dev/null | head -1)
+              VURL=$(echo "$FILES" | jq -r '.result[] | select(.name | test("\\.(mp4|MP4|mov|MOV)$")) | .name' 2>/dev/null | head -1)
               [ -z "$VURL" ] || [ "$VURL" = "null" ] && continue
 
               FULL_URL="https://archive.org/download/${IDENTIFIER}/${VURL}"
 
               FILE_SIZE=$(timeout 8 curl -sf -I "$FULL_URL" 2>/dev/null | grep -i content-length | awk '{print $2}' | tr -d '\r')
-              if [ -n "$FILE_SIZE" ] && [ "$FILE_SIZE" -gt 209715200 ]; then
+              if [ -n "$FILE_SIZE" ] && [ "$FILE_SIZE" -gt 157286400 ]; then
                 echo "Too large, skipping..."
                 continue
               fi
 
-              DUR_RAW=$(timeout 10 ffprobe -v error -show_entries format=duration -of csv=p=0 "$FULL_URL" 2>/dev/null | cut -d. -f1)
+              DUR_RAW=$(timeout 20 ffprobe -v error -show_entries format=duration -of csv=p=0 "$FULL_URL" 2>/dev/null | cut -d. -f1)
               [[ "$DUR_RAW" =~ ^[0-9]+$ ]] || continue
               [ "$DUR_RAW" -gt "$MAX_DURATION" ] && continue
               [ "$DUR_RAW" -lt "$MIN_DURATION" ] && continue
 
               VIDEO_URL="$FULL_URL"
-              echo "Found: $TITLE ($YEAR) ${DUR_RAW}s"
+              echo "Found: $TITLE (${DUR_RAW}s)"
               echo "video_url=$VIDEO_URL" >> "$GITHUB_OUTPUT"
               echo "video_title=$TITLE" >> "$GITHUB_OUTPUT"
-              echo "video_year=$YEAR" >> "$GITHUB_OUTPUT"
-              echo "video_dur=$DUR_RAW" >> "$GITHUB_OUTPUT"
             done
           done
 
@@ -104,57 +105,50 @@ jobs:
       - name: pick-caption
         id: caption
         run: |
-          YEAR="${{ steps.vid.outputs.video_year }}"
-          TITLE="${{ steps.vid.outputs.video_title }}"
-
+          # Generic captions that work for ANY nostalgia content
           CAPTIONS=(
-            "Follow for more 🤍"
-            "Save this ✨"
-            "Share this 🤍"
-            "Tag someone ✨"
-            "Follow us 🤍"
-            "Like this ✨"
-            "Don't miss this 🤍"
-            "Share with a friend ✨"
-            "Follow for daily posts 🤍"
-            "You need to see this ✨"
+            "📺 Who else remembers this? Tag someone 👇"
+            "😢 Take me back. Tag a friend who grew up with this ✨"
+            "📺 Core memory unlocked. Like if you remember 🧠"
+            "✨ The good old days. Tag someone who needs to see this 🤍"
+            "📺 Don't let this die. Share with a friend 🔄"
+            "😭 Why can't we go back? Follow for more nostalgia 🕰️"
+            "📺 You had to be there. Tag someone who was 👇"
+            "✨ Simpler times. Like if this hit different 🤍"
+            "📺 Who else watched this? Comment below 👇"
+            "🕰️ Remember when life was this good? Tag a friend ✨"
           )
           IDX=$((RANDOM % ${#CAPTIONS[@]}))
-          HOOK="${CAPTIONS[$IDX]}"
-
-          if [ -n "$YEAR" ] && [ "$YEAR" != "null" ]; then
-            CAPTION="📺 ${YEAR} — ${TITLE} | ${HOOK}"
-          else
-            CAPTION="📺 ${TITLE} | ${HOOK}"
-          fi
-
-          echo "caption=$CAPTION" >> "$GITHUB_OUTPUT"
+          echo "caption=${CAPTIONS[$IDX]}" >> "$GITHUB_OUTPUT"
 
       - name: process-video
-        timeout-minutes: 8
+        timeout-minutes: 12
         run: |
           URL="${{ steps.vid.outputs.video_url }}"
-          YEAR="${{ steps.vid.outputs.video_year }}"
-
-          if [ -n "$YEAR" ] && [ "$YEAR" != "null" ]; then
-            LABEL="📺 ${YEAR}"
-          else
-            LABEL="📺 Classic Cartoon"
-          fi
 
           echo "Downloading video..."
-          timeout 180 ffmpeg -hide_banner -loglevel error -y -i "$URL" -c copy full.mp4
+          timeout 300 ffmpeg -hide_banner -loglevel error -y -re -i "$URL" -c copy full.mp4
 
-          echo "Processing..."
-          timeout 120 ffmpeg -hide_banner -loglevel error -y \
+          if [ ! -f full.mp4 ] || [ ! -s full.mp4 ]; then
+            echo "Download failed"
+            exit 1
+          fi
+
+          echo "Processing video..."
+          timeout 600 ffmpeg -hide_banner -loglevel error -y \
             -i full.mp4 \
-            -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,drawtext=text='${LABEL}':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=42:x=(w-text_w)/2:y=20,drawtext=text='Follow for more':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=30:x=(w-text_w)/2:y=h-50" \
-            -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k -movflags +faststart final.mp4
+            -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,drawtext=text='📺 NOSTALGIA':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=48:x=(w-text_w)/2:y=20,drawtext=text='Follow for more 📺':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=32:x=(w-text_w)/2:y=h-60" \
+            -c:v libx264 -preset ultrafast -crf 23 -c:a aac -b:a 128k -movflags +faststart final.mp4
+
+          if [ ! -f final.mp4 ] || [ ! -s final.mp4 ]; then
+            echo "Processing failed"
+            exit 1
+          fi
 
           ls -lh final.mp4
 
       - name: post-to-facebook
-        timeout-minutes: 3
+        timeout-minutes: 5
         env:
           PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
@@ -167,54 +161,23 @@ jobs:
 
           for attempt in 1 2 3; do
             echo "Facebook post attempt $attempt..."
-            INIT=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/video_reels" \
-              -H "Content-Type: application/json" \
-              -d "{\"upload_phase\":\"start\",\"access_token\":\"${PAGE_TOKEN}\"}") || true
-            SESSION=$(echo "$INIT" | jq -r '.upload_session_id' 2>/dev/null)
-            VID_ID=$(echo "$INIT" | jq -r '.video_id' 2>/dev/null)
-
-            if [ "$SESSION" = "null" ] || [ -z "$SESSION" ]; then
-              INIT=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
-                -H "Content-Type: application/json" \
-                -d "{\"upload_phase\":\"start\",\"file_size\":${SIZE},\"access_token\":\"${PAGE_TOKEN}\"}") || true
-              SESSION=$(echo "$INIT" | jq -r '.upload_session_id' 2>/dev/null)
-              VID_ID=$(echo "$INIT" | jq -r '.video_id' 2>/dev/null)
-              S_OFF=$(echo "$INIT" | jq -r '.start_offset' 2>/dev/null)
-              if [ "$SESSION" = "null" ] || [ -z "$SESSION" ]; then
-                echo "Session failed: $INIT"
-                sleep 10
-                continue
-              fi
-              timeout 90 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
-                -F "upload_phase=transfer" \
-                -F "upload_session_id=${SESSION}" \
-                -F "start_offset=${S_OFF}" \
-                -F "video_file_chunk=@${FILE};type=video/mp4" \
-                -F "access_token=${PAGE_TOKEN}" > /dev/null || true
-              FINISH=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
-                -H "Content-Type: application/json" \
-                -d "{\"upload_phase\":\"finish\",\"upload_session_id\":\"${SESSION}\",\"description\":\"${CAPTION}\",\"published\":true,\"access_token\":\"${PAGE_TOKEN}\"}") || true
-            else
-              UPLOAD_URL=$(echo "$INIT" | jq -r '.upload_url' 2>/dev/null)
-              timeout 90 curl -sf -X POST "$UPLOAD_URL" \
-                -H "Authorization: OAuth ${PAGE_TOKEN}" \
-                -H "offset: 0" \
-                -H "file_size: ${SIZE}" \
-                --data-binary "@${FILE}" > /dev/null || true
-              FINISH=$(timeout 20 curl -sf -X POST "${API}/${PAGE_ID}/video_reels" \
-                -H "Content-Type: application/json" \
-                -d "{\"upload_phase\":\"finish\",\"video_id\":\"${VID_ID}\",\"description\":\"${CAPTION}\",\"published\":true,\"access_token\":\"${PAGE_TOKEN}\"}") || true
-            fi
-
-            OK=$(echo "$FINISH" | jq -r '.success // .id // empty' 2>/dev/null)
-            if [ -n "$OK" ]; then
-              echo "Posted! Video ID: $VID_ID"
+            
+            RESP=$(timeout 60 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+              -F "access_token=${PAGE_TOKEN}" \
+              -F "description=${CAPTION}" \
+              -F "source=@${FILE}" \
+              -F "published=true")
+            
+            VIDEO_ID=$(echo "$RESP" | jq -r '.id' 2>/dev/null)
+            
+            if [ -n "$VIDEO_ID" ] && [ "$VIDEO_ID" != "null" ]; then
+              echo "Posted! Video ID: $VIDEO_ID"
               exit 0
             fi
-
-            echo "Post failed attempt $attempt: $FINISH"
-            sleep 10
+            
+            echo "Post failed attempt $attempt: $RESP"
+            sleep 15
           done
-
+          
           echo "All post attempts failed"
           exit 1
