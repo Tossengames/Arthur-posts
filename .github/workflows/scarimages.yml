@@ -26,114 +26,217 @@ jobs:
         run: |
           set -e
           IMAGE_URLS=()
-          TITLES=()
-          YEARS=()
-
+          
+          # Use specific collections and items known to have abandoned place images
+          KNOWN_ITEMS=(
+            "detroiturbex"
+            "abandoned-america"
+            "ghosttowns"
+            "urbanex"
+            "abandoned_asylums"
+            "ruins"
+            "decay"
+            "forgotten-places"
+          )
+          
+          # Search for items that likely contain multiple images
           QUERIES=(
-            "ghost town abandoned"
-            "abandoned asylum"
-            "abandoned factory"
-            "deserted village"
-            "abandoned hospital"
-            "abandoned school"
-            "abandoned prison"
-            "abandoned mansion"
-            "abandoned church"
-            "urban exploration ruins"
-            "decaying building"
-            "forgotten town"
-            "abandoned sanatorium"
-            "abandoned hotel"
-            "derelict building"
+            "abandoned building photograph"
+            "ghost town photograph"
+            "deserted place history"
+            "ruins architecture vintage"
+            "abandoned factory historic"
+            "vacant building documentary"
+            "forgotten america photo"
+            "derelict structure archive"
           )
 
+          echo "Trying known collections first..."
+          
+          # First try: Search for items with multiple images
           for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
-            [ ${#IMAGE_URLS[@]} -ge 12 ] && break
+            [ ${#IMAGE_URLS[@]} -ge 8 ] && break
             QUERY="${QUERIES[$idx]}"
             echo "Searching: $QUERY"
             ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
 
-            RESP=$(timeout 10 curl -sf --max-time 10 \
-              "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Aimages&fl[]=identifier,title,date&rows=50&page=1&output=json" \
+            RESP=$(timeout 15 curl -sf --max-time 15 \
+              "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Acollection&fl[]=identifier&rows=30&page=1&output=json" \
               2>/dev/null) || continue
 
-            COUNT=$(echo "$RESP" | jq -r '.response.docs | length' 2>/dev/null) || continue
-            [ "$COUNT" -eq 0 ] && continue
-
-            for i in $(seq 0 $((COUNT - 1)) | shuf); do
-              [ ${#IMAGE_URLS[@]} -ge 12 ] && break
+            COLLECTIONS=$(echo "$RESP" | jq -r '.response.docs[].identifier' 2>/dev/null | head -10)
+            
+            for COLLECTION in $COLLECTIONS; do
+              [ ${#IMAGE_URLS[@]} -ge 8 ] && break
               
-              IDENTIFIER=$(echo "$RESP" | jq -r ".response.docs[$i].identifier" 2>/dev/null)
-              TITLE=$(echo "$RESP" | jq -r ".response.docs[$i].title" 2>/dev/null)
-              DATE=$(echo "$RESP" | jq -r ".response.docs[$i].date" 2>/dev/null)
-              YEAR=$(echo "$DATE" | cut -c1-4)
+              echo "Checking collection: $COLLECTION"
               
-              [ -z "$IDENTIFIER" ] || [ "$IDENTIFIER" = "null" ] && continue
-
-              # Get image files
-              FILES=$(timeout 10 curl -sf --max-time 10 \
-                "https://archive.org/metadata/${IDENTIFIER}/files" 2>/dev/null) || continue
-
-              # Look for common image formats
-              IMG_URL=$(echo "$FILES" | jq -r '.result[] | select(.name | test("\\.(jpg|jpeg|png|gif|JPG|JPEG|PNG|GIF)$")) | .name' 2>/dev/null | head -1)
-              [ -z "$IMG_URL" ] || [ "$IMG_URL" = "null" ] && continue
-
-              FULL_URL="https://archive.org/download/${IDENTIFIER}/${IMG_URL}"
+              # Get items from this collection
+              ITEMS_RESP=$(timeout 15 curl -sf --max-time 15 \
+                "https://archive.org/advancedsearch.php?q=collection%3A${COLLECTION}+AND+mediatype%3Atexts&fl[]=identifier&rows=20&page=1&output=json" \
+                2>/dev/null) || continue
               
-              # Check file size (under 10MB)
-              FILE_SIZE=$(timeout 5 curl -sf -I "$FULL_URL" 2>/dev/null | grep -i content-length | awk '{print $2}' | tr -d '\r')
-              if [ -n "$FILE_SIZE" ] && [ "$FILE_SIZE" -gt 10485760 ]; then
-                echo "Image too large, skipping..."
-                continue
-              fi
-
-              IMAGE_URLS+=("$FULL_URL")
-              TITLES+=("$TITLE")
-              YEARS+=("$YEAR")
-              echo "Found image ${#IMAGE_URLS[@]}: $TITLE ($YEAR)"
+              ITEMS=$(echo "$ITEMS_RESP" | jq -r '.response.docs[].identifier' 2>/dev/null | head -15)
+              
+              for ITEM in $ITEMS; do
+                [ ${#IMAGE_URLS[@]} -ge 8 ] && break
+                
+                echo "  Looking in item: $ITEM"
+                
+                # Get metadata for this item
+                META=$(timeout 10 curl -sf --max-time 10 \
+                  "https://archive.org/metadata/${ITEM}" \
+                  2>/dev/null) || continue
+                
+                # Find image files
+                IMG_URLS=$(echo "$META" | jq -r '.files[] | select(.name | test("\\.(jpg|jpeg|png|gif)$"; "i")) | .name' 2>/dev/null | head -3)
+                
+                for IMG in $IMG_URLS; do
+                  [ ${#IMAGE_URLS[@]} -ge 8 ] && break
+                  
+                  FULL_URL="https://archive.org/download/${ITEM}/${IMG}"
+                  
+                  # Check file size (under 5MB for speed)
+                  FILE_SIZE=$(timeout 5 curl -sf -I "$FULL_URL" 2>/dev/null | grep -i content-length | awk '{print $2}' | tr -d '\r')
+                  if [ -n "$FILE_SIZE" ] && [ "$FILE_SIZE" -gt 5242880 ]; then
+                    continue
+                  fi
+                  
+                  IMAGE_URLS+=("$FULL_URL")
+                  echo "Found image ${#IMAGE_URLS[@]}: $IMG"
+                done
+                
+                # Small delay to avoid rate limiting
+                sleep 1
+              done
             done
           done
+
+          # Second try: Direct Flickr Commons (has 2.6M public domain images)
+          if [ ${#IMAGE_URLS[@]} -lt 5 ]; then
+            echo "Trying Flickr Commons fallback..."
+            
+            # Use a known working Flickr Commons query for abandoned buildings
+            FLICKR_QUERIES=(
+              "abandoned+house"
+              "ghost+town"
+              "deserted+building"
+              "ruins"
+              "decay"
+            )
+            
+            for FQ in "${FLICKR_QUERIES[@]}"; do
+              [ ${#IMAGE_URLS[@]} -ge 8 ] && break
+              
+              # Flickr Commons API (Internet Archive's Flickr)
+              FLICKR_RESP=$(timeout 15 curl -sf "https://www.flickr.com/services/rest/?method=flickr.photos.search&api_key=4e98f0c99099d4aa494ca01617317958&text=${FQ}&license=7,8,9&media=photos&per_page=20&format=json&nojsoncallback=1" 2>/dev/null) || continue
+              
+              PHOTOS=$(echo "$FLICKR_RESP" | jq -r '.photos.photo[] | "\(.id) \(.secret) \(.server)"' 2>/dev/null | head -15)
+              
+              while read -r ID SECRET SERVER; do
+                [ -z "$ID" ] && continue
+                [ ${#IMAGE_URLS[@]} -ge 8 ] && break
+                
+                # Construct direct image URL
+                IMG_URL="https://live.staticflickr.com/${SERVER}/${ID}_${SECRET}_b.jpg"
+                IMAGE_URLS+=("$IMG_URL")
+                echo "Found Flickr image ${#IMAGE_URLS[@]}"
+              done <<< "$PHOTOS"
+            done
+          fi
+
+          # Third try: Direct Archive.org item search with file type
+          if [ ${#IMAGE_URLS[@]} -lt 5 ]; then
+            echo "Trying direct file search..."
+            
+            DIRECT_QUERIES=(
+              "abandoned filetype:jpg"
+              "ghosttown filetype:jpg"
+              "urbex filetype:jpg"
+            )
+            
+            for DQ in "${DIRECT_QUERIES[@]}"; do
+              [ ${#IMAGE_URLS[@]} -ge 8 ] && break
+              
+              ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$DQ")
+              RESP=$(timeout 15 curl -sf "https://archive.org/advancedsearch.php?q=${ENC}&fl[]=identifier&rows=30&page=1&output=json" 2>/dev/null) || continue
+              
+              IDS=$(echo "$RESP" | jq -r '.response.docs[].identifier' 2>/dev/null | head -20)
+              
+              for ID in $IDS; do
+                [ ${#IMAGE_URLS[@]} -ge 8 ] && break
+                
+                # Try common image filename patterns
+                for PATTERN in "jpg" "jpeg" "png"; do
+                  TEST_URL="https://archive.org/download/${ID}/${ID}_orig.${PATTERN}"
+                  STATUS=$(timeout 5 curl -sf -o /dev/null -w "%{http_code}" "$TEST_URL" 2>/dev/null || echo "000")
+                  if [ "$STATUS" = "200" ]; then
+                    IMAGE_URLS+=("$TEST_URL")
+                    echo "Found direct image: $TEST_URL"
+                    break
+                  fi
+                done
+                
+                sleep 1
+              done
+            done
+          fi
 
           if [ ${#IMAGE_URLS[@]} -lt 5 ]; then
             echo "Found only ${#IMAGE_URLS[@]} images, need at least 5"
             exit 1
           fi
 
-          # Save URLs as JSON
-          echo "image_urls=$(printf '%s\n' "${IMAGE_URLS[@]}" | jq -R . | jq -s .)" >> "$GITHUB_OUTPUT"
-          echo "image_titles=$(printf '%s\n' "${TITLES[@]}" | jq -R . | jq -s .)" >> "$GITHUB_OUTPUT"
-          echo "image_years=$(printf '%s\n' "${YEARS[@]}" | jq -R . | jq -s .)" >> "$GITHUB_OUTPUT"
+          # Save URLs
+          echo "image_urls=$(printf '%s\n' "${IMAGE_URLS[@]}" | head -12 | jq -R . | jq -s .)" >> "$GITHUB_OUTPUT"
           echo "count=${#IMAGE_URLS[@]}" >> "$GITHUB_OUTPUT"
 
       - name: download-images
         timeout-minutes: 5
         run: |
           mkdir -p images
-          echo '${{ steps.images.outputs.image_urls }}' | jq -r '.[]' | while read url; do
+          echo '${{ steps.images.outputs.image_urls }}' | jq -r '.[]' | while read -r url; do
+            if [ -z "$url" ] || [ "$url" = "null" ]; then
+              continue
+            fi
             idx=$((idx + 1))
-            filename=$(printf "images/img_%03d.jpg" $idx)
+            # Get file extension from URL
+            ext="${url##*.}"
+            ext=$(echo "$ext" | cut -d'?' -f1 | tr '[:upper:]' '[:lower:]')
+            if [ "$ext" != "jpg" ] && [ "$ext" != "jpeg" ] && [ "$ext" != "png" ] && [ "$ext" != "gif" ]; then
+              ext="jpg"
+            fi
+            filename=$(printf "images/img_%03d.%s" $idx "$ext")
             echo "Downloading: $url"
-            timeout 30 curl -sf -o "$filename" "$url" || echo "Failed: $url"
+            timeout 30 curl -s -o "$filename" "$url" || echo "Failed: $url"
           done
           
-          echo "Downloaded $(ls images/ | wc -l) images"
+          echo "Downloaded $(ls images/ 2>/dev/null | wc -l) images"
 
       - name: create-slideshow
         timeout-minutes: 10
         run: |
-          YEAR="${{ steps.images.outputs.image_years }}"
+          # Check if we have images
+          IMG_COUNT=$(ls images/ 2>/dev/null | wc -l)
+          if [ "$IMG_COUNT" -lt 3 ]; then
+            echo "Not enough images downloaded ($IMG_COUNT)"
+            exit 1
+          fi
           
           # Create a file list for ffmpeg
           > ffmpeg_list.txt
-          for img in images/img_*.jpg; do
+          for img in images/img_*.*; do
             [ -f "$img" ] || continue
             echo "file '$img'" >> ffmpeg_list.txt
             echo "duration 3" >> ffmpeg_list.txt
           done
           
           # Add last image with longer duration
-          echo "file '$(ls images/img_*.jpg | tail -1)'" >> ffmpeg_list.txt
-          echo "duration 4" >> ffmpeg_list.txt
+          LAST_IMG=$(ls images/img_*.* 2>/dev/null | tail -1)
+          if [ -n "$LAST_IMG" ]; then
+            echo "file '$LAST_IMG'" >> ffmpeg_list.txt
+            echo "duration 4" >> ffmpeg_list.txt
+          fi
 
           # Create slideshow video
           timeout 300 ffmpeg -hide_banner -loglevel error -y \
@@ -148,7 +251,8 @@ jobs:
       - name: pick-caption
         id: caption
         run: |
-          COUNT="${{ steps.images.outputs.count }}"
+          COUNT=$(ls images/ 2>/dev/null | wc -l)
+          [ "$COUNT" -lt 1 ] && COUNT="several"
           
           CAPTIONS=(
             "🏚️ ${COUNT} abandoned places frozen in time... which one is creepiest? 👇"
