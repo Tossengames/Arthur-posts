@@ -1,0 +1,230 @@
+name: abandoned-places-slideshow
+
+"on":
+  workflow_dispatch:
+  schedule:
+    - cron: "0 19 * * *"
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install-deps
+        timeout-minutes: 3
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg bc jq python3
+
+      - name: find-images
+        id: images
+        timeout-minutes: 8
+        run: |
+          set -e
+          IMAGE_URLS=()
+          TITLES=()
+          YEARS=()
+
+          QUERIES=(
+            "ghost town abandoned"
+            "abandoned asylum"
+            "abandoned factory"
+            "deserted village"
+            "abandoned hospital"
+            "abandoned school"
+            "abandoned prison"
+            "abandoned mansion"
+            "abandoned church"
+            "urban exploration ruins"
+            "decaying building"
+            "forgotten town"
+            "abandoned sanatorium"
+            "abandoned hotel"
+            "derelict building"
+          )
+
+          for idx in $(seq 0 $((${#QUERIES[@]} - 1)) | shuf); do
+            [ ${#IMAGE_URLS[@]} -ge 12 ] && break
+            QUERY="${QUERIES[$idx]}"
+            echo "Searching: $QUERY"
+            ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
+
+            RESP=$(timeout 10 curl -sf --max-time 10 \
+              "https://archive.org/advancedsearch.php?q=${ENCODED}+AND+mediatype%3Aimages&fl[]=identifier,title,date&rows=50&page=1&output=json" \
+              2>/dev/null) || continue
+
+            COUNT=$(echo "$RESP" | jq -r '.response.docs | length' 2>/dev/null) || continue
+            [ "$COUNT" -eq 0 ] && continue
+
+            for i in $(seq 0 $((COUNT - 1)) | shuf); do
+              [ ${#IMAGE_URLS[@]} -ge 12 ] && break
+              
+              IDENTIFIER=$(echo "$RESP" | jq -r ".response.docs[$i].identifier" 2>/dev/null)
+              TITLE=$(echo "$RESP" | jq -r ".response.docs[$i].title" 2>/dev/null)
+              DATE=$(echo "$RESP" | jq -r ".response.docs[$i].date" 2>/dev/null)
+              YEAR=$(echo "$DATE" | cut -c1-4)
+              
+              [ -z "$IDENTIFIER" ] || [ "$IDENTIFIER" = "null" ] && continue
+
+              # Get image files
+              FILES=$(timeout 10 curl -sf --max-time 10 \
+                "https://archive.org/metadata/${IDENTIFIER}/files" 2>/dev/null) || continue
+
+              # Look for common image formats
+              IMG_URL=$(echo "$FILES" | jq -r '.result[] | select(.name | test("\\.(jpg|jpeg|png|gif|JPG|JPEG|PNG|GIF)$")) | .name' 2>/dev/null | head -1)
+              [ -z "$IMG_URL" ] || [ "$IMG_URL" = "null" ] && continue
+
+              FULL_URL="https://archive.org/download/${IDENTIFIER}/${IMG_URL}"
+              
+              # Check file size (under 10MB)
+              FILE_SIZE=$(timeout 5 curl -sf -I "$FULL_URL" 2>/dev/null | grep -i content-length | awk '{print $2}' | tr -d '\r')
+              if [ -n "$FILE_SIZE" ] && [ "$FILE_SIZE" -gt 10485760 ]; then
+                echo "Image too large, skipping..."
+                continue
+              fi
+
+              IMAGE_URLS+=("$FULL_URL")
+              TITLES+=("$TITLE")
+              YEARS+=("$YEAR")
+              echo "Found image ${#IMAGE_URLS[@]}: $TITLE ($YEAR)"
+            done
+          done
+
+          if [ ${#IMAGE_URLS[@]} -lt 5 ]; then
+            echo "Found only ${#IMAGE_URLS[@]} images, need at least 5"
+            exit 1
+          fi
+
+          # Save URLs as JSON
+          echo "image_urls=$(printf '%s\n' "${IMAGE_URLS[@]}" | jq -R . | jq -s .)" >> "$GITHUB_OUTPUT"
+          echo "image_titles=$(printf '%s\n' "${TITLES[@]}" | jq -R . | jq -s .)" >> "$GITHUB_OUTPUT"
+          echo "image_years=$(printf '%s\n' "${YEARS[@]}" | jq -R . | jq -s .)" >> "$GITHUB_OUTPUT"
+          echo "count=${#IMAGE_URLS[@]}" >> "$GITHUB_OUTPUT"
+
+      - name: download-images
+        timeout-minutes: 5
+        run: |
+          mkdir -p images
+          echo '${{ steps.images.outputs.image_urls }}' | jq -r '.[]' | while read url; do
+            idx=$((idx + 1))
+            filename=$(printf "images/img_%03d.jpg" $idx)
+            echo "Downloading: $url"
+            timeout 30 curl -sf -o "$filename" "$url" || echo "Failed: $url"
+          done
+          
+          echo "Downloaded $(ls images/ | wc -l) images"
+
+      - name: create-slideshow
+        timeout-minutes: 10
+        run: |
+          YEAR="${{ steps.images.outputs.image_years }}"
+          
+          # Create a file list for ffmpeg
+          > ffmpeg_list.txt
+          for img in images/img_*.jpg; do
+            [ -f "$img" ] || continue
+            echo "file '$img'" >> ffmpeg_list.txt
+            echo "duration 3" >> ffmpeg_list.txt
+          done
+          
+          # Add last image with longer duration
+          echo "file '$(ls images/img_*.jpg | tail -1)'" >> ffmpeg_list.txt
+          echo "duration 4" >> ffmpeg_list.txt
+
+          # Create slideshow video
+          timeout 300 ffmpeg -hide_banner -loglevel error -y \
+            -f concat -safe 0 -i ffmpeg_list.txt \
+            -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30,drawtext=text='🏚️ ABANDONED PLACES':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=42:x=(w-text_w)/2:y=20,drawtext=text='Follow for more 🏚️':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf:fontcolor=white:fontsize=30:x=(w-text_w)/2:y=h-50" \
+            -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p \
+            -c:a aac -b:a 128k -movflags +faststart \
+            slideshow.mp4
+
+          ls -lh slideshow.mp4
+
+      - name: pick-caption
+        id: caption
+        run: |
+          COUNT="${{ steps.images.outputs.count }}"
+          
+          CAPTIONS=(
+            "🏚️ ${COUNT} abandoned places frozen in time... which one is creepiest? 👇"
+            "😱 Would you spend a night in any of these? 🏚️"
+            "📍 Tag someone who loves abandoned places 👻"
+            "🔦 Every building has a story... what happened here? 🤔"
+            "🕯️ Forgotten and decaying. Follow for more 🏚️"
+            "🏚️ ${COUNT} places you should NEVER explore alone ❄️"
+            "👻 Which one gave you chills? Comment below! 👇"
+          )
+          IDX=$((RANDOM % ${#CAPTIONS[@]}))
+          CAPTION="${CAPTIONS[$IDX]}"
+          echo "caption=$CAPTION" >> "$GITHUB_OUTPUT"
+
+      - name: post-to-facebook
+        timeout-minutes: 5
+        env:
+          PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          CAPTION: ${{ steps.caption.outputs.caption }}
+        run: |
+          set -e
+          FILE="slideshow.mp4"
+          SIZE=$(stat -c%s "$FILE")
+          API="https://graph.facebook.com/v19.0"
+
+          for attempt in 1 2 3; do
+            echo "Facebook post attempt $attempt..."
+            INIT=$(timeout 30 curl -sf -X POST "${API}/${PAGE_ID}/video_reels" \
+              -H "Content-Type: application/json" \
+              -d "{\"upload_phase\":\"start\",\"access_token\":\"${PAGE_TOKEN}\"}") || true
+            SESSION=$(echo "$INIT" | jq -r '.upload_session_id' 2>/dev/null)
+            VID_ID=$(echo "$INIT" | jq -r '.video_id' 2>/dev/null)
+
+            if [ "$SESSION" = "null" ] || [ -z "$SESSION" ]; then
+              INIT=$(timeout 30 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+                -H "Content-Type: application/json" \
+                -d "{\"upload_phase\":\"start\",\"file_size\":${SIZE},\"access_token\":\"${PAGE_TOKEN}\"}") || true
+              SESSION=$(echo "$INIT" | jq -r '.upload_session_id' 2>/dev/null)
+              VID_ID=$(echo "$INIT" | jq -r '.video_id' 2>/dev/null)
+              S_OFF=$(echo "$INIT" | jq -r '.start_offset' 2>/dev/null)
+              if [ "$SESSION" = "null" ] || [ -z "$SESSION" ]; then
+                echo "Session failed: $INIT"
+                sleep 15
+                continue
+              fi
+              timeout 120 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+                -F "upload_phase=transfer" \
+                -F "upload_session_id=${SESSION}" \
+                -F "start_offset=${S_OFF}" \
+                -F "video_file_chunk=@${FILE};type=video/mp4" \
+                -F "access_token=${PAGE_TOKEN}" > /dev/null || true
+              FINISH=$(timeout 30 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
+                -H "Content-Type: application/json" \
+                -d "{\"upload_phase\":\"finish\",\"upload_session_id\":\"${SESSION}\",\"description\":\"${CAPTION}\",\"published\":true,\"access_token\":\"${PAGE_TOKEN}\"}") || true
+            else
+              UPLOAD_URL=$(echo "$INIT" | jq -r '.upload_url' 2>/dev/null)
+              timeout 120 curl -sf -X POST "$UPLOAD_URL" \
+                -H "Authorization: OAuth ${PAGE_TOKEN}" \
+                -H "offset: 0" \
+                -H "file_size: ${SIZE}" \
+                --data-binary "@${FILE}" > /dev/null || true
+              FINISH=$(timeout 30 curl -sf -X POST "${API}/${PAGE_ID}/video_reels" \
+                -H "Content-Type: application/json" \
+                -d "{\"upload_phase\":\"finish\",\"video_id\":\"${VID_ID}\",\"description\":\"${CAPTION}\",\"published\":true,\"access_token\":\"${PAGE_TOKEN}\"}") || true
+            fi
+
+            OK=$(echo "$FINISH" | jq -r '.success // .id // empty' 2>/dev/null)
+            if [ -n "$OK" ]; then
+              echo "Posted! Video ID: $VID_ID"
+              exit 0
+            fi
+
+            echo "Post failed attempt $attempt: $FINISH"
+            sleep 15
+          done
+
+          echo "All post attempts failed"
+          exit 1
