@@ -1,4 +1,4 @@
-name: abandoned-places-slideshow
+name: abandoned-places-video x
 
 "on":
   workflow_dispatch:
@@ -8,7 +8,7 @@ name: abandoned-places-slideshow
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: checkout
@@ -18,123 +18,138 @@ jobs:
         timeout-minutes: 3
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ffmpeg bc jq python3
+          sudo apt-get install -y --no-install-recommends ffmpeg bc jq python3 curl
 
-      - name: find-images
-        id: images
-        timeout-minutes: 8
-        run: |
-          set -e
-          IMAGE_URLS=()
-          
-          # SUPER GENERAL search terms - no spaces, simple words
-          QUERIES=(
-            "ruins"
-            "abandoned"
-            "decay"
-            "ghosttown"
-            "deserted"
-            "building"
-            "old"
-            "historic"
-            "vintage"
-          )
-
-          for QUERY in "${QUERIES[@]}"; do
-            [ ${#IMAGE_URLS[@]} -ge 10 ] && break
-            
-            echo "Searching: $QUERY"
-            ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
-
-            # Search for items (not collections) - much broader
-            RESP=$(timeout 15 curl -sf --max-time 15 \
-              "https://archive.org/advancedsearch.php?q=${ENCODED}&fl[]=identifier&rows=50&page=1&output=json" \
-              2>/dev/null) || continue
-
-            IDS=$(echo "$RESP" | jq -r '.response.docs[].identifier' 2>/dev/null | head -30)
-            
-            for ID in $IDS; do
-              [ ${#IMAGE_URLS[@]} -ge 10 ] && break
-              
-              # Get metadata
-              META=$(timeout 10 curl -sf --max-time 10 \
-                "https://archive.org/metadata/${ID}" \
-                2>/dev/null) || continue
-              
-              # Look for ANY image file
-              IMG=$(echo "$META" | jq -r '.files[] | select(.name | test("\\.(jpg|jpeg|png|gif)$"; "i")) | .name' 2>/dev/null | head -1)
-              
-              if [ -n "$IMG" ] && [ "$IMG" != "null" ]; then
-                FULL_URL="https://archive.org/download/${ID}/${IMG}"
-                IMAGE_URLS+=("$FULL_URL")
-                echo "Found ${#IMAGE_URLS[@]}: $IMG"
-              fi
-              
-              # Small delay to be polite
-              sleep 0.5
-            done
-          done
-
-          if [ ${#IMAGE_URLS[@]} -lt 5 ]; then
-            echo "Found only ${#IMAGE_URLS[@]} images, need at least 5"
-            # Last resort: use a known working test image
-            echo "Using fallback test images"
-            IMAGE_URLS=(
-              "https://archive.org/download/abandoned_building_001/abandoned1.jpg"
-              "https://archive.org/download/abandoned_building_002/abandoned2.jpg"
-            )
-          fi
-
-          echo "image_urls=$(printf '%s\n' "${IMAGE_URLS[@]}" | head -10 | jq -R . | jq -s .)" >> "$GITHUB_OUTPUT"
-          echo "count=${#IMAGE_URLS[@]}" >> "$GITHUB_OUTPUT"
-
-      - name: download-images
-        timeout-minutes: 5
-        run: |
-          mkdir -p images
-          echo '${{ steps.images.outputs.image_urls }}' | jq -r '.[]' | while read url; do
-            idx=$((idx + 1))
-            filename=$(printf "images/img_%03d.jpg" $idx)
-            echo "Downloading: $url"
-            timeout 20 curl -sf -o "$filename" "$url" || echo "Failed: $url"
-          done
-
-      - name: create-slideshow
+      - name: fetch-images
+        id: imgs
         timeout-minutes: 10
         run: |
-          IMG_COUNT=$(ls images/ 2>/dev/null | wc -l)
-          if [ "$IMG_COUNT" -lt 3 ]; then
-            echo "Not enough images, creating simple text video"
-            ffmpeg -f lavfi -i color=c=black:s=1080x1920:d=10 -vf "drawtext=text='Abandoned Places':fontcolor=white:fontsize=50:x=(w-text_w)/2:y=(h-text_h)/2" -c:v libx264 -t 10 slideshow.mp4
-          else
-            > ffmpeg_list.txt
-            for img in images/*.jpg; do
-              [ -f "$img" ] || continue
-              echo "file '$img'" >> ffmpeg_list.txt
-              echo "duration 3" >> ffmpeg_list.txt
-            done
-            
-            timeout 300 ffmpeg -hide_banner -loglevel error -y \
-              -f concat -safe 0 -i ffmpeg_list.txt \
-              -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30,drawtext=text='🏚️ ABANDONED':fontfile=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf:fontcolor=white:fontsize=42:x=(w-text_w)/2:y=20" \
-              -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p \
-              slideshow.mp4
+          set -e
+          mkdir -p images
+
+          QUERIES=(
+            "abandoned building"
+            "ghost town"
+            "derelict hospital"
+            "ruins"
+            "abandoned factory"
+            "empty asylum"
+            "forgotten town"
+            "decayed interior"
+            "urban decay"
+            "abandoned school"
+          )
+
+          COUNT=0
+          TARGET=5
+
+          SHUFFLED=($(shuf -e "${QUERIES[@]}"))
+
+          for QUERY in "${SHUFFLED[@]}"; do
+            [ "$COUNT" -ge "$TARGET" ] && break
+
+            echo "Searching Wikimedia for: $QUERY"
+            ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
+
+            RESP=$(timeout 15 curl -sf --max-time 15 \
+              "https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${ENCODED}&gsrlimit=20&prop=imageinfo&iiprop=url|mime|size&format=json" \
+              2>/dev/null) || continue
+
+            URLS=$(echo "$RESP" | jq -r '
+              .query.pages[]?
+              | .imageinfo[]?
+              | select(.mime == "image/jpeg" or .mime == "image/png")
+              | select(.size > 50000 and .size < 10000000)
+              | .url
+            ' 2>/dev/null | shuf | head -3)
+
+            while IFS= read -r URL; do
+              [ "$COUNT" -ge "$TARGET" ] && break
+              [ -z "$URL" ] && continue
+
+              OUTFILE="images/img_$(printf '%02d' $COUNT).jpg"
+              echo "Downloading: $URL"
+
+              HTTP_CODE=$(timeout 20 curl -sf -L --max-time 20 -w "%{http_code}" \
+                -o "$OUTFILE" "$URL" 2>/dev/null) || continue
+
+              if [ "$HTTP_CODE" = "200" ] && [ -s "$OUTFILE" ]; then
+                file "$OUTFILE" | grep -qiE "image|jpeg|png" || { rm -f "$OUTFILE"; continue; }
+                echo "Saved image $COUNT: $OUTFILE"
+                COUNT=$((COUNT + 1))
+              else
+                rm -f "$OUTFILE"
+              fi
+            done <<< "$URLS"
+          done
+
+          echo "Total images collected: $COUNT"
+
+          if [ "$COUNT" -lt 3 ]; then
+            echo "Not enough images found ($COUNT). Exiting."
+            exit 1
           fi
-          
-          ls -lh slideshow.mp4
+
+          echo "image_count=$COUNT" >> "$GITHUB_OUTPUT"
 
       - name: pick-caption
         id: caption
         run: |
           CAPTIONS=(
-            "🏚️ Abandoned places 👇"
-            "Would you go here? 🏚️"
-            "Tag someone 🏚️"
-            "Follow for more 👻"
-            "Creepy or cool? 🤔"
+            "Some places are better left forgotten."
+            "Nature always wins in the end."
+            "What stories do these walls hold?"
+            "Time stops for no one."
+            "Left behind and slowly fading."
+            "Once full of life. Now silent."
+            "The world moves on, but these places remain."
+            "Forgotten but not gone."
           )
           IDX=$((RANDOM % ${#CAPTIONS[@]}))
           echo "caption=${CAPTIONS[$IDX]}" >> "$GITHUB_OUTPUT"
+
+      - name: build-video
+        timeout-minutes: 12
+        run: |
+          set -e
+          mkdir -p processed
+
+          FONT="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+          SLIDE_DURATION=4
+
+          IDX=0
+          for IMG in images/img_*.jpg; do
+            [ -f "$IMG" ] || continue
+            OUT="processed/slide_$(printf '%02d' $IDX).mp4"
+
+            timeout 60 ffmpeg -hide_banner -loglevel error -y \
+              -loop 1 -t "$SLIDE_DURATION" -i "$IMG" \
+              -vf "scale=1080:1920:force_original_aspect_ratio=decrease,\
+                   pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,\
+                   zoompan=z='min(zoom+0.0015,1.2)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${SLIDE_DURATION}*25:s=1080x1920:fps=25" \
+              -c:v libx264 -preset ultrafast -crf 23 -an \
+              -r 25 "$OUT"
+
+            IDX=$((IDX + 1))
+          done
+
+          ls processed/slide_*.mp4 | sort | while read f; do echo "file '$PWD/$f'"; done > concat_list.txt
+
+          timeout 120 ffmpeg -hide_banner -loglevel error -y \
+            -f concat -safe 0 -i concat_list.txt \
+            -c copy slideshow_raw.mp4
+
+          timeout 120 ffmpeg -hide_banner -loglevel error -y \
+            -i slideshow_raw.mp4 \
+            -vf "drawtext=text='ABANDONED':fontfile=${FONT}:fontcolor=white@0.6:fontsize=36:x=(w-text_w)/2:y=30" \
+            -c:v libx264 -preset ultrafast -crf 23 -an -movflags +faststart final.mp4
+
+          if [ ! -f final.mp4 ] || [ ! -s final.mp4 ]; then
+            echo "Video build failed"
+            exit 1
+          fi
+
+          ls -lh final.mp4
 
       - name: post-to-facebook
         timeout-minutes: 5
@@ -144,29 +159,28 @@ jobs:
           CAPTION: ${{ steps.caption.outputs.caption }}
         run: |
           set -e
-          FILE="slideshow.mp4"
-          SIZE=$(stat -c%s "$FILE")
+          FILE="final.mp4"
           API="https://graph.facebook.com/v19.0"
 
           for attempt in 1 2 3; do
             echo "Facebook post attempt $attempt..."
-            
+
             RESP=$(timeout 60 curl -sf -X POST "${API}/${PAGE_ID}/videos" \
               -F "access_token=${PAGE_TOKEN}" \
               -F "description=${CAPTION}" \
               -F "source=@${FILE}" \
               -F "published=true")
-            
+
             VIDEO_ID=$(echo "$RESP" | jq -r '.id' 2>/dev/null)
-            
+
             if [ -n "$VIDEO_ID" ] && [ "$VIDEO_ID" != "null" ]; then
               echo "Posted! Video ID: $VIDEO_ID"
               exit 0
             fi
-            
-            echo "Post failed attempt $attempt: $RESP"
+
+            echo "Attempt $attempt failed: $RESP"
             sleep 15
           done
-          
+
           echo "All post attempts failed"
           exit 1
