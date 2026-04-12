@@ -1,4 +1,4 @@
-name: abandoned-places-video x
+name: ghost-towns-video xx
 
 "on":
   workflow_dispatch:
@@ -27,60 +27,66 @@ jobs:
           set -e
           mkdir -p images
 
-          QUERIES=(
-            "abandoned building"
-            "ghost town"
-            "derelict hospital"
-            "ruins"
-            "abandoned factory"
-            "empty asylum"
-            "forgotten town"
-            "decayed interior"
-            "urban decay"
-            "abandoned school"
+          CATEGORIES=(
+            "Category:Abandoned_buildings"
+            "Category:Ghost_towns"
+            "Category:Abandoned_hospitals"
+            "Category:Abandoned_factories"
+            "Category:Derelict_buildings"
+            "Category:Abandoned_asylums"
+            "Category:Ruins"
+            "Category:Abandoned_schools"
+            "Category:Abandoned_churches"
+            "Category:Urban_decay"
           )
 
           COUNT=0
           TARGET=5
 
-          SHUFFLED=($(shuf -e "${QUERIES[@]}"))
+          SHUFFLED=($(shuf -e "${!CATEGORIES[@]}"))
 
-          for QUERY in "${SHUFFLED[@]}"; do
+          for IDX in "${SHUFFLED[@]}"; do
             [ "$COUNT" -ge "$TARGET" ] && break
+            CAT="${CATEGORIES[$IDX]}"
+            echo "Fetching category: $CAT"
 
-            echo "Searching Wikimedia for: $QUERY"
-            ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
+            ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$CAT")
 
             RESP=$(timeout 15 curl -sf --max-time 15 \
-              "https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${ENCODED}&gsrlimit=20&prop=imageinfo&iiprop=url|mime|size&format=json" \
+              "https://commons.wikimedia.org/w/api.php?action=query&list=categorymembers&cmtitle=${ENCODED}&cmtype=file&cmlimit=30&prop=imageinfo&iiprop=url|mime|size&format=json" \
               2>/dev/null) || continue
 
-            URLS=$(echo "$RESP" | jq -r '
-              .query.pages[]?
-              | .imageinfo[]?
-              | select(.mime == "image/jpeg" or .mime == "image/png")
-              | select(.size > 50000 and .size < 10000000)
-              | .url
-            ' 2>/dev/null | shuf | head -3)
+            TITLES=$(echo "$RESP" | jq -r '.query.categorymembers[]? | select(.title | test("\\.(jpg|jpeg|JPG|JPEG)$")) | .title' 2>/dev/null | shuf | head -5)
 
-            while IFS= read -r URL; do
+            while IFS= read -r TITLE; do
               [ "$COUNT" -ge "$TARGET" ] && break
-              [ -z "$URL" ] && continue
+              [ -z "$TITLE" ] && continue
+
+              FTITLE=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$TITLE")
+              FINFO=$(timeout 10 curl -sf --max-time 10 \
+                "https://commons.wikimedia.org/w/api.php?action=query&titles=${FTITLE}&prop=imageinfo&iiprop=url|mime|size&format=json" \
+                2>/dev/null) || continue
+
+              URL=$(echo "$FINFO" | jq -r '.query.pages[]? | .imageinfo[]? | select(.mime == "image/jpeg") | select(.size > 80000 and .size < 8000000) | .url' 2>/dev/null | head -1)
+              [ -z "$URL" ] || [ "$URL" = "null" ] && continue
 
               OUTFILE="images/img_$(printf '%02d' $COUNT).jpg"
               echo "Downloading: $URL"
 
               HTTP_CODE=$(timeout 20 curl -sf -L --max-time 20 -w "%{http_code}" \
+                -A "GhostTownBot/1.0 (github-actions)" \
                 -o "$OUTFILE" "$URL" 2>/dev/null) || continue
 
               if [ "$HTTP_CODE" = "200" ] && [ -s "$OUTFILE" ]; then
-                file "$OUTFILE" | grep -qiE "image|jpeg|png" || { rm -f "$OUTFILE"; continue; }
+                file "$OUTFILE" | grep -qiE "JPEG|image" || { rm -f "$OUTFILE"; continue; }
+                SIZE=$(stat -c%s "$OUTFILE")
+                [ "$SIZE" -lt 10000 ] && { rm -f "$OUTFILE"; continue; }
                 echo "Saved image $COUNT: $OUTFILE"
                 COUNT=$((COUNT + 1))
               else
                 rm -f "$OUTFILE"
               fi
-            done <<< "$URLS"
+            done <<< "$TITLES"
           done
 
           echo "Total images collected: $COUNT"
