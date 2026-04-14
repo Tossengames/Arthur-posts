@@ -3,7 +3,7 @@ name: abandoned-places-video
 "on":
   workflow_dispatch:
   schedule:
-    - cron: "0 19 * * *"
+    #- cron: "0 19 * * *"
 
 jobs:
   post:
