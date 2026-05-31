@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>ASMR Eye Movement</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { width:100vw; height:100vh; overflow:hidden; background:#000; }
+canvas { position:fixed; inset:0; width:100%; height:100%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let W, H, CX, CY;
+function resize() { W = cv.width = window.innerWidth; H = cv.height = window.innerHeight; CX = W/2; CY = H/2; }
+resize();
+
+// ═══════════════════════════════════════════════════════
+// AUDIO — must work with autoplay policy
+// ═══════════════════════════════════════════════════════
+let AC = null;
+let masterGain = null;
+let recDest = null;
+let whooshOsc = null, whooshNoise = null, whooshFilter = null, whooshGain = null, whooshPanner = null;
+let binL = null, binR = null;
+let padNodes = [];
+let audioStarted = false;
+
+function initAudio() {
+  if (audioStarted) return;
+  audioStarted = true;
+
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+
+  masterGain = AC.createGain();
+  masterGain.gain.value = 1.0;
+  masterGain.connect(AC.destination);
+
+  recDest = AC.createMediaStreamDestination();
+  masterGain.connect(recDest);
+
+  startWhoosh();
+  startBinaural();
+  startPad();
+}
+
+// ── WHOOSH — two looping noise layers, always running ──
+function startWhoosh() {
+  if (!AC) return;
+  const sr = AC.sampleRate;
+  const len = sr * 4;
+
+  // Layer 1 — high hiss (600Hz bandpass)
+  const buf1 = AC.createBuffer(1, len, sr);
+  const d1 = buf1.getChannelData(0);
+  for (let i = 0; i < len; i++) d1[i] = Math.random() * 2 - 1;
+  whooshNoise = AC.createBufferSource();
+  whooshNoise.buffer = buf1;
+  whooshNoise.loop = true;
+  whooshFilter = AC.createBiquadFilter();
+  whooshFilter.type = 'bandpass';
+  whooshFilter.frequency.value = 600;
+  whooshFilter.Q.value = 0.8;
+  whooshGain = AC.createGain();
+  whooshGain.gain.value = 1.4;
+  whooshPanner = AC.createStereoPanner ? AC.createStereoPanner() : null;
+  whooshNoise.connect(whooshFilter);
+  whooshFilter.connect(whooshGain);
+  if (whooshPanner) {
+    whooshGain.connect(whooshPanner);
+    whooshPanner.connect(masterGain);
+  } else {
+    whooshGain.connect(masterGain);
+  }
+  whooshNoise.start();
+
+  // Layer 2 — low rumble (180Hz bandpass)
+  const buf2 = AC.createBuffer(1, len, sr);
+  const d2 = buf2.getChannelData(0);
+  for (let i = 0; i < len; i++) d2[i] = Math.random() * 2 - 1;
+  whooshOsc = AC.createBufferSource();
+  whooshOsc.buffer = buf2;
+  whooshOsc.loop = true;
+  const f2 = AC.createBiquadFilter();
+  f2.type = 'bandpass'; f2.frequency.value = 180; f2.Q.value = 1.2;
+  const g2 = AC.createGain();
+  g2.gain.value = 0.6;
+  whooshOsc.connect(f2);
+  f2.connect(g2);
+  if (whooshPanner) g2.connect(whooshPanner); else g2.connect(masterGain);
+  whooshOsc.start();
+}
+
+function updateWhoosh(xFrac, speed) {
+  if (!whooshGain || !AC) return;
+  if (whooshPanner) {
+    const pan = Math.max(-1, Math.min(1, (xFrac * 2) - 1));
+    whooshPanner.pan.setTargetAtTime(pan, AC.currentTime, 0.04);
+  }
+  // Always loud — min 0.8, rises with speed
+  const vol = Math.max(0.8, Math.min(1.8, 0.8 + speed * 0.08));
+  whooshGain.gain.setTargetAtTime(vol, AC.currentTime, 0.04);
+  if (whooshFilter) whooshFilter.frequency.setTargetAtTime(380 + speed * 18, AC.currentTime, 0.04);
+}
+
+// ── BINAURAL — one pair, plays the whole session ──────
+function startBinaural() {
+  if (!AC) return;
+  const wave = SESSION_WAVE;
+  if (!wave) return;
+
+  const merger = AC.createChannelMerger(2);
+
+  const oL = AC.createOscillator();
+  const gL = AC.createGain();
+  oL.type = 'sine';
+  oL.frequency.value = wave.base;
+  gL.gain.value = 0.22;
+  oL.connect(gL);
+  gL.connect(merger, 0, 0);
+
+  const oR = AC.createOscillator();
+  const gR = AC.createGain();
+  oR.type = 'sine';
+  oR.frequency.value = wave.base + wave.hz;
+  gR.gain.value = 0.22;
+  oR.connect(gR);
+  gR.connect(merger, 0, 1);
+
+  merger.connect(masterGain);
+  oL.start();
+  oR.start();
+  binL = oL;
+  binR = oR;
+}
+
+function stopBinaural() {
+  try { if (binL) binL.stop(); } catch(e) {}
+  try { if (binR) binR.stop(); } catch(e) {}
+  binL = null; binR = null;
+}
+
+// ── AMBIENT PAD ────────────────────────────────────────
+function startPad() {
+  if (!AC) return;
+  const wave = SESSION_WAVE;
+  if (!wave) return;
+  wave.pad.forEach((f, i) => {
+    try {
+      const o = AC.createOscillator();
+      const g = AC.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const t = AC.currentTime;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.055, t + 2);
+      o.connect(g);
+      g.connect(masterGain);
+      o.start();
+      padNodes.push(o, g);
+    } catch(e) {}
+  });
+}
+
+function stopPad() {
+  padNodes.forEach(n => { try { n.stop && n.stop(); } catch(e) {} });
+  padNodes = [];
+}
+
+// ═══════════════════════════════════════════════════════
+// RECORDING
+// ═══════════════════════════════════════════════════════
+let _mr = null, _rc = [], _rb = null;
+window._recordingDone = false;
+
+window.startRecording = function(fps) {
+  initAudio();
+  try {
+    _rc = []; _rb = null; window._recordingDone = false;
+    const vs = cv.captureStream(fps || 30);
+    const at = recDest ? recDest.stream.getAudioTracks() : [];
+    const ms = new MediaStream([...vs.getVideoTracks(), ...at]);
+    const mt = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+    _mr = new MediaRecorder(ms, { mimeType: mt, videoBitsPerSecond: 8000000 });
+    _mr.ondataavailable = e => { if (e.data && e.data.size > 0) _rc.push(e.data); };
+    _mr.onstop = () => { _rb = new Blob(_rc, { type: 'video/webm' }); window._recordingDone = true; };
+    _mr.start(200);
+  } catch(e) { console.error('startRecording error:', e); }
+};
+window.stopRecording = function() { try { if (_mr && _mr.state !== 'inactive') _mr.stop(); } catch(e) {} };
+window.forceFinalize = function() { try { if (_rc.length > 0 && !window._recordingDone) { _rb = new Blob(_rc, { type: 'video/webm' }); window._recordingDone = true; } } catch(e) {} };
+window.getRecordingBase64 = function() {
+  return new Promise((res, rej) => {
+    const chk = () => { if (!_rb) { setTimeout(chk, 100); return; } const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.onerror = rej; r.readAsDataURL(_rb); };
+    chk();
+  });
+};
+
+// ═══════════════════════════════════════════════════════
+// PALETTES
+// ═══════════════════════════════════════════════════════
+const PALETTES = [
+  { bg: '#03010e', ball: '#9b8fff', glow: '#5544cc', trail: [139, 127, 255] },
+  { bg: '#001220', ball: '#00d4ff', glow: '#005588', trail: [0, 212, 255] },
+  { bg: '#0a0008', ball: '#ff6eb4', glow: '#991144', trail: [255, 110, 180] },
+  { bg: '#010c05', ball: '#44ffaa', glow: '#118844', trail: [68, 255, 170] },
+  { bg: '#0c0500', ball: '#ffaa44', glow: '#883300', trail: [255, 170, 68] },
+  { bg: '#060015', ball: '#cc88ff', glow: '#550088', trail: [204, 136, 255] },
+  { bg: '#001818', ball: '#55ffdd', glow: '#006644', trail: [85, 255, 221] },
+  { bg: '#150008', ball: '#ff8888', glow: '#aa1111', trail: [255, 136, 136] },
+  { bg: '#080815', ball: '#88ccff', glow: '#113366', trail: [136, 204, 255] },
+  { bg: '#100500', ball: '#ffdd55', glow: '#775500', trail: [255, 221, 85] },
+  { bg: '#001a1a', ball: '#00ffee', glow: '#006655', trail: [0, 255, 238] },
+  { bg: '#18000a', ball: '#ff44aa', glow: '#880033', trail: [255, 68, 170] },
+];
+
+// ═══════════════════════════════════════════════════════
+// BRAINWAVES
+// ═══════════════════════════════════════════════════════
+const WAVES = [
+  { name: 'Alpha', hz: 10, base: 200, help: 'Relaxed & calm',     pad: [130, 196, 261] },
+  { name: 'Theta', hz: 6,  base: 180, help: 'Deep relaxation',    pad: [108, 162, 216] },
+  { name: 'Alpha', hz: 8,  base: 210, help: 'Stress relief',      pad: [132, 198, 264] },
+  { name: 'Theta', hz: 5,  base: 170, help: 'Meditative state',   pad: [100, 150, 200] },
+  { name: 'Alpha', hz: 12, base: 220, help: 'Calm focus',         pad: [140, 210, 280] },
+  { name: 'Theta', hz: 4,  base: 160, help: 'Sleep onset',        pad: [96,  144, 192] },
+  { name: 'Delta', hz: 2,  base: 150, help: 'Deep rest & healing',pad: [90,  135, 180] },
+];
+
+// ═══════════════════════════════════════════════════════
+// MOTION PATTERNS — designed for eye relaxation
+// Slow smooth paths that exercise & relax eye muscles
+// ═══════════════════════════════════════════════════════
+const PATTERNS = [
+  // Smooth left-right — most basic eye relaxation, like REM therapy
+  { name: 'Left · Right',
+    fn: t => ({ x: 0.5 + Math.sin(t) * 0.42, y: 0.50 }) },
+
+  // Gentle up-down — relieves vertical eye strain
+  { name: 'Up · Down',
+    fn: t => ({ x: 0.50, y: 0.50 + Math.sin(t) * 0.34 }) },
+
+  // Large slow circle — works all eye muscles evenly
+  { name: 'Slow Circle',
+    fn: t => ({ x: 0.5 + Math.cos(t) * 0.38, y: 0.50 + Math.sin(t) * 0.34 }) },
+
+  // Figure 8 — bilateral stimulation, used in EMDR therapy
+  { name: 'Figure 8',
+    fn: t => ({ x: 0.5 + Math.sin(t) * 0.40, y: 0.50 + Math.sin(t * 2) * 0.20 }) },
+
+  // Diagonal — works oblique eye muscles
+  { name: 'Diagonal',
+    fn: t => ({ x: 0.5 + Math.sin(t) * 0.38, y: 0.50 + Math.sin(t) * 0.30 }) },
+
+  // Wide pendulum — hypnotic left-right with slight arc, very calming
+  { name: 'Pendulum',
+    fn: t => ({ x: 0.5 + Math.sin(t) * 0.44, y: 0.46 + Math.abs(Math.sin(t)) * 0.08 }) },
+
+  // Lazy infinity — slow lemniscate, gentle bilateral
+  { name: 'Infinity',
+    fn: t => ({
+      x: 0.5 + 0.40 * Math.cos(t) / (1 + Math.sin(t) * Math.sin(t)),
+      y: 0.50 + 0.22 * Math.sin(t) * Math.cos(t) / (1 + Math.sin(t) * Math.sin(t))
+    }) },
+
+  // Slow spiral out — draws eye outward, decompresses focus
+  { name: 'Outward Spiral',
+    fn: t => ({ x: 0.5 + Math.cos(t) * (0.06 + (t % (Math.PI*4)) / (Math.PI*4) * 0.36), y: 0.50 + Math.sin(t) * (0.06 + (t % (Math.PI*4)) / (Math.PI*4) * 0.30) }) },
+
+  // Corner-to-corner sweep — stretches full range of motion
+  { name: 'Corner Sweep',
+    fn: t => ({ x: 0.5 + Math.sin(t) * 0.40, y: 0.50 + Math.cos(t * 1.3) * 0.28 }) },
+
+  // Gentle wave drift — most soothing, minimal effort
+  { name: 'Gentle Wave',
+    fn: t => ({ x: 0.5 + Math.sin(t * 0.8) * 0.38, y: 0.50 + Math.sin(t * 0.4) * 0.20 }) },
+
+  // Horizontal 8 — wide bilateral, great for eye strain relief
+  { name: 'Wide 8',
+    fn: t => ({ x: 0.5 + Math.sin(t) * 0.44, y: 0.50 + Math.sin(t * 2) * 0.14 }) },
+
+  // Vertical oval — works vertical muscles more than circle
+  { name: 'Vertical Oval',
+    fn: t => ({ x: 0.5 + Math.cos(t) * 0.26, y: 0.50 + Math.sin(t) * 0.40 }) },
+];
+
+// ═══════════════════════════════════════════════════════
+// SESSION — one motion, one wave, until tap
+// ═══════════════════════════════════════════════════════
+let SESSION_PAL = null;
+let SESSION_WAVE = null;
+let SESSION_PAT = null;
+let SESSION_SPEED = 1.0; // radians per frame
+
+let T = 0;
+let cx = 0, cy = 0, prevCx = 0, prevCy = 0;
+let trail = [];
+let raf = null;
+let totalFrames = 0;
+const MAX_FRAMES = 600; // 10s at 60fps
+
+function pickSession() {
+  SESSION_PAL  = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+  SESSION_WAVE = WAVES[Math.floor(Math.random() * WAVES.length)];
+  SESSION_PAT  = PATTERNS[Math.floor(Math.random() * PATTERNS.length)];
+  SESSION_SPEED = 0.032 + Math.random() * 0.038; // varies 0.032–0.070 rad/frame
+}
+
+function startSession() {
+  if (raf) { cancelAnimationFrame(raf); raf = null; }
+  stopBinaural();
+  stopPad();
+  padNodes = [];
+
+  pickSession();
+  T = 0;
+  totalFrames = 0;
+  trail = [];
+  const p0 = SESSION_PAT.fn(0);
+  cx = p0.x * W; cy = p0.y * H;
+  prevCx = cx; prevCy = cy;
+
+  if (!audioStarted) initAudio();
+  else {
+    // Restart binaural and pad with new wave
+    startBinaural();
+    startPad();
+  }
+
+  loop();
+}
+
+// ═══════════════════════════════════════════════════════
+// DRAW
+// ═══════════════════════════════════════════════════════
+function drawBg() {
+  ctx.fillStyle = SESSION_PAL.bg;
+  ctx.fillRect(0, 0, W, H);
+  // Soft glow that follows ball
+  const gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(W, H) * 0.55);
+  gr.addColorStop(0, SESSION_PAL.glow + '35');
+  gr.addColorStop(1, 'transparent');
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawTrail() {
+  const [r, g, b] = SESSION_PAL.trail;
+  const ballR = Math.min(W, H) * 0.068;
+  for (let i = 1; i < trail.length; i++) {
+    const p = trail[i], pp = trail[i - 1];
+    const frac = i / trail.length;
+    const alpha = frac * 0.65;
+    // Trail width scales from thin to thick — much thicker now
+    const lw = ballR * 0.35 + frac * ballR * 1.4;
+    ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.lineWidth = lw;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(pp.x, pp.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  }
+}
+
+function drawBall() {
+  const r = Math.min(W, H) * 0.068;
+  const speed = Math.hypot(cx - prevCx, cy - prevCy);
+
+  // Outer glow — grows with speed
+  const glowR = r * (2.0 + speed * 0.04);
+  const glow = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, glowR);
+  glow.addColorStop(0, SESSION_PAL.glow + '88');
+  glow.addColorStop(1, 'transparent');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, Math.PI * 2); ctx.fill();
+
+  // Ball
+  const bg = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.05, cx, cy, r);
+  bg.addColorStop(0, 'rgba(255,255,255,0.65)');
+  bg.addColorStop(0.45, SESSION_PAL.ball + 'ee');
+  bg.addColorStop(1, SESSION_PAL.glow + 'cc');
+  ctx.fillStyle = bg;
+  ctx.shadowColor = SESSION_PAL.ball;
+  ctx.shadowBlur = 28 + speed;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Shine dot
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.beginPath(); ctx.arc(cx - r * 0.30, cy - r * 0.30, r * 0.22, 0, Math.PI * 2); ctx.fill();
+
+  // Pulse ring
+  const pulse = 0.55 + Math.sin(totalFrames * 0.18) * 0.45;
+  ctx.save();
+  ctx.strokeStyle = SESSION_PAL.ball + 'aa';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = SESSION_PAL.ball;
+  ctx.shadowBlur = 16;
+  ctx.globalAlpha = pulse * 0.55;
+  ctx.beginPath(); ctx.arc(cx, cy, r * 1.35, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+function drawUI() {
+  const wave = SESSION_WAVE;
+
+  // Top — follow instruction
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.58)';
+  ctx.beginPath(); ctx.roundRect(W * 0.05, H * 0.030, W * 0.90, H * 0.074, H * 0.037); ctx.fill();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `bold ${Math.floor(H * 0.029)}px -apple-system, Arial, sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,0.96)';
+  ctx.shadowColor = 'rgba(0,0,0,1)'; ctx.shadowBlur = 10;
+  ctx.fillText('👁  Follow the circle with your eyes to relax', CX, H * 0.067);
+  ctx.restore();
+
+  // Bottom — wave info
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.58)';
+  ctx.beginPath(); ctx.roundRect(W * 0.05, H * 0.896, W * 0.90, H * 0.074, H * 0.037); ctx.fill();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `bold ${Math.floor(H * 0.025)}px -apple-system, Arial, sans-serif`;
+  ctx.fillStyle = 'rgba(220,210,255,0.98)';
+  ctx.shadowColor = 'rgba(0,0,0,1)'; ctx.shadowBlur = 10;
+  ctx.fillText(`${wave.name} waves ${wave.hz}Hz  ·  ${wave.help}`, CX, H * 0.933);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════
+// LOOP
+// ═══════════════════════════════════════════════════════
+function loop() {
+  raf = requestAnimationFrame(loop);
+  totalFrames++;
+  T += SESSION_SPEED;
+
+  prevCx = cx; prevCy = cy;
+  const pos = SESSION_PAT.fn(T);
+  const targetX = pos.x * W;
+  const targetY = pos.y * H;
+
+  // Smooth follow
+  cx += (targetX - cx) * 0.14;
+  cy += (targetY - cy) * 0.14;
+
+  // Trail — keep 40 points for thick trail
+  trail.push({ x: cx, y: cy });
+  if (trail.length > 40) trail.shift();
+
+  // Whoosh — pan and volume from ball position and speed
+  const speed = Math.hypot(cx - prevCx, cy - prevCy);
+  updateWhoosh(cx / W, speed);
+
+  // Draw
+  drawBg();
+  drawTrail();
+  drawBall();
+  drawUI();
+
+  // Auto stop after 10s
+  if (totalFrames >= MAX_FRAMES) {
+    stopBinaural();
+    stopPad();
+    try { if (whooshNoise) whooshNoise.stop(); } catch(e) {}
+    try { if (whooshOsc) whooshOsc.stop(); } catch(e) {}
+    window.stopRecording();
+    cancelAnimationFrame(raf);
+    raf = null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// TAP — pick new motion + wave
+// ═══════════════════════════════════════════════════════
+function onTap() {
+  if (!audioStarted) {
+    initAudio();
+    startSession();
+    return;
+  }
+  // New random session
+  startSession();
+}
+
+cv.addEventListener('click', onTap);
+cv.addEventListener('touchstart', e => { e.preventDefault(); onTap(); }, { passive: false });
+
+window.addEventListener('DOMContentLoaded', () => {
+  resize();
+  pickSession(); // pick before audio so WAVE is available when initAudio runs
+  T = 0; totalFrames = 0; trail = [];
+  const p0 = SESSION_PAT.fn(0);
+  cx = p0.x * W; cy = p0.y * H; prevCx = cx; prevCy = cy;
+  // Start visual immediately, audio waits for first interaction
+  // But try to start right away for recording context
+  try {
+    initAudio();
+  } catch(e) {}
+  loop();
+});
+
+window.addEventListener('resize', () => { resize(); });
+</script>
+</body>
+</html>
