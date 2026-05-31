@@ -17,7 +17,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /var/cache/apt/archives
-          key: apt-ubuntu22-asmr-v3
+          key: apt-ubuntu22-asmr-v4
 
       - name: Install dependencies
         run: |
@@ -31,7 +31,7 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.wdm
-          key: pip-wdm-asmr-v3
+          key: pip-wdm-asmr-v4
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -103,7 +103,6 @@ jobs:
           driver.get(f"file://{html_path}")
           time.sleep(2)
 
-          # Force audio context to start
           driver.execute_script("""
             if (typeof initAudio === 'function') initAudio();
             if (typeof AC !== 'undefined' && AC) AC.resume();
@@ -163,7 +162,18 @@ jobs:
           print(f"mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
 
           captions = [
-            "follow the circle with your eyes",
+            "follow the circle with your eyes to relax 👁 #asmr #eyerelaxation #calm",
+            "just follow it and breathe 🌀 #relaxation #stressrelief #mindfulness",
+            "let your eyes follow and your mind slow down 💆 #brainwaves #meditation #anxiety",
+            "follow the circle to unwind 👁 #asmr #sleep #mentalhealth",
+            "eyes follow, body relaxes 🌙 #calmdown #relax #binaural",
+            "soft movement for your eyes and mind 🌀 #eyerelaxation #healing #peace",
+            "take 10 seconds and just follow 💙 #asmr #calm #stressrelief",
+            "best thing you can do for your eyes right now 👁 #eyehealth #relax #mindfulness",
+            "follow the light and feel the calm 🌟 #brainwaves #meditation #sleep",
+            "10 seconds of this actually works 💆 #relaxation #asmr #mentalhealth",
+            "let your eyes drift with it 🌀 #calm #binaural #healing",
+            "follow and feel your jaw unclench 😮‍💨 #stressrelief #asmr #relax",
           ]
           description = random.choice(captions)
 
