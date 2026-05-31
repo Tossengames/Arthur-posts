@@ -50,63 +50,53 @@ function initAudio() {
   startPad();
 }
 
-// ── WHOOSH — two looping noise layers, always running ──
+// ── WHOOSH — constant bandpass noise, loud and hearable ──
 function startWhoosh() {
   if (!AC) return;
-  const sr = AC.sampleRate;
-  const len = sr * 4;
 
-  // Layer 1 — high hiss (600Hz bandpass)
-  const buf1 = AC.createBuffer(1, len, sr);
-  const d1 = buf1.getChannelData(0);
-  for (let i = 0; i < len; i++) d1[i] = Math.random() * 2 - 1;
+  // Long looping noise buffer
+  const sampleRate = AC.sampleRate;
+  const len = sampleRate * 3;
+  const buf = AC.createBuffer(1, len, sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+
   whooshNoise = AC.createBufferSource();
-  whooshNoise.buffer = buf1;
+  whooshNoise.buffer = buf;
   whooshNoise.loop = true;
+
   whooshFilter = AC.createBiquadFilter();
   whooshFilter.type = 'bandpass';
   whooshFilter.frequency.value = 600;
   whooshFilter.Q.value = 0.8;
+
   whooshGain = AC.createGain();
-  whooshGain.gain.value = 1.4;
+  whooshGain.gain.value = 0.8;
+
   whooshPanner = AC.createStereoPanner ? AC.createStereoPanner() : null;
+
   whooshNoise.connect(whooshFilter);
   whooshFilter.connect(whooshGain);
+
   if (whooshPanner) {
     whooshGain.connect(whooshPanner);
     whooshPanner.connect(masterGain);
   } else {
     whooshGain.connect(masterGain);
   }
-  whooshNoise.start();
 
-  // Layer 2 — low rumble (180Hz bandpass)
-  const buf2 = AC.createBuffer(1, len, sr);
-  const d2 = buf2.getChannelData(0);
-  for (let i = 0; i < len; i++) d2[i] = Math.random() * 2 - 1;
-  whooshOsc = AC.createBufferSource();
-  whooshOsc.buffer = buf2;
-  whooshOsc.loop = true;
-  const f2 = AC.createBiquadFilter();
-  f2.type = 'bandpass'; f2.frequency.value = 180; f2.Q.value = 1.2;
-  const g2 = AC.createGain();
-  g2.gain.value = 0.6;
-  whooshOsc.connect(f2);
-  f2.connect(g2);
-  if (whooshPanner) g2.connect(whooshPanner); else g2.connect(masterGain);
-  whooshOsc.start();
+  whooshNoise.start();
 }
 
 function updateWhoosh(xFrac, speed) {
-  if (!whooshGain || !AC) return;
-  if (whooshPanner) {
-    const pan = Math.max(-1, Math.min(1, (xFrac * 2) - 1));
-    whooshPanner.pan.setTargetAtTime(pan, AC.currentTime, 0.04);
-  }
-  // Always loud — min 0.8, rises with speed
-  const vol = Math.max(0.8, Math.min(1.8, 0.8 + speed * 0.08));
-  whooshGain.gain.setTargetAtTime(vol, AC.currentTime, 0.04);
-  if (whooshFilter) whooshFilter.frequency.setTargetAtTime(380 + speed * 18, AC.currentTime, 0.04);
+  if (!whooshPanner || !whooshGain || !AC) return;
+  const pan = Math.max(-1, Math.min(1, (xFrac * 2) - 1));
+  whooshPanner.pan.setTargetAtTime(pan, AC.currentTime, 0.05);
+  // Volume based on speed — minimum 0.4 so it's always hearable
+  const vol = Math.max(0.4, Math.min(1.0, 0.4 + speed * 0.06));
+  whooshGain.gain.setTargetAtTime(vol, AC.currentTime, 0.05);
+  // Pitch shifts slightly with speed
+  if (whooshFilter) whooshFilter.frequency.setTargetAtTime(400 + speed * 15, AC.currentTime, 0.05);
 }
 
 // ── BINAURAL — one pair, plays the whole session ──────
@@ -121,7 +111,7 @@ function startBinaural() {
   const gL = AC.createGain();
   oL.type = 'sine';
   oL.frequency.value = wave.base;
-  gL.gain.value = 0.22;
+  gL.gain.value = 0.07;
   oL.connect(gL);
   gL.connect(merger, 0, 0);
 
@@ -129,7 +119,7 @@ function startBinaural() {
   const gR = AC.createGain();
   oR.type = 'sine';
   oR.frequency.value = wave.base + wave.hz;
-  gR.gain.value = 0.22;
+  gR.gain.value = 0.07;
   oR.connect(gR);
   gR.connect(merger, 0, 1);
 
@@ -159,7 +149,7 @@ function startPad() {
       o.frequency.value = f;
       const t = AC.currentTime;
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.055, t + 2);
+      g.gain.linearRampToValueAtTime(0.025, t + 2);
       o.connect(g);
       g.connect(masterGain);
       o.start();
@@ -234,60 +224,19 @@ const WAVES = [
 ];
 
 // ═══════════════════════════════════════════════════════
-// MOTION PATTERNS — designed for eye relaxation
-// Slow smooth paths that exercise & relax eye muscles
+// MOTION PATTERNS — each is a function of t (0..infinity)
 // ═══════════════════════════════════════════════════════
 const PATTERNS = [
-  // Smooth left-right — most basic eye relaxation, like REM therapy
-  { name: 'Left · Right',
-    fn: t => ({ x: 0.5 + Math.sin(t) * 0.42, y: 0.50 }) },
-
-  // Gentle up-down — relieves vertical eye strain
-  { name: 'Up · Down',
-    fn: t => ({ x: 0.50, y: 0.50 + Math.sin(t) * 0.34 }) },
-
-  // Large slow circle — works all eye muscles evenly
-  { name: 'Slow Circle',
-    fn: t => ({ x: 0.5 + Math.cos(t) * 0.38, y: 0.50 + Math.sin(t) * 0.34 }) },
-
-  // Figure 8 — bilateral stimulation, used in EMDR therapy
-  { name: 'Figure 8',
-    fn: t => ({ x: 0.5 + Math.sin(t) * 0.40, y: 0.50 + Math.sin(t * 2) * 0.20 }) },
-
-  // Diagonal — works oblique eye muscles
-  { name: 'Diagonal',
-    fn: t => ({ x: 0.5 + Math.sin(t) * 0.38, y: 0.50 + Math.sin(t) * 0.30 }) },
-
-  // Wide pendulum — hypnotic left-right with slight arc, very calming
-  { name: 'Pendulum',
-    fn: t => ({ x: 0.5 + Math.sin(t) * 0.44, y: 0.46 + Math.abs(Math.sin(t)) * 0.08 }) },
-
-  // Lazy infinity — slow lemniscate, gentle bilateral
-  { name: 'Infinity',
-    fn: t => ({
-      x: 0.5 + 0.40 * Math.cos(t) / (1 + Math.sin(t) * Math.sin(t)),
-      y: 0.50 + 0.22 * Math.sin(t) * Math.cos(t) / (1 + Math.sin(t) * Math.sin(t))
-    }) },
-
-  // Slow spiral out — draws eye outward, decompresses focus
-  { name: 'Outward Spiral',
-    fn: t => ({ x: 0.5 + Math.cos(t) * (0.06 + (t % (Math.PI*4)) / (Math.PI*4) * 0.36), y: 0.50 + Math.sin(t) * (0.06 + (t % (Math.PI*4)) / (Math.PI*4) * 0.30) }) },
-
-  // Corner-to-corner sweep — stretches full range of motion
-  { name: 'Corner Sweep',
-    fn: t => ({ x: 0.5 + Math.sin(t) * 0.40, y: 0.50 + Math.cos(t * 1.3) * 0.28 }) },
-
-  // Gentle wave drift — most soothing, minimal effort
-  { name: 'Gentle Wave',
-    fn: t => ({ x: 0.5 + Math.sin(t * 0.8) * 0.38, y: 0.50 + Math.sin(t * 0.4) * 0.20 }) },
-
-  // Horizontal 8 — wide bilateral, great for eye strain relief
-  { name: 'Wide 8',
-    fn: t => ({ x: 0.5 + Math.sin(t) * 0.44, y: 0.50 + Math.sin(t * 2) * 0.14 }) },
-
-  // Vertical oval — works vertical muscles more than circle
-  { name: 'Vertical Oval',
-    fn: t => ({ x: 0.5 + Math.cos(t) * 0.26, y: 0.50 + Math.sin(t) * 0.40 }) },
+  { name: 'Left · Right',    fn: t => ({ x: 0.5 + Math.sin(t) * 0.40,                  y: 0.50 }) },
+  { name: 'Up · Down',       fn: t => ({ x: 0.50,                                        y: 0.5 + Math.sin(t) * 0.36 }) },
+  { name: 'Circle',          fn: t => ({ x: 0.5 + Math.cos(t) * 0.36,                  y: 0.5 + Math.sin(t) * 0.36 }) },
+  { name: 'Figure 8',        fn: t => ({ x: 0.5 + Math.sin(t) * 0.38,                  y: 0.5 + Math.sin(t * 2) * 0.22 }) },
+  { name: 'Diagonal',        fn: t => ({ x: 0.5 + Math.sin(t) * 0.38,                  y: 0.5 + Math.sin(t + 1.0) * 0.32 }) },
+  { name: 'Pendulum',        fn: t => ({ x: 0.5 + Math.sin(t) * 0.42,                  y: 0.5 + Math.cos(t * 2) * 0.10 }) },
+  { name: 'Infinity',        fn: t => ({ x: 0.5 + Math.sin(t) * 0.38,                  y: 0.5 + Math.sin(t * 2) * 0.19 }) },
+  { name: 'Slow Orbit',      fn: t => ({ x: 0.5 + Math.cos(t * 0.7) * 0.36,            y: 0.5 + Math.sin(t * 1.1) * 0.30 }) },
+  { name: 'Wide Sweep',      fn: t => ({ x: 0.5 + Math.sin(t) * 0.44,                  y: 0.5 + Math.sin(t * 3) * 0.10 }) },
+  { name: 'Lemniscate',      fn: t => ({ x: 0.5 + 0.38 * Math.cos(t) / (1 + Math.sin(t) * Math.sin(t)), y: 0.5 + 0.38 * Math.sin(t) * Math.cos(t) / (1 + Math.sin(t) * Math.sin(t)) }) },
 ];
 
 // ═══════════════════════════════════════════════════════
@@ -471,7 +420,6 @@ function loop() {
     stopBinaural();
     stopPad();
     try { if (whooshNoise) whooshNoise.stop(); } catch(e) {}
-    try { if (whooshOsc) whooshOsc.stop(); } catch(e) {}
     window.stopRecording();
     cancelAnimationFrame(raf);
     raf = null;
