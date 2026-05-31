@@ -163,16 +163,7 @@ jobs:
           print(f"mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
 
           captions = [
-            "follow the circle with your eyes 👁 alpha waves playing to calm your brain 🎧 try it with headphones",
-            "your nervous system needs this today 🌀 follow the ball and just breathe... theta waves doing the work 💆",
-            "eye movement + binaural beats = actual relaxation 🧠 follow the circle and feel your shoulders drop 👁",
-            "tried this before bed and knocked out in minutes 💤 alpha waves + eye tracking just follow the ball 🌙",
-            "if you're anxious rn just watch this 👁 follow the circle... your brain starts to slow down on its own 🌀",
-            "the whoosh sound tracks where the ball is 🎧 left ear left side right ear right side follow with your eyes 👁",
-            "10 seconds of real relaxation 🌀 binaural beats + smooth movement just follow 👁",
-            "follow the ball and do nothing else 👁 theta waves are slowing your brain down right now 💆",
-            "your eyes follow the circle your brain chills 🧠 alpha waves for stress relief 🎧 try with headphones",
-            "10 seconds just follow the circle 👁 binaural beats in both ears calming your nervous system 🌀",
+            "follow the circle with your eyes",
           ]
           description = random.choice(captions)
 
