@@ -1,0 +1,359 @@
+name: 📼 Post Retro Facts Reel to Facebook
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 16 * * *"
+
+jobs:
+  post:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache apt
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ubuntu22-retro-v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio
+
+      - name: Cache pip and ChromeDriver
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.wdm
+          key: pip-wdm-retro-v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install selenium webdriver-manager requests
+
+      - name: Set timestamp
+        run: echo "TS=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
+
+      - name: Start virtual display and audio
+        run: |
+          Xvfb :99 -screen 0 540x960x24 -ac &
+          pulseaudio --start --exit-idle-time=-1 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+          sleep 3
+
+      - name: Record and Post to Facebook
+        run: |
+          python3 << 'PYEOF'
+          import os, time, subprocess, random, requests, base64, glob
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.chrome.service import Service
+          from webdriver_manager.chrome import ChromeDriverManager
+
+          # ── EDIT THIS to change which folder(s) background music is picked from ──
+          MUSIC_FOLDERS = ["bgmusic3", "Bgmusic3"]
+          MUSIC_EXTENSIONS = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac"]
+
+          ts         = os.environ.get("TS", "test")
+          webm_file  = f"/tmp/retro_{ts}.webm"
+          mp4_file   = f"/tmp/retro_{ts}.mp4"
+          html_path  = os.path.abspath("retro_facts.html")
+          fb_token   = os.environ.get("FB_PAGE_TOKEN")
+          fb_page_id = os.environ.get("FB_PAGE_ID")
+
+          if not fb_token or not fb_page_id:
+            raise RuntimeError("FB_PAGE_TOKEN or FB_PAGE_ID secret is missing/empty — check repo Settings > Secrets and variables > Actions")
+
+          opts = Options()
+          opts.add_argument("--no-sandbox")
+          opts.add_argument("--disable-dev-shm-usage")
+          opts.add_argument("--disable-gpu")
+          opts.add_argument("--window-size=540,960")
+          opts.add_argument("--window-position=0,0")
+          opts.add_argument("--force-device-scale-factor=1")
+          opts.add_argument("--autoplay-policy=no-user-gesture-required")
+          opts.add_argument("--disable-background-timer-throttling")
+          opts.add_argument("--disable-renderer-backgrounding")
+          opts.add_argument("--disable-backgrounding-occluded-windows")
+          opts.add_argument("--no-first-run")
+          opts.add_argument("--disable-infobars")
+          opts.add_argument("--disable-notifications")
+          opts.add_argument("--use-fake-ui-for-media-stream")
+          opts.add_argument("--use-fake-device-for-media-stream")
+          opts.add_argument("--allow-file-access-from-files")
+          opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+          opts.add_experimental_option("useAutomationExtension", False)
+          opts.add_experimental_option("mobileEmulation", {
+            "deviceMetrics": {"width": 540, "height": 960, "pixelRatio": 1.0},
+            "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+          })
+
+          print("Starting Chrome...")
+          driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()), options=opts
+          )
+          driver.set_window_size(540, 960)
+          driver.set_script_timeout(120)
+
+          print(f"Loading file://{html_path}")
+          driver.get(f"file://{html_path}")
+
+          print("Waiting for scene to load (3s)...")
+          time.sleep(3)
+
+          print("Switching to a fresh scene, then starting recording...")
+          driver.execute_script("""
+            document.body.click();
+            if(typeof AC !== 'undefined') AC.resume();
+            window.startRecordingFreshScene(30);
+          """)
+
+          print("Recording 10 seconds...")
+          time.sleep(10)
+
+          print("Stopping recording...")
+          driver.execute_script("window.stopRecording();")
+          time.sleep(1)
+          driver.execute_script("window.forceFinalize();")
+          time.sleep(1)
+
+          for _ in range(30):
+            done = driver.execute_script("return window._recordingDone;")
+            if done:
+              print("Recording finalised.")
+              break
+            time.sleep(0.4)
+          else:
+            driver.quit()
+            raise RuntimeError("Recording failed to finalise")
+
+          print("Extracting base64...")
+          b64 = driver.execute_async_script("""
+            var done = arguments[0];
+            window.getRecordingBase64().then(done).catch(function(e){ done(null); });
+          """)
+          category = driver.execute_script("return window._lastCategory || 'trends';")
+          print(f"Scene category: {category}")
+          driver.quit()
+          print("Browser closed.")
+
+          if not b64:
+            raise RuntimeError("Failed to get base64 data")
+
+          with open(webm_file, 'wb') as f:
+            f.write(base64.b64decode(b64))
+          print(f"WebM: {os.path.getsize(webm_file)/1024/1024:.1f} MB")
+
+          print("Converting to MP4...")
+          result = subprocess.run([
+            "ffmpeg", "-y", "-i", webm_file,
+            "-c:v", "libx264", "-preset", "veryslow", "-crf", "10",
+            "-b:v", "20M", "-maxrate", "25M", "-bufsize", "40M",
+            "-pix_fmt", "yuv420p", "-vf", "scale=1080:1920:flags=lanczos",
+            "-c:a", "aac", "-b:a", "320k", "-ar", "48000",
+            "-movflags", "+faststart", mp4_file
+          ], capture_output=True, text=True)
+
+          if not os.path.exists(mp4_file) or os.path.getsize(mp4_file) < 10000:
+            print("ffmpeg stderr:", result.stderr[-2000:])
+            raise RuntimeError("mp4 conversion failed")
+
+          os.remove(webm_file)
+          print(f"mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
+
+          # ── Pick background music, checking each candidate folder name in order ──
+          def pick_music_file(folders):
+            for folder in folders:
+              if not os.path.isdir(folder):
+                continue
+              candidates = []
+              for ext in MUSIC_EXTENSIONS:
+                candidates.extend(glob.glob(os.path.join(folder, f"*.{ext}")))
+              if candidates:
+                print(f"Using music folder '{folder}'.")
+                return random.choice(candidates)
+            print(f"No music folder found among {folders} — skipping background music.")
+            return None
+
+          music_file = pick_music_file(MUSIC_FOLDERS)
+
+          if music_file:
+            print(f"Selected music: {music_file}")
+            mixed_file = f"/tmp/retro_{ts}_mixed.mp4"
+
+            probe = subprocess.run(
+              ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music_file],
+              capture_output=True, text=True
+            )
+            try:
+              mdur = float(probe.stdout.strip())
+            except Exception:
+              mdur = 0
+
+            mstart = 0
+            if mdur > 15:
+              mstart = random.uniform(0, max(0, mdur - 12))
+
+            mix = subprocess.run([
+              "ffmpeg", "-y",
+              "-i", mp4_file,
+              "-ss", str(mstart), "-t", "10", "-i", music_file,
+              "-filter_complex",
+              "[1:a]volume=0.45,afade=t=in:st=0:d=1,afade=t=out:st=8.5:d=1.5[music];"
+              "[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+              "-map", "0:v", "-map", "[aout]",
+              "-c:v", "copy", "-c:a", "aac", "-b:a", "256k",
+              "-movflags", "+faststart",
+              mixed_file
+            ], capture_output=True, text=True)
+
+            if os.path.exists(mixed_file) and os.path.getsize(mixed_file) > 10000:
+              os.remove(mp4_file)
+              mp4_file = mixed_file
+              print("Background music mixed in.")
+            else:
+              print("Music mix failed, posting without it:", mix.stderr[-1500:])
+          else:
+            print("Posting without background music.")
+
+          # short, category-matched captions, so the caption always fits whatever
+          # fact actually showed on screen
+          CAPTIONS = {
+            "tech": [
+              "Remember when tech looked like this? #90s #2000s #Nostalgia #RetroTech",
+              "Before smartphones, this was peak technology. #Throwback #90sKid #RetroTech #Nostalgia",
+              "Simpler tech, somehow more exciting. #Nostalgia #90s #2000s #ThrowbackThursday",
+              "The good old days of gadgets. #RetroTech #90sKid #Nostalgia #Throwback",
+            ],
+            "games": [
+              "Who else grew up on this? #90sKid #RetroGaming #Nostalgia #Throwback",
+              "Gaming hits different when you remember this. #RetroGaming #90s #2000s #Nostalgia",
+              "Straight up childhood right here. #RetroGaming #Nostalgia #Throwback #90sKid",
+              "Press start on some nostalgia. #RetroGaming #90s #2000s #ThrowbackThursday",
+            ],
+            "tv-movies": [
+              "Movie nights used to hit different. #90sKid #Nostalgia #Throwback #2000s",
+              "Remember this? Tag someone who does. #Nostalgia #90s #Throwback #TBT",
+              "Saturday mornings were never the same after. #Nostalgia #90sKid #Throwback #2000s",
+              "This brings back a whole era. #Nostalgia #Throwback #90s #2000s",
+            ],
+            "pop-culture-mtv": [
+              "MTV really used to play music. #Nostalgia #90s #2000s #Throwback",
+              "The golden era of music television. #Nostalgia #Throwback #90sKid #TBT",
+              "Tag someone who remembers this. #Nostalgia #90s #2000s #Throwback",
+              "Music hit different back then. #Nostalgia #Throwback #90sKid #2000s",
+            ],
+            "wwe-sports": [
+              "Monday nights were never the same after this. #Nostalgia #90sKid #Throwback #WWE",
+              "Tag someone who remembers this era. #Nostalgia #Throwback #90s #2000s",
+              "This was must-watch TV back then. #Nostalgia #90sKid #Throwback #Sports",
+              "Pure nostalgia right here. #Throwback #90s #2000s #Nostalgia",
+            ],
+            "trends": [
+              "We really used to do this. #90sKid #Nostalgia #Throwback #2000s",
+              "Tag someone who remembers this trend. #Nostalgia #90s #Throwback #TBT",
+              "This was peak style back then. #Nostalgia #Throwback #90sKid #2000s",
+              "Fashion really was a whole vibe. #Nostalgia #90s #2000s #Throwback",
+            ],
+            "food": [
+              "This snack lived in every lunchbox. #90sKid #Nostalgia #Throwback #2000s",
+              "Tag someone who misses this. #Nostalgia #Throwback #90s #2000s",
+              "The best part of lunch, hands down. #Nostalgia #90sKid #Throwback #TBT",
+              "Childhood snacks hit different. #Nostalgia #Throwback #90s #2000s",
+            ],
+            "future": [
+              "The 2000s really thought this was the future. #Y2K #Nostalgia #2000s #Throwback",
+              "Everything had to look futuristic back then. #Y2K #Nostalgia #Throwback #2000s",
+              "Remember when this felt like tomorrow? #Y2K #2000s #Nostalgia #Throwback",
+              "Peak early-2000s optimism right here. #Y2K #Nostalgia #2000s #Throwback",
+            ],
+            "ps2": [
+              "PS2 nostalgia hits different. #PS2 #Nostalgia #RetroGaming #2000s",
+              "Tag someone who still has their PS2. #PS2 #Throwback #RetroGaming #Nostalgia",
+              "The best selling console of all time. #PS2 #Nostalgia #RetroGaming #Throwback",
+              "Nothing beat that startup sound. #PS2 #Nostalgia #2000s #RetroGaming",
+            ],
+            "xbox": [
+              "The original Xbox energy. #Xbox #Nostalgia #RetroGaming #2000s",
+              "Tag someone who remembers Xbox Live launching. #Xbox #Throwback #RetroGaming #Nostalgia",
+              "That green glow meant game time. #Xbox #Nostalgia #2000s #RetroGaming",
+              "Online gaming was never the same after this. #Xbox #Nostalgia #Throwback #RetroGaming",
+            ],
+            "song-guess": [
+              "Guess it in the comments. #NameThatTune #90s #2000s #MusicNostalgia",
+              "Bet you knew it instantly. #GuessTheSong #Throwback #Nostalgia #90sMusic",
+              "No skipping, name it from memory. #NameThatTune #2000s #Nostalgia #Throwback",
+              "Drop your answer below. #GuessTheSong #90sKid #Nostalgia #MusicThrowback",
+            ],
+            "game-guess": [
+              "Guess it before reading the comments. #GuessTheGame #RetroGaming #Nostalgia #90sKid",
+              "Name it in the comments. #GuessTheGame #Throwback #RetroGaming #2000s",
+              "Bet you knew this one fast. #NameThatGame #Nostalgia #RetroGaming #Throwback",
+              "Tag someone who can guess this. #GuessTheGame #90sKid #RetroGaming #Nostalgia",
+            ],
+            "remember-when": [
+              "Simpler times. #RememberWhen #Nostalgia #90sKid #Throwback",
+              "Tag someone who remembers this too. #RememberWhen #90s #2000s #Nostalgia",
+              "We really had it good back then. #RememberWhen #Throwback #Nostalgia #90sKid",
+              "Childhood in one sentence. #RememberWhen #Nostalgia #Throwback #2000s",
+            ],
+            "where-were-you": [
+              "Tell us in the comments. #WhereWereYou #Nostalgia #Throwback #90sKid",
+              "Drop your answer below. #HowOldWereYou #Nostalgia #2000s #Throwback",
+              "We want to know. #WhereWereYou #Nostalgia #90s #Throwback",
+              "Tag someone and ask them too. #HowOldWereYou #Nostalgia #Throwback #2000s",
+            ],
+            "nick-mtv-shows": [
+              "After-school TV was unmatched. #90sKid #Nostalgia #Throwback #Cartoons",
+              "Tag someone who remembers rushing home for this. #Nostalgia #90s #2000s #Throwback",
+              "Saturday mornings were sacred. #Nostalgia #Cartoons #Throwback #90sKid",
+              "Television really hit different back then. #Nostalgia #Throwback #2000s #Cartoons",
+            ],
+            "engagement": [
+              "Let us know below! #Nostalgia #90sKid #Throwback #2000s",
+              "Comment your answer! #Nostalgia #Throwback #90s #2000s",
+              "Tag a friend and ask them too. #Nostalgia #90sKid #Throwback #2000s",
+              "We want to hear from you. #Nostalgia #Throwback #90s #2000s",
+            ],
+            "chart-facts": [
+              "The numbers back then were wild. #Nostalgia #90s #2000s #Throwback",
+              "Did you know this one? #Nostalgia #Throwback #90sKid #2000s",
+              "Facts that hit different. #Nostalgia #90s #2000s #ThrowbackThursday",
+              "Stats worth remembering. #Nostalgia #Throwback #90sKid #2000s",
+            ],
+          }
+          description = random.choice(CAPTIONS.get(category, CAPTIONS["trends"]))
+
+          print("Posting to Facebook...")
+          with open(mp4_file, 'rb') as f:
+            response = requests.post(
+              f"https://graph-video.facebook.com/v18.0/{fb_page_id}/videos",
+              data={"description": description, "access_token": fb_token},
+              files={"source": (os.path.basename(mp4_file), f, "video/mp4")}
+            )
+
+          print(f"Facebook response: {response.status_code}")
+          print(response.text)
+          if response.status_code == 200:
+            print(f"Posted! Video ID: {response.json().get('id')}")
+          else:
+            raise RuntimeError(f"Post failed: {response.text}")
+
+          os.remove(mp4_file)
+          print("Done!")
+          PYEOF
+        env:
+          TS:            ${{ env.TS }}
+          DISPLAY:       ":99"
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID:    ${{ secrets.FB_PAGE_ID }}
