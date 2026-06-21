@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<title>90s/2000s Nostalgia Reel</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Anton&family=VT323&family=Russo+One&family=Rubik:wght@500;700;800;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{--headline-font:'Anton',sans-serif;--sub-font:'Rubik',sans-serif;--label-font:'VT323',monospace;}
+html,body{width:100%;height:100%;overflow:hidden;background:#04080f;}
+
+#bgCanvas{position:fixed;inset:0;width:100%;height:100%;z-index:0;}
+#vig{position:fixed;inset:0;z-index:2;pointer-events:none;background:radial-gradient(ellipse at 50% 48%,transparent 30%,rgba(0,5,15,0.5) 100%);}
+
+#ui{
+  position:fixed;inset:0;z-index:10;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  padding:0 8vw;gap:3.6vw;
+}
+
+/* Top label */
+#label{
+  position:fixed;top:0;left:0;right:0;
+  display:flex;flex-direction:column;align-items:center;
+  padding:7vw 6vw 2vw;z-index:11;
+  opacity:0;transform:translateY(-16px);
+  transition:opacity .5s ease,transform .5s ease;
+}
+#label-eyebrow{
+  font-family:var(--label-font);font-weight:400;
+  font-size:clamp(0.7rem,3.4vw,1rem);
+  letter-spacing:0.35em;text-transform:uppercase;
+  color:#f4d35e;
+  -webkit-text-stroke:0.5px rgba(4,10,20,0.6);
+}
+#label-rule{width:46px;height:1px;background:#f4d35e;opacity:0.55;margin-top:1.4vw;}
+
+/* Quote lines */
+#quote-wrap{display:flex;flex-direction:column;align-items:center;gap:1.8vw;width:100%;}
+.qline{
+  font-family:var(--headline-font);font-weight:400;
+  font-size:clamp(1.9rem,8.2vw,2.9rem);
+  color:#fff;text-align:center;line-height:1.22;
+  opacity:0;letter-spacing:0.02em;
+  -webkit-text-stroke:0.035em rgba(6,6,10,0.85);
+  paint-order:stroke fill;
+  text-shadow:0 3px 16px rgba(0,0,0,0.4);
+  max-width:100%;min-width:0;white-space:normal;word-break:keep-all;
+}
+.qline.small{
+  font-family:var(--sub-font);font-weight:700;
+  font-size:clamp(1rem,4.6vw,1.45rem);
+  color:rgba(255,255,255,0.93);
+  -webkit-text-stroke:0.03em rgba(6,6,10,0.75);
+  paint-order:stroke fill;
+  text-shadow:0 2px 8px rgba(0,0,0,0.35);
+  line-height:1.32;
+}
+.qline.ref{
+  font-family:var(--label-font);font-weight:400;
+  font-size:clamp(0.7rem,3.2vw,1rem);
+  letter-spacing:0.28em;text-transform:uppercase;
+  color:#f4d35e;
+  -webkit-text-stroke:0.04em rgba(6,6,10,0.75);
+  paint-order:stroke fill;
+  margin-top:0.8vw;
+}
+
+/* Divider under headline */
+#underbar{height:2px;width:0;max-width:60vw;background:linear-gradient(90deg,transparent,#f4d35e,transparent);transition:width .6s cubic-bezier(.22,1,.36,1);margin-top:0.4vw;}
+
+/* Bottom CTA */
+#bottom{
+  position:fixed;bottom:0;left:0;right:0;
+  display:flex;flex-direction:column;align-items:center;
+  padding:3vw 6vw 8vw;z-index:11;
+  opacity:0;transform:translateY(12px);
+  transition:opacity .6s ease,transform .6s ease;
+}
+#cta{
+  font-family:var(--label-font);font-weight:400;
+  font-size:clamp(0.7rem,3.2vw,1rem);
+  letter-spacing:0.3em;text-transform:uppercase;
+  color:rgba(255,255,255,0.55);
+  -webkit-text-stroke:0.03em rgba(6,6,10,0.6);
+}
+
+/* ───────── PER-THEME REVEAL ANIMATIONS ───────── */
+
+/* crt — rises and settles with a slight flicker-snap */
+.s-crt .qline{transform:translateY(22px) scale(0.96);transition:opacity .5s ease,transform .6s cubic-bezier(.22,1,.36,1);}
+.s-crt .qline.in{opacity:1;transform:translateY(0) scale(1);}
+
+/* vhs — glitchy snap with horizontal jump */
+.s-vhs .qline{transform:translateX(46px);transition:opacity .25s ease,transform .35s cubic-bezier(.34,1.56,.64,1);}
+.s-vhs .qline.in{opacity:1;transform:translateX(0);}
+
+/* hudcyan — sci-fi panel snap-in */
+.s-hudcyan .qline{transform:translateY(18px) scale(0.97);transition:opacity .4s ease,transform .5s cubic-bezier(.22,1,.36,1);}
+.s-hudcyan .qline.in{opacity:1;transform:translateY(0) scale(1);}
+
+/* hudred — alert-style sharp snap */
+.s-hudred .qline{transform:scale(0.92);transition:opacity .3s ease,transform .4s cubic-bezier(.34,1.56,.64,1);}
+.s-hudred .qline.in{opacity:1;transform:scale(1);}
+
+/* matrix — snappy digital materialize */
+.s-matrix .qline{transform:translateY(-10px) scale(1.05);transition:opacity .22s ease,transform .32s ease;}
+.s-matrix .qline.in{opacity:1;transform:translateY(0) scale(1);}
+
+/* polaroid — drifts down like a photo falling into frame */
+.s-polaroid .qline{transform:translateY(-30px) rotate(-1.5deg);transition:opacity .6s ease,transform .8s cubic-bezier(.16,1,.3,1);}
+.s-polaroid .qline.in{opacity:1;transform:translateY(0) rotate(0deg);}
+
+/* arcade — stately rise */
+.s-arcade .qline{transform:translateY(38px);transition:opacity .6s ease,transform .75s cubic-bezier(.16,1,.3,1);}
+.s-arcade .qline.in{opacity:1;transform:translateY(0);}
+
+/* boombox — emerges with bounce */
+.s-boombox .qline{transform:scale(0.9) translateY(14px);transition:opacity .55s ease,transform .7s ease;}
+.s-boombox .qline.in{opacity:1;transform:scale(1) translateY(0);}
+
+/* wwe — crest and settle */
+.s-wwe .qline{transform:translateY(50px) rotate(-2deg);transition:opacity .5s ease,transform .65s cubic-bezier(.22,1,.36,1);}
+.s-wwe .qline.in{opacity:1;transform:translateY(0) rotate(0deg);}
+
+/* ps2 — calm menu-style fade and rise */
+.s-ps2 .qline{transform:translateY(20px) scale(0.97);transition:opacity .5s ease,transform .6s cubic-bezier(.22,1,.36,1);}
+.s-ps2 .qline.in{opacity:1;transform:translateY(0) scale(1);}
+
+/* xbox — pulse in from center */
+.s-xbox .qline{transform:scale(0.88);transition:opacity .45s ease,transform .55s cubic-bezier(.34,1.56,.64,1);}
+.s-xbox .qline.in{opacity:1;transform:scale(1);}
+
+/* messenger — unfolds open like a chat bubble */
+.s-messenger .qline{transform:scaleX(0);transform-origin:left center;transition:opacity .4s ease,transform .55s cubic-bezier(.34,1.56,.64,1);}
+.s-messenger .qline.in{opacity:1;transform:scaleX(1);}
+
+/* disposable — flash-pop */
+.s-disposable .qline{transform:scale(1.08);transition:opacity .3s ease,transform .45s cubic-bezier(.22,1,.36,1);}
+.s-disposable .qline.in{opacity:1;transform:scale(1);}
+
+/* songguess — bouncy beat-drop entrance */
+.s-songguess .qline{transform:scale(0.8);transition:opacity .35s ease,transform .45s cubic-bezier(.34,1.56,.64,1);}
+.s-songguess .qline.in{opacity:1;transform:scale(1);}
+
+/* gameguess — pixel-snap entrance */
+.s-gameguess .qline{transform:translateY(-12px);transition:opacity .25s ease,transform .35s steps(4,end);}
+.s-gameguess .qline.in{opacity:1;transform:translateY(0);}
+
+/* rememberwhen — slow warm fade, like flipping through a photo album */
+.s-rememberwhen .qline{transform:translateY(14px);transition:opacity .7s ease,transform .8s ease;}
+.s-rememberwhen .qline.in{opacity:1;transform:translateY(0);}
+
+/* wherewereyou — urgent breaking-news snap */
+.s-wherewereyou .qline{transform:translateX(-30px);transition:opacity .3s ease,transform .4s cubic-bezier(.34,1.56,.64,1);}
+.s-wherewereyou .qline.in{opacity:1;transform:translateX(0);}
+
+/* nickcn — bouncy, playful kids-TV style pop */
+.s-nickcn .qline{transform:scale(0.8) rotate(-2deg);transition:opacity .35s ease,transform .45s cubic-bezier(.34,1.56,.64,1);}
+.s-nickcn .qline.in{opacity:1;transform:scale(1) rotate(0deg);}
+
+/* engagement — gentle chat-bubble float-in */
+.s-engagement .qline{transform:translateY(16px);transition:opacity .45s ease,transform .55s ease;}
+.s-engagement .qline.in{opacity:1;transform:translateY(0);}
+
+/* chartfacts — sharp data snap-in */
+.s-chartfacts .qline{transform:translateY(-14px) scale(0.96);transition:opacity .3s ease,transform .4s cubic-bezier(.22,1,.36,1);}
+.s-chartfacts .qline.in{opacity:1;transform:translateY(0) scale(1);}
+
+/* universal settle flash — a brief brightness pop layered on every theme's own transform */
+@keyframes qSettle{0%{filter:brightness(1.7);}100%{filter:brightness(1);}}
+.qline.in{animation:qSettle .5s ease-out;}
+
+/* ───────── PER-THEME TEXT COLOUR (light backgrounds need dark ink) ───────── */
+.s-polaroid .qline{color:#4a3528;-webkit-text-stroke:0.035em rgba(255,255,255,0.9);text-shadow:none;}
+.s-polaroid .qline.small{color:#5c4232;-webkit-text-stroke:0.03em rgba(255,255,255,0.85);text-shadow:none;}
+.s-polaroid .qline.ref{color:#b8763f;-webkit-text-stroke:0.035em rgba(255,255,255,0.85);}
+
+.s-disposable .qline{color:#3a2a1a;-webkit-text-stroke:0.035em rgba(255,244,220,0.92);text-shadow:none;}
+.s-disposable .qline.small{color:#4a3624;-webkit-text-stroke:0.03em rgba(255,244,220,0.88);text-shadow:none;}
+.s-disposable .qline.ref{color:#c2622f;-webkit-text-stroke:0.035em rgba(255,244,220,0.88);}
+
+.s-crt .qline.ref{color:#e0552f;}
+.s-vhs .qline.ref{color:#ff3b8e;}
+.s-hudcyan .qline.ref{color:#4be8ff;}
+.s-hudred .qline.ref{color:#ff3b4a;}
+.s-matrix .qline.ref{color:#3bff5e;}
+.s-arcade .qline.ref{color:#ff2fd6;}
+.s-boombox .qline.ref{color:#ffb84d;}
+.s-wwe .qline.ref{color:#ffd23b;}
+.s-ps2 .qline.ref{color:#8fb4ff;}
+.s-xbox .qline.ref{color:#5cff8a;}
+.s-messenger .qline.ref{color:#5cc4ff;}
+.s-songguess .qline.ref{color:#ff2fd6;}
+.s-gameguess .qline.ref{color:#2fe0ff;}
+.s-rememberwhen .qline.ref{color:#ffb86c;}
+.s-wherewereyou .qline.ref{color:#ff3b4a;}
+.s-nickcn .qline.ref{color:#ffd23b;}
+.s-engagement .qline.ref{color:#c084fc;}
+.s-chartfacts .qline.ref{color:#4be8ff;}
+
+/* ───────── LEGIBILITY SCRIM — guarantees contrast behind text on any scene ───────── */
+#text-scrim{
+  position:absolute;left:50%;top:50%;
+  transform:translate(-50%,-50%);
+  width:94vw;max-width:680px;height:50vh;
+  border-radius:32px;
+  opacity:0;
+  transition:opacity .5s ease;
+  pointer-events:none;
+  filter:blur(1px);
+  z-index:-1;
+}
+#text-scrim.dark{background:radial-gradient(ellipse at center, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.22) 50%, rgba(0,0,0,0) 78%);}
+#text-scrim.light{background:radial-gradient(ellipse at center, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 78%);}
+</style>
+</head>
+<body class="s-crt">
+<canvas id="bgCanvas"></canvas>
+<div id="vig"></div>
+
+<div id="label">
+  <div id="label-eyebrow">✦ Throwback Facts ✦</div>
+  <div id="label-rule"></div>
+</div>
+
+<div id="ui">
+  <div id="text-scrim" class="dark"></div>
+  <div id="quote-wrap"></div>
+  <div id="underbar"></div>
+</div>
+
+<div id="bottom"><div id="cta">Tag someone who remembers</div></div>
+
+<script>
+(()=>{
+'use strict';
+
+function safeR(v){return Math.max(0.01,isFinite(v)?v:0.01);}
+function easeOutCubic(x){return 1-Math.pow(1-x,3);}
+function lerp(a,b,t){return a+(b-a)*t;}
+function wrapToLines(text,maxWords){
+  const words=text.split(' ');
+  const lines=[];
+  for(let i=0;i<words.length;i+=maxWords){
+    lines.push(words.slice(i,i+maxWords).join(' '));
+  }
+  return lines;
+}
+
+// ── CONTENT: facts about 90s/2000s nostalgia ──
+// Each fact tagged with a cat: 'tech' | 'games' | 'tv-movies' | 'pop-culture-mtv' |
+// 'wwe-sports' | 'trends' | 'food' | 'future'
+const CONTENT = [
+  // — tech (30) —
+  {cat:'tech',lines:['DIAL-UP HAD','A WHOLE SOUND'],sub:'That screech meant the internet was finally loading.',ref:null},
+  {cat:'tech',lines:['FLOPPY DISKS','HELD 1.44MB'],sub:'Barely enough for a few photos, but it felt like plenty.',ref:null},
+  {cat:'tech',lines:['NOKIA PHONES','SURVIVED DROPS'],sub:'Snake was the only app you ever needed.',ref:null},
+  {cat:'tech',lines:['TAMAGOTCHIS NEEDED','CONSTANT CARE'],sub:'Forget to feed it and the guilt followed you to class.',ref:null},
+  {cat:'tech',lines:['IPODS CHANGED','EVERYTHING'],sub:'A thousand songs in your pocket felt impossible.',ref:null},
+  {cat:'tech',lines:['CDS GOT SCRATCHED','AND SKIPPED'],sub:'So you carried a case and prayed for smooth car rides.',ref:null},
+  {cat:'tech',lines:['DIGITAL CAMERAS','HAD TINY SCREENS'],sub:'You still showed everyone every single photo.',ref:null},
+  {cat:'tech',lines:['BEEPERS CAME FIRST','THEN FLIP PHONES'],sub:'Each one felt like the future had arrived.',ref:null},
+  {cat:'tech',lines:['ANSWERING MACHINES HELD','THE WHOLE FAMILY DRAMA'],sub:'One blinking light meant someone had to listen to everything.',ref:null},
+  {cat:'tech',lines:['CALLER ID FELT','LIKE A SUPERPOWER'],sub:'Suddenly you knew who was calling before you answered.',ref:null},
+  {cat:'tech',lines:['BURNING A CD','TOOK REAL PATIENCE'],sub:'One scratch on the source and the whole burn failed.',ref:null},
+  {cat:'tech',lines:['GRAPHING CALCULATORS HAD','SECRET GAMES INSIDE'],sub:'Math class got a lot more interesting because of it.',ref:null},
+  {cat:'tech',lines:['PAGERS BUZZED FOR','EVERY LITTLE THING'],sub:'A few numbers on a tiny screen meant call me back now.',ref:null},
+  {cat:'tech',lines:['THE FAMILY COMPUTER','LIVED IN ONE ROOM'],sub:'Everyone fought over time on the one shared machine.',ref:null},
+  {cat:'tech',lines:['SCREENSAVERS RAN FOR','HOURS UNWATCHED'],sub:'Flying toasters and bouncing logos, just because they could.',ref:null},
+  {cat:'tech',lines:['ZIP DRIVES FELT','LIKE SERIOUS STORAGE'],sub:'A hundred megabytes seemed like it would last forever.',ref:null},
+  {cat:'tech',lines:['INSTANT MESSAGING HAD','A SOUND FOR EVERYTHING'],sub:'A login chime that meant someone was finally online.',ref:null},
+  {cat:'tech',lines:['DIGITAL WATCHES DID','MORE THAN TELL TIME'],sub:'A tiny calculator on your wrist felt like the future.',ref:null},
+  {cat:'tech',lines:['REMOTE CONTROLS NEEDED','A FIRM SMACK SOMETIMES'],sub:'A little percussion always seemed to fix the signal.',ref:null},
+  {cat:'tech',lines:['PHOTOS TOOK A WEEK','TO COME BACK'],sub:'You dropped the film off and just had to wait.',ref:null},
+  {cat:'tech',lines:['THE MODEM LIVED','RIGHT BY THE PHONE'],sub:'Going online meant nobody else could call the house.',ref:null},
+  {cat:'tech',lines:['PALM PILOTS FELT','IMPOSSIBLY ADVANCED'],sub:'A tiny stylus and a whole calendar in your pocket.',ref:null},
+  {cat:'tech',lines:['BOOMBOXES NEEDED','EIGHT BATTERIES MINIMUM'],sub:'Bring extras or the party stopped early.',ref:null},
+  {cat:'tech',lines:['FAX MACHINES FELT','SURPRISINGLY HIGH-TECH'],sub:'That screeching handshake sound meant a document was coming through.',ref:null},
+  {cat:'tech',lines:['TYPING CLASS USED','AN ACTUAL TYPEWRITER'],sub:'Long before keyboards became second nature.',ref:null},
+  {cat:'tech',lines:['DISCMANS SKIPPED IF','YOU MOVED TOO FAST'],sub:'Walking carefully became a whole skill.',ref:null},
+  {cat:'tech',lines:['THE FIRST EMAIL ADDRESS','FELT LIKE A BIG DEAL'],sub:'Picking the perfect username took way too long.',ref:null},
+  {cat:'tech',lines:['POCKET TVS PROMISED','TV ANYWHERE'],sub:'A tiny screen and a whole lot of static.',ref:null},
+  {cat:'tech',lines:['CD-ROM ENCYCLOPEDIAS REPLACED','A WHOLE BOOKSHELF'],sub:'One disc held more than an entire set of books.',ref:null},
+  {cat:'tech',lines:['VOICEMAIL GREETINGS GOT','WAY TOO CREATIVE'],sub:'Everyone tried to make theirs the most memorable one.',ref:null},
+  // — games (30), now richer: characters, cheat codes, charts, stages, memories —
+  {cat:'games',lines:['EVERY GROUP HAD','THAT ONE CHEAT CODE EXPERT'],sub:'One friend always knew the secret button combo for everything.',ref:null},
+  {cat:'games',lines:['ONE STAGE ALWAYS BECAME','THE GROUP\u2019S NIGHTMARE'],sub:'A single level that took the whole friend group weeks to clear.',ref:null},
+  {cat:'games',lines:['PICKING YOUR MAIN CHARACTER','WAS A WHOLE PERSONALITY TEST'],sub:'Your favorite fighter said more about you than you realized.',ref:null},
+  {cat:'games',lines:['RENTAL CHARTS AT THE STORE','SHOWED THE WEEK\u2019S HOTTEST GAME'],sub:'You always checked which title had the longest waitlist.',ref:null},
+  {cat:'games',lines:['BLOWING ON THE CARTRIDGE','WAS A SACRED RITUAL'],sub:'Nobody could prove it worked, but everyone still did it.',ref:null},
+  {cat:'games',lines:['MEMORIZING THE CHEAT CODE','TOOK SERIOUS DEDICATION'],sub:'A whole sequence of buttons memorized purely from a magazine.',ref:null},
+  {cat:'games',lines:['THE FINAL BOSS MUSIC','MADE YOUR HEART RACE'],sub:'You knew the real challenge was about to start.',ref:null},
+  {cat:'games',lines:['EVERY FRIEND GROUP RANKED','THEIR FAVORITE CHARACTERS DIFFERENTLY'],sub:'Arguments over the best pick never really got settled.',ref:null},
+  {cat:'games',lines:['SECRET LEVELS TOOK','WEEKS TO EVEN DISCOVER'],sub:'No internet guide, just rumors passed around at recess.',ref:null},
+  {cat:'games',lines:['THE SALES CHARTS AT THE MALL','DECIDED WHAT EVERYONE WANTED NEXT'],sub:'A top-five list practically wrote your whole birthday wish list.',ref:null},
+  {cat:'games',lines:['ONE PARTICULAR STAGE HAD','THAT ONE IMPOSSIBLE JUMP'],sub:'You could recite the timing from memory even years later.',ref:null},
+  {cat:'games',lines:['UNLOCKING THE HIDDEN CHARACTER','FELT LIKE A WHOLE ACHIEVEMENT'],sub:'Hours of grinding just to finally see them appear.',ref:null},
+  {cat:'games',lines:['CHEAT CODE MAGAZINES SOLD OUT','THE DAY A BIG GAME DROPPED'],sub:'Everyone wanted the secrets before anyone else.',ref:null},
+  {cat:'games',lines:['EVERY CHARACTER HAD','THAT ONE SIGNATURE CATCHPHRASE'],sub:'You could imitate them perfectly without even trying.',ref:null},
+  {cat:'games',lines:['TOP-SELLING CHARTS GOT PINNED','RIGHT ON YOUR BEDROOM WALL'],sub:'Torn straight from a gaming magazine, proudly displayed.',ref:null},
+  {cat:'games',lines:['THE WATER LEVEL STAGE','WAS ALWAYS SECRETLY THE WORST'],sub:'Slower controls and somehow extra tricky enemies every time.',ref:null},
+  {cat:'games',lines:['A GOOD CHEAT CODE COULD','TURN A HARD GAME EASY'],sub:'Infinite lives felt like cheating in the best possible way.',ref:null},
+  {cat:'games',lines:['EVERY CHARACTER ROSTER HAD','ONE CLEARLY OVERPOWERED PICK'],sub:'Everyone fought over who got to use them first.',ref:null},
+  {cat:'games',lines:['THE BONUS STAGE MUSIC','WAS SOMEHOW MORE FUN'],sub:'A short reward level that felt better than the main game.',ref:null},
+  {cat:'games',lines:['MEMORIZING ENEMY PATTERNS','WAS THE REAL SKILL'],sub:'Trial and error turned into pure muscle memory eventually.',ref:null},
+  {cat:'games',lines:['THE GAME\u2019S CHART-TOPPING SEQUEL','FELT EVEN BIGGER THAN THE FIRST'],sub:'More characters, more stages, somehow more hype too.',ref:null},
+  {cat:'games',lines:['ONE LEVEL\u2019S MUSIC STILL LIVES','IN YOUR HEAD RENT FREE'],sub:'You could hum it perfectly decades later.',ref:null},
+  {cat:'games',lines:['SWAPPING CHEAT CODES AT RECESS','WAS ITS OWN CURRENCY'],sub:'Knowing the secret made you the most popular kid that week.',ref:null},
+  {cat:'games',lines:['SOME CHARACTERS GOT NERFED','IN THE VERY NEXT GAME'],sub:'Your favorite suddenly felt a whole lot weaker.',ref:null},
+  {cat:'games',lines:['THE SCROLLING CREDITS STAGE','MEANT YOU ACTUALLY FINISHED IT'],sub:'A genuine sense of pride watching every name roll by.',ref:null},
+  {cat:'games',lines:['EVERY ARCADE HAD ITS OWN','HIGH SCORE CHART ON DISPLAY'],sub:'Seeing your initials up there felt like real fame.',ref:null},
+  {cat:'games',lines:['A GOOD CHARACTER DESIGN MEANT','INSTANT HALLOWEEN COSTUME IDEAS'],sub:'Half the costume aisle existed because of one game.',ref:null},
+  {cat:'games',lines:['THAT ONE STAGE WITH','THE DISAPPEARING PLATFORMS'],sub:'Timing it just right took way more tries than you\u2019d admit.',ref:null},
+  {cat:'games',lines:['A SECRET CHEAT MENU FELT','LIKE FINDING A HIDDEN ROOM'],sub:'Stumbling into it by accident was its own little thrill.',ref:null},
+  {cat:'games',lines:['THE FRANCHISE\u2019S BEST-SELLING ENTRY','BECAME THE ONE EVERYONE OWNED'],sub:'It felt like every single kid had that exact copy.',ref:null},
+  // — tv-movies (30) —
+  {cat:'tv-movies',lines:['BLOCKBUSTER NIGHT','WAS AN EVENT'],sub:'Walking every aisle before picking just one movie.',ref:null},
+  {cat:'tv-movies',lines:['REWINDING A VHS','TOOK PATIENCE'],sub:'Be kind, please rewind — or face the fee.',ref:null},
+  {cat:'tv-movies',lines:['SATURDAY MORNINGS','MEANT CARTOONS'],sub:'A bowl of cereal and a full lineup, no streaming required.',ref:null},
+  {cat:'tv-movies',lines:['TV GUIDES TOLD YOU','WHAT WAS ON'],sub:'Printed schedules, because there was no pausing live TV.',ref:null},
+  {cat:'tv-movies',lines:['COMMERCIAL BREAKS','WERE THE BATHROOM TIMER'],sub:'You knew exactly how long you had.',ref:null},
+  {cat:'tv-movies',lines:['RENTING A MOVIE','MEANT A DRIVE'],sub:'No instant streaming, just a trip to the store.',ref:null},
+  {cat:'tv-movies',lines:['VHS TAPES WORE OUT','FROM REWATCHING'],sub:'Your favorite scene always got the fuzziest.',ref:null},
+  {cat:'tv-movies',lines:['RECORDING A SHOW MEANT','SETTING THE WHOLE VCR'],sub:'Blinking twelve oh-clock for weeks if nobody fixed it.',ref:null},
+  {cat:'tv-movies',lines:['MISSING AN EPISODE','MEANT MISSING IT FOREVER'],sub:'No rewatching until reruns rolled around eventually.',ref:null},
+  {cat:'tv-movies',lines:['SITCOM THEME SONGS','PLAYED IN FULL'],sub:'You knew every word before the show even started.',ref:null},
+  {cat:'tv-movies',lines:['CHANNEL SURFING TOOK','ACTUAL PHYSICAL EFFORT'],sub:'Some TVs needed a walk to the dial, not a remote.',ref:null},
+  {cat:'tv-movies',lines:['THE VIDEO STORE CLERK','KNEW YOUR WHOLE FAMILY'],sub:'A familiar face every single weekend.',ref:null},
+  {cat:'tv-movies',lines:['MOVIE TRAILERS PLAYED','IN THEATERS ONLY'],sub:'You only saw them if you actually went to the movies.',ref:null},
+  {cat:'tv-movies',lines:['REWINDING BEFORE RETURNING','WAS NON-NEGOTIABLE'],sub:'Skip it and face the clerk\u2019s disappointed look.',ref:null},
+  {cat:'tv-movies',lines:['LIMITED CHANNELS MEANT','EVERYONE WATCHED THE SAME THING'],sub:'The next day at school, everyone had seen it too.',ref:null},
+  {cat:'tv-movies',lines:['THE BIG BOX VHS COVERS','SOLD THE WHOLE MOVIE'],sub:'Cover art alone convinced you to rent something new.',ref:null},
+  {cat:'tv-movies',lines:['TAPING OVER A TAPE','WAS A RISKY MOVE'],sub:'One mistake and a favorite recording was gone forever.',ref:null},
+  {cat:'tv-movies',lines:['SPECIAL EPISODES GOT','HYPED FOR WEEKS'],sub:'A two-parter felt like the biggest event on TV.',ref:null},
+  {cat:'tv-movies',lines:['THE TV ANTENNA NEEDED','CONSTANT ADJUSTING'],sub:'A little static always meant someone had to move it.',ref:null},
+  {cat:'tv-movies',lines:['KIDS SHOWS HAD','REAL PUPPET CASTS'],sub:'A whole world brought to life with felt and foam.',ref:null},
+  {cat:'tv-movies',lines:['THE FAMILY ARGUED OVER','WHO CONTROLLED THE REMOTE'],sub:'Whoever held it ruled the living room.',ref:null},
+  {cat:'tv-movies',lines:['MOVIE NIGHT MEANT','POPCORN ON THE STOVE'],sub:'No microwave bag, just a pot and a lot of shaking.',ref:null},
+  {cat:'tv-movies',lines:['LATE NIGHT TV HAD','ITS OWN WEIRD CHARM'],sub:'Strange infomercials nobody could look away from.',ref:null},
+  {cat:'tv-movies',lines:['PREVIEWS BEFORE THE MOVIE','TOOK FOREVER ON VHS'],sub:'You sat through every single one, no fast-forward allowed.',ref:null},
+  {cat:'tv-movies',lines:['SOME SHOWS ONLY AIRED','ONCE A WEEK'],sub:'A single episode had to last you the whole week.',ref:null},
+  {cat:'tv-movies',lines:['MAKING A MIX OF SHOW CLIPS','TOOK REAL VCR SKILL'],sub:'Timing two VCRs together was basically engineering.',ref:null},
+  {cat:'tv-movies',lines:['DRIVE-IN MOVIES STILL','HAD A LOYAL CROWD'],sub:'Parking the car and watching under the stars.',ref:null},
+  {cat:'tv-movies',lines:['THE STATIC SNOW SCREEN','MEANT THE CHANNEL WAS DONE'],sub:'Late night TV eventually just signed off entirely.',ref:null},
+  {cat:'tv-movies',lines:['SOME CARTOONS ONLY MADE SENSE','IF YOU SAW EVERY EPISODE'],sub:'Miss one and the whole plot got confusing fast.',ref:null},
+  {cat:'tv-movies',lines:['THE BEST SLEEPOVERS HAD','A WHOLE MOVIE MARATHON'],sub:'Pillows, snacks, and way too many tapes stacked up.',ref:null},
+  // — pop-culture-mtv (30) —
+  {cat:'pop-culture-mtv',lines:['MTV USED TO','PLAY MUSIC VIDEOS'],sub:'Back when the M actually stood for something.',ref:null},
+  {cat:'pop-culture-mtv',lines:['TRL COUNTED DOWN','THE TOP VIDEOS'],sub:'Everyone had an opinion on who deserved number one.',ref:null},
+  {cat:'pop-culture-mtv',lines:['BOY BANDS RULED','THE CHARTS'],sub:'Posters covered every bedroom wall.',ref:null},
+  {cat:'pop-culture-mtv',lines:['MIXTAPES TOOK','REAL EFFORT'],sub:'Timing the recording button was an art form.',ref:null},
+  {cat:'pop-culture-mtv',lines:['MUSIC VIDEOS WERE','MINI MOVIES'],sub:'Big budgets, bigger concepts, unforgettable looks.',ref:null},
+  {cat:'pop-culture-mtv',lines:['RADIO COUNTDOWNS','WERE APPOINTMENT LISTENING'],sub:'You waited all week to hear your favorite song.',ref:null},
+  {cat:'pop-culture-mtv',lines:['CALLING THE RADIO STATION','WAS A WHOLE STRATEGY'],sub:'Redial, redial, redial, just to request one song.',ref:null},
+  {cat:'pop-culture-mtv',lines:['POP STAR POSTERS CAME','FOLDED INSIDE MAGAZINES'],sub:'You unfolded it carefully so the creases would not show.',ref:null},
+  {cat:'pop-culture-mtv',lines:['AWARD SHOWS FELT LIKE','THE BIGGEST NIGHT OF THE YEAR'],sub:'Everyone debated the outfits as much as the winners.',ref:null},
+  {cat:'pop-culture-mtv',lines:['MUSIC CHANNELS HAD','THEIR OWN VJ PERSONALITIES'],sub:'Hosts felt as familiar as the songs themselves.',ref:null},
+  {cat:'pop-culture-mtv',lines:['BUYING A SINGLE','MEANT ONE WHOLE CD'],sub:'For just the one song you actually wanted.',ref:null},
+  {cat:'pop-culture-mtv',lines:['CONCERT TICKETS MEANT','WAITING IN AN ACTUAL LINE'],sub:'Camping outside the box office overnight for good seats.',ref:null},
+  {cat:'pop-culture-mtv',lines:['EVERYONE HAD A STRONG OPINION','ON WHO WAS BETTER'],sub:'Friendly rivalries over favorite artists got surprisingly heated.',ref:null},
+  {cat:'pop-culture-mtv',lines:['MUSIC MAGAZINES WERE','THE ONLY GOSSIP SOURCE'],sub:'No social media, just glossy pages and rumors.',ref:null},
+  {cat:'pop-culture-mtv',lines:['LIP SYNC BATTLES HAPPENED','IN EVERY LIVING ROOM'],sub:'A hairbrush microphone and zero embarrassment.',ref:null},
+  {cat:'pop-culture-mtv',lines:['THE SCHOOL DANCE PLAYLIST','WAS EVERYONE\u2019S FAVORITE HITS'],sub:'You could guess the whole setlist before it started.',ref:null},
+  {cat:'pop-culture-mtv',lines:['CD SINGLES CAME WITH','A BONUS REMIX TRACK'],sub:'The extra song made the purchase feel worth it.',ref:null},
+  {cat:'pop-culture-mtv',lines:['DANCE CRAZES SPREAD','THROUGH MUSIC VIDEOS'],sub:'Everyone learned the moves by watching it on repeat.',ref:null},
+  {cat:'pop-culture-mtv',lines:['ALBUM RELEASE DAY MEANT','RUSHING TO THE STORE'],sub:'Getting it on day one felt like a personal mission.',ref:null},
+  {cat:'pop-culture-mtv',lines:['FAN CLUBS SENT REAL MAIL','TO YOUR MAILBOX'],sub:'A newsletter and a sticker felt like a personal letter.',ref:null},
+  {cat:'pop-culture-mtv',lines:['KARAOKE NIGHTS BROUGHT OUT','EVERYONE\u2019S CONFIDENCE'],sub:'Suddenly every friend thought they could really sing.',ref:null},
+  {cat:'pop-culture-mtv',lines:['THE BEST MIXTAPES HAD','A PERFECT TRACK ORDER'],sub:'Getting the flow right took real thought and care.',ref:null},
+  {cat:'pop-culture-mtv',lines:['REALITY MUSIC SHOWS MADE','OVERNIGHT HOUSEHOLD NAMES'],sub:'A single performance could change someone\u2019s whole year.',ref:null},
+  {cat:'pop-culture-mtv',lines:['EVERYONE HAD A GO-TO','KARAOKE SONG'],sub:'The one track you always knew you could nail.',ref:null},
+  {cat:'pop-culture-mtv',lines:['BAND MERCH TABLES SOLD OUT','BEFORE THE SHOW EVEN STARTED'],sub:'Getting there early for the shirt was half the plan.',ref:null},
+  {cat:'pop-culture-mtv',lines:['SLOW DANCING AT SCHOOL DANCES','FELT LIKE A BIG MOMENT'],sub:'That one song made the whole gym go quiet.',ref:null},
+  {cat:'pop-culture-mtv',lines:['MUSIC TRIVIA AT LUNCH','WAS A DAILY GAME'],sub:'Naming that song in three seconds or less, every time.',ref:null},
+  {cat:'pop-culture-mtv',lines:['EVERYONE MEMORIZED THE DANCE BREAK','FROM THE BIGGEST VIDEO'],sub:'You practiced it in your room until it was perfect.',ref:null},
+  {cat:'pop-culture-mtv',lines:['THE COUNTDOWN SHOW FINALE','WAS BIGGER THAN MOST HOLIDAYS'],sub:'You planned your whole evening around watching it live.',ref:null},
+  {cat:'pop-culture-mtv',lines:['BURNED MIX CDS BECAME','THE NEW MIXTAPE'],sub:'Same ritual, new format, same amount of careful planning.',ref:null},
+  // — wwe-sports (30), now explicitly WWE-labeled in every headline —
+  {cat:'wwe-sports',lines:['WWE\u2019S ATTITUDE ERA','CHANGED WRESTLING FOREVER'],sub:'Bigger characters, louder crowds, must-watch TV every week.',ref:null},
+  {cat:'wwe-sports',lines:['WWE MONDAY NIGHTS MEANT','RAW WAS WAR'],sub:'A weekly ritual that filled school hallways the next day.',ref:null},
+  {cat:'wwe-sports',lines:['WWE ENTRANCE THEMES HYPED','THE WHOLE ARENA'],sub:'You knew exactly who was coming out from the first note.',ref:null},
+  {cat:'wwe-sports',lines:['WWE PAY-PER-VIEWS WERE','A WHOLE FAMILY EVENT'],sub:'Friends crammed onto one couch just to watch live.',ref:null},
+  {cat:'wwe-sports',lines:['WWE ACTION FIGURES TURNED','INTO BACKYARD MATCHES'],sub:'Every kid had their own makeshift wrestling ring at home.',ref:null},
+  {cat:'wwe-sports',lines:['WWE CHAIR SHOTS AND CHANTS','OWNED THE WHOLE ARENA'],sub:'The crowd was as much a part of the show as anyone.',ref:null},
+  {cat:'wwe-sports',lines:['WWE TRADING CARDS WERE','SERIOUS SCHOOLYARD CURRENCY'],sub:'Recess trades came with real negotiation skills.',ref:null},
+  {cat:'wwe-sports',lines:['WWE-LICENSED VIDEO GAMES','GOT SERIOUSLY GOOD'],sub:'Create-a-wrestler modes ate entire weekends.',ref:null},
+  {cat:'wwe-sports',lines:['THE BIG GAME ON TV','TURNED INTO A WHOLE HOUSE PARTY'],sub:'Snacks, jerseys, and everyone glued to one screen.',ref:null},
+  {cat:'wwe-sports',lines:['THE WWE CHAMPIONSHIP BELT','FELT BIGGER THAN LIFE'],sub:'Holding one up was the ultimate childhood pose.',ref:null},
+  {cat:'wwe-sports',lines:['SCHOOLYARD DEBATES OVER','WHO WOULD WIN A FIGHT'],sub:'Hypothetical wrestling matchups settled at recess, never online.',ref:null},
+  {cat:'wwe-sports',lines:['HOME RUN DERBIES PACKED','THE WHOLE STADIUM EVERY TIME'],sub:'Every single swing brought the crowd to its feet.',ref:null},
+  {cat:'wwe-sports',lines:['UNDERDOG TEAM RUNS MADE','THE WHOLE SEASON WORTH IT'],sub:'Nothing beat watching the team nobody expected pull through.',ref:null},
+  {cat:'wwe-sports',lines:['WWE TAG TEAM MATCHES BROUGHT','DOUBLE THE CHAOS'],sub:'Two on two and the crowd never once sat still.',ref:null},
+  {cat:'wwe-sports',lines:['BUZZER BEATERS MADE','THE WHOLE LIVING ROOM ERUPT'],sub:'One shot at the final second decided absolutely everything.',ref:null},
+  {cat:'wwe-sports',lines:['WWE RIVALRY MATCHES HAD','THEIR OWN LEGENDARY STATUS'],sub:'Some wrestling feuds everyone remembered for years after.',ref:null},
+  {cat:'wwe-sports',lines:['WWE SIGNATURE FINISHING MOVES','GOT IMITATED EVERYWHERE'],sub:'Backyards and living rooms turned into makeshift arenas.',ref:null},
+  {cat:'wwe-sports',lines:['DRAFT DAY WAS','PURE SPECULATION AND HOPE'],sub:'Everyone had their own predictions, loudly defended for hours.',ref:null},
+  {cat:'wwe-sports',lines:['A WWE LOCKER ROOM PROMO','HYPED UP THE WHOLE SHOW'],sub:'A few bold words and the next match felt absolutely huge.',ref:null},
+  {cat:'wwe-sports',lines:['OVERTIME GAMES FELT','LIKE THEY LASTED FOREVER'],sub:'Every second stretched out until the final call came in.',ref:null},
+  {cat:'wwe-sports',lines:['THE WWE ROYAL RUMBLE FORMAT','KEPT EVERYONE GUESSING'],sub:'A surprise entrant could change the whole night in seconds.',ref:null},
+  {cat:'wwe-sports',lines:['PLAYOFF BRACKETS WENT UP','ON EVERY FAMILY FRIDGE'],sub:'Filled out in pen, argued over for weeks straight.',ref:null},
+  {cat:'wwe-sports',lines:['WWE HEEL VERSUS FACE STORYLINES','HOOKED EVERYONE RIGHT IN'],sub:'You picked a side and stuck with it stubbornly.',ref:null},
+  {cat:'wwe-sports',lines:['THE BIGGEST UPSET OF THE SEASON','BECAME INSTANT LEGEND'],sub:'Nobody saw it coming and everyone talked about it for weeks.',ref:null},
+  {cat:'wwe-sports',lines:['STADIUM CROWDS DID','THE WAVE FOR HOURS STRAIGHT'],sub:'A simple move that somehow never once got old.',ref:null},
+  {cat:'wwe-sports',lines:['HALFTIME SHOWS BECAME','THEIR OWN WHOLE EVENT'],sub:'Sometimes the show stole attention from the actual game.',ref:null},
+  {cat:'wwe-sports',lines:['THE BIG COMEBACK WIN MADE','THE WHOLE SEASON FEEL DIFFERENT'],sub:'Down by a mile, then somehow not anymore.',ref:null},
+  {cat:'wwe-sports',lines:['EVERYONE HAD A FAVORITE','UNDERDOG TEAM TO ROOT FOR'],sub:'Rooting for them felt personal, even from the couch.',ref:null},
+  {cat:'wwe-sports',lines:['A LOCKER ROOM CHAMPIONSHIP CELEBRATION','BECAME ITS OWN HIGHLIGHT'],sub:'Confetti, trophies, and a moment nobody forgot for years.',ref:null},
+  {cat:'wwe-sports',lines:['WWE-STYLE BACKYARD WRESTLING WITH FRIENDS','ALWAYS ENDED IN LAUGHTER'],sub:'Nobody got hurt, but everybody sold every single move.',ref:null},
+  // — ps2 (30), every headline explicitly says THE PS2 —
+  {cat:'ps2',lines:['THE PS2\u2019S BOOT-UP SOUND','MEANT GAME TIME'],sub:'That startup chime still lives rent-free in your memory.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S DISC BROWSER','HAD THAT SIGNATURE GLOW'],sub:'Spinning icons on a calm blue background, every single time.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S MEMORY CARDS HELD','EVERY SINGLE SAVE FILE'],sub:'Lose one and years of progress went with it.',ref:null},
+  {cat:'ps2',lines:['PS2 DEMO DISCS GOT','PLAYED ON REPEAT FOR MONTHS'],sub:'The same ten minutes, over and over, completely happily.',ref:null},
+  {cat:'ps2',lines:['THE PS2 ALSO DOUBLED AS','A FULL DVD PLAYER'],sub:'One console, movie nights and game nights both covered.',ref:null},
+  {cat:'ps2',lines:['THE PS2 CONTROLLER SHAPE','NEVER REALLY CHANGED MUCH'],sub:'It just felt right in your hands from the very start.',ref:null},
+  {cat:'ps2',lines:['BLOWING DUST OFF THE PS2\u2019S','DISC TRAY WAS A RITUAL'],sub:'A startup habit nobody taught you, you just somehow knew.',ref:null},
+  {cat:'ps2',lines:['THE PS2 BECAME THE BEST','SELLING GAME CONSOLE EVER MADE'],sub:'A living room staple in more homes than any before it.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S CLOCK SCREEN HAD','THAT CALMING FLOATING ANIMATION'],sub:'Shapes drifting by gently while you set the system time.',ref:null},
+  {cat:'ps2',lines:['PS2 LOADING SCREENS HAD','THEIR OWN WEIRD PERSONALITY'],sub:'Some were so iconic you almost waited for them on purpose.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S EJECT BUTTON CLICK','WAS JUST SO SATISFYING'],sub:'A tiny detail that somehow stuck in your memory for life.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S SECOND CONTROLLER PORT','MEANT INSTANT MULTIPLAYER'],sub:'A friend showed up and the couch filled up fast.',ref:null},
+  {cat:'ps2',lines:['STANDING THE PS2 UPRIGHT','MADE IT LOOK FUTURISTIC'],sub:'The vertical stand felt like a whole upgrade on its own.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S SAVE ICON HAD','THAT VERY DISTINCT SHAPE'],sub:'You always double checked it before turning the power off.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S STARTUP SCREEN FELT','CALM BEFORE ALL THE CHAOS'],sub:'A peaceful moment before diving into the actual game.',ref:null},
+  {cat:'ps2',lines:['RENTING PS2 GAMES EVERY FRIDAY','WAS A TRUE WEEKEND RITUAL'],sub:'New disc, new world, every single weekend without fail.',ref:null},
+  {cat:'ps2',lines:['THE PS2 CONSOLE RAN HOT','BUT NOBODY REALLY MINDED'],sub:'A warm console meant a long, satisfying session well spent.',ref:null},
+  {cat:'ps2',lines:['THE PS2 COULD STILL PLAY','YOUR OLD PS1 GAMES TOO'],sub:'A whole back catalog still worked perfectly on the new machine.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S NETWORK ADAPTER OPENED UP','ONLINE PLAY FOR SOME GAMES'],sub:'A whole new way to play with people far away.',ref:null},
+  {cat:'ps2',lines:['BUYING A PS2 MEMORY CARD','FELT LIKE A REAL PURCHASE'],sub:'Extra storage meant a lot of extra peace of mind.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S DISC SPIN SOUND','BECAME SECOND NATURE TO YOU'],sub:'You could tell the game was loading just from the hum.',ref:null},
+  {cat:'ps2',lines:['SOME PS2 GAMES CAME ON','TWO ENTIRE DISCS'],sub:'Swapping mid-story felt like a genuine, exciting event.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S BLUE STARTUP GLOW','BECAME INSTANTLY RECOGNIZABLE'],sub:'You knew the system was on before even looking up.',ref:null},
+  {cat:'ps2',lines:['THE PS2 SAT PROUDLY NEXT TO','THE FAMILY TV FOR YEARS'],sub:'A console that outlasted trends and just stuck around.',ref:null},
+  {cat:'ps2',lines:['THE PS2 CONTROLLER CORD LENGTH','WAS NEVER QUITE ENOUGH'],sub:'You always sat a little closer than you really wanted to.',ref:null},
+  {cat:'ps2',lines:['PLAYING MUSIC CDS ON THE PS2','FELT LIKE A NICE LITTLE BONUS'],sub:'A multi-purpose machine before that was even expected.',ref:null},
+  {cat:'ps2',lines:['THE PS2\u2019S STARTUP CHIME VOLUME','ALWAYS SURPRISED SOMEONE LATE AT NIGHT'],sub:'Late night sessions meant turning the TV down first.',ref:null},
+  {cat:'ps2',lines:['UNLOCKING BONUS CONTENT ON THE PS2','FELT LIKE A REAL ACHIEVEMENT'],sub:'Finishing the whole game just to see the extra reward.',ref:null},
+  {cat:'ps2',lines:['PS2 GAME CASE ARTWORK','SOLD YOU BEFORE YOU EVEN PLAYED'],sub:'A great cover alone made you want it instantly.',ref:null},
+  {cat:'ps2',lines:['FRIENDS CAME OVER JUST','TO PLAY ON THE PS2 TOGETHER'],sub:'A console that doubled as the whole reason for the hangout.',ref:null},
+  // — xbox (30), every headline explicitly says THE ORIGINAL XBOX —
+  {cat:'xbox',lines:['THE ORIGINAL XBOX\u2019S GREEN GLOW','MEANT POWER WAS ON'],sub:'That startup hum became instantly recognizable to everyone.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX CONTROLLER','WAS HUGE ON PURPOSE'],sub:'Built for big hands and even bigger game sessions.',ref:null},
+  {cat:'xbox',lines:['XBOX LIVE TURNED ONLINE PLAY','INTO A WHOLE NEW WORLD'],sub:'Suddenly your friends were online no matter where they lived.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX DASHBOARD HAD','THAT SIGNATURE GREEN LOOK'],sub:'Dark, sleek, and a little bit futuristic for its time.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX\u2019S BUILT-IN HARD DRIVE','WAS A REALLY BIG DEAL'],sub:'Built-in storage felt like a console from the actual future.',ref:null},
+  {cat:'xbox',lines:['XBOX LIVE HEADSETS LET YOU','TALK TO FRIENDS MID-MATCH'],sub:'Trash talk and teamwork, both happening in real time.',ref:null},
+  {cat:'xbox',lines:['THE XBOX LOGO GLOWED','RIGHT ON THE CONTROLLER ITSELF'],sub:'A small detail that made it feel like serious tech.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX WENT ALL IN','ON ONLINE CONSOLE GAMING'],sub:'A bet on the future that paid off for the whole industry.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX CONSOLE ITSELF','WAS SURPRISINGLY HEAVY'],sub:'You knew it was solid the moment you picked up the box.',ref:null},
+  {cat:'xbox',lines:['XBOX LIVE FRIENDS LISTS BECAME','A WHOLE SOCIAL SCENE'],sub:'Checking who was online felt like checking a clubhouse.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX MEMORY UNITS PLUGGED','RIGHT INTO THE CONTROLLER'],sub:'A small detail that made saving your game feel personal.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX\u2019S LARGE CONTROLLER','GOT A SMALLER VERSION LATER'],sub:'Some hands really needed an upgrade of their own.',ref:null},
+  {cat:'xbox',lines:['VOICE CHAT ON XBOX LIVE','CHANGED HOW EVERYONE PLAYED'],sub:'Calling out plays felt like real teamwork for the first time.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX STARTUP ANIMATION','FELT SLEEK FOR ITS TIME'],sub:'A few seconds of style before jumping into the actual game.',ref:null},
+  {cat:'xbox',lines:['DOWNLOADABLE CONTENT ON XBOX LIVE','WAS STILL A BRAND NEW IDEA'],sub:'Getting extra content without leaving the couch felt huge.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX RAN LOUD','BUT NOBODY REALLY MINDED'],sub:'A familiar hum that meant a long gaming session ahead.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX LET YOU','RIP YOUR OWN CUSTOM SOUNDTRACKS'],sub:'Your own playlist running behind your favorite game.',ref:null},
+  {cat:'xbox',lines:['SIGNING UP FOR XBOX LIVE','FELT LIKE A BIG COMMITMENT'],sub:'Subscribing for online play was a whole real decision.',ref:null},
+  {cat:'xbox',lines:['SPLIT-SCREEN MATCHES ON THE ORIGINAL XBOX','GOT LOUD FAST'],sub:'Four players, one screen, way too much trash talk.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX CONTROLLER\u2019S BIG TRIGGERS','FELT GREAT FOR RACING GAMES'],sub:'A small design choice that made a real difference.',ref:null},
+  {cat:'xbox',lines:['FRIENDS COMPARED THEIR XBOX LIVE GAMERTAGS','LIKE TRADING CARDS'],sub:'Picking the perfect online name took serious thought.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX\u2019S GREEN STARTUP SCREEN','SET THE WHOLE MOOD'],sub:'A look that felt distinct from anything else on the shelf.',ref:null},
+  {cat:'xbox',lines:['LAN-CAPABLE GAMES ON THE ORIGINAL XBOX','MEANT BRINGING YOUR CONSOLE OVER'],sub:'A whole setup just for one night of local multiplayer.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX DASHBOARD\u2019S MUSIC PLAYER','BECAME A HIDDEN FAVORITE FEATURE'],sub:'Half the fun was just browsing your own ripped music library.',ref:null},
+  {cat:'xbox',lines:['XBOX LIVE ONLINE TOURNAMENTS FELT','LIKE A REALLY BIG DEAL'],sub:'Bragging rights extended way beyond your own living room.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX CONTROLLER CABLE','WAS NOTORIOUSLY LONG'],sub:'You could sit clear across the room and still reach it.',ref:null},
+  {cat:'xbox',lines:['EVERY FRIEND GROUP HAD ONE PERSON','WHO OWNED THE ORIGINAL XBOX FIRST'],sub:'Their house became the default hangout spot almost overnight.',ref:null},
+  {cat:'xbox',lines:['UPDATING THE ORIGINAL XBOX DASHBOARD','FELT LIKE GETTING A NEW SYSTEM'],sub:'New features showed up and everyone wanted to explore them.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX\u2019S LOUD FAN NOISE','BECAME PART OF THE EXPERIENCE'],sub:'A familiar hum you almost grew to genuinely like.',ref:null},
+  {cat:'xbox',lines:['THE ORIGINAL XBOX PROVED CONSOLES COULD','GO FULLY ONLINE'],sub:'A bet that reshaped how every console after it worked.',ref:null},
+  // — trends (30) —
+  {cat:'trends',lines:['SLAP BRACELETS SNAPPED','ONTO EVERYTHING'],sub:'Until schools started banning them outright.',ref:null},
+  {cat:'trends',lines:['SCRUNCHIES WERE','NEVER OPTIONAL'],sub:'One on the wrist at all times, just in case.',ref:null},
+  {cat:'trends',lines:['BUTTERFLY CLIPS WENT','EVERYWHERE AT ONCE'],sub:'A dozen of them in one hairstyle was normal.',ref:null},
+  {cat:'trends',lines:['JNCO JEANS WERE','IMPOSSIBLY WIDE'],sub:'Fashion had no rules and everyone embraced it.',ref:null},
+  {cat:'trends',lines:['GEL PENS CAME','IN EVERY COLOR'],sub:'A full pencil case was basically a flex.',ref:null},
+  {cat:'trends',lines:['SLANG CHANGED','EVERY FEW MONTHS'],sub:'Saying the wrong phrase dated you instantly.',ref:null},
+  {cat:'trends',lines:['LOW-RISE JEANS','TOOK OVER CLOSETS'],sub:'Paired with a belt that did absolutely nothing.',ref:null},
+  {cat:'trends',lines:['FRIENDSHIP BRACELETS TOOK','HOURS TO BRAID'],sub:'A whole summer activity that ended in a stack on your wrist.',ref:null},
+  {cat:'trends',lines:['CHUNKY SNEAKERS BECAME','A WHOLE STATEMENT'],sub:'The bigger and bulkier, the better, somehow.',ref:null},
+  {cat:'trends',lines:['MOOD RINGS PROMISED','TO READ YOUR FEELINGS'],sub:'Nobody questioned the science, everyone wore one anyway.',ref:null},
+  {cat:'trends',lines:['TRUCKER HATS BECAME','AN UNEXPECTED STAPLE'],sub:'Suddenly everyone needed one with a bold logo.',ref:null},
+  {cat:'trends',lines:['GLITTER LOTION GOT','EVERYWHERE IT TOUCHED'],sub:'You sparkled for days after just one application.',ref:null},
+  {cat:'trends',lines:['CARGO PANTS NEEDED','EVERY SINGLE POCKET FILLED'],sub:'You found a use for every pocket somehow.',ref:null},
+  {cat:'trends',lines:['TEMPORARY TATTOOS LASTED','LONGER THAN PROMISED'],sub:'A week of scrubbing and it still would not fully fade.',ref:null},
+  {cat:'trends',lines:['ICED-OUT WATCH FACES','WERE THE ULTIMATE FLEX'],sub:'Bigger and shinier always won the playground debate.',ref:null},
+  {cat:'trends',lines:['CHOKER NECKLACES CAME BACK','OUT OF NOWHERE'],sub:'Suddenly everyone needed one, no real explanation given.',ref:null},
+  {cat:'trends',lines:['VELOUR TRACKSUITS BECAME','A WHOLE LIFESTYLE'],sub:'Comfortable, flashy, and somehow formal enough for anything.',ref:null},
+  {cat:'trends',lines:['LIGHT-UP SNEAKERS MADE','EVERY STEP AN EVENT'],sub:'Stomping just a little harder to make them flash more.',ref:null},
+  {cat:'trends',lines:['BRACELETS MADE FROM GUM WRAPPERS','TOOK SERIOUS PATIENCE'],sub:'Folding hundreds of tiny wrappers for one finished chain.',ref:null},
+  {cat:'trends',lines:['SPIKY HAIR NEEDED','A WHOLE TUB OF GEL'],sub:'The bigger the spikes, the bigger the commitment.',ref:null},
+  {cat:'trends',lines:['LANYARDS HELD EVERYTHING','YOU OWNED'],sub:'Keys, ID, and a dozen tiny clip-on charms.',ref:null},
+  {cat:'trends',lines:['BUCKET HATS WENT FROM','UNCOOL TO ESSENTIAL'],sub:'Suddenly everyone wanted one, no real warning given.',ref:null},
+  {cat:'trends',lines:['LIP GLOSS HAD TO BE','EXTRA STICKY TO COUNT'],sub:'The shinier it looked, the better it was doing its job.',ref:null},
+  {cat:'trends',lines:['EVERYONE TRIED TO PERFECT','THEIR OWN SIGNATURE'],sub:'Loopy, bold, or covered in dots, it had to be unique.',ref:null},
+  {cat:'trends',lines:['DENIM ON DENIM BECAME','A DARING FULL OUTFIT'],sub:'Matching head to toe felt bold and totally normal.',ref:null},
+  {cat:'trends',lines:['PLASTIC JELLY SANDALS SQUEAKED','WITH EVERY SINGLE STEP'],sub:'You could hear someone coming from a mile away.',ref:null},
+  {cat:'trends',lines:['NEON COLORS TOOK OVER','EVERY CLOSET AT ONCE'],sub:'The brighter the better, no matter the actual outfit.',ref:null},
+  {cat:'trends',lines:['EVERYONE HAD A GO-TO','CATCHPHRASE FOR THE YEAR'],sub:'A phrase that somehow ended up in every conversation.',ref:null},
+  {cat:'trends',lines:['ICED TIPPED HAIR BECAME','A WHOLE LOOK'],sub:'Bleached ends and a lot of confidence required.',ref:null},
+  {cat:'trends',lines:['STICKER COLLECTIONS WERE','SERIOUSLY COMPETITIVE'],sub:'Trading the rare ones took real negotiation skills.',ref:null},
+  // — food (30) —
+  {cat:'food',lines:['LUNCHBOX SNACKS HAD','TINY DIPPING STICKS'],sub:'Frosting and sprinkles made lunch the best part of school.',ref:null},
+  {cat:'food',lines:['NEON SODA FLAVORS','WERE EVERYWHERE'],sub:'Bright colors and big sugar, no questions asked.',ref:null},
+  {cat:'food',lines:['FAST FOOD TOYS','WERE THE WHOLE POINT'],sub:'The meal was just a bonus to the prize inside.',ref:null},
+  {cat:'food',lines:['GUSHERS BURST WITH','SUGARY LIQUID CENTER'],sub:'A lunchbox staple that always made a mess.',ref:null},
+  {cat:'food',lines:['FRUIT SNACKS CAME','IN WILD SHAPES'],sub:'Half the fun was just opening the pack.',ref:null},
+  {cat:'food',lines:['ICE CREAM TRUCKS','HAD A SIGNATURE JINGLE'],sub:'You could hear it coming from blocks away.',ref:null},
+  {cat:'food',lines:['CEREAL BOXES HID','A TOY INSIDE'],sub:'You dug to the bottom of the bag before breakfast even started.',ref:null},
+  {cat:'food',lines:['JUICE POUCHES NEEDED','A SHARP LITTLE STRAW'],sub:'Stab it wrong and the whole thing sprayed everywhere.',ref:null},
+  {cat:'food',lines:['CANDY CAME WRAPPED','IN A WHOLE LITTLE STORY'],sub:'Sour, fizzy, or stuffed with gum, every flavor felt like an event.',ref:null},
+  {cat:'food',lines:['THE SCHOOL CAFETERIA HAD','ONE LEGENDARY MENU DAY'],sub:'Everyone planned their week around that one meal.',ref:null},
+  {cat:'food',lines:['SODA CAME IN GLASS BOTTLES','AT THE CORNER STORE'],sub:'Somehow it always tasted a little better that way.',ref:null},
+  {cat:'food',lines:['MICROWAVE SNACKS PROMISED','A MEAL IN MINUTES'],sub:'Watching it spin felt like the best part of the wait.',ref:null},
+  {cat:'food',lines:['CANDY NECKLACES LASTED','LONGER THAN THEY SHOULD HAVE'],sub:'Worn all day, nibbled slowly, somehow still sticky by evening.',ref:null},
+  {cat:'food',lines:['THE ICE CREAM TRUCK MENU','NEVER MATCHED THE PICTURES'],sub:'You ordered by pointing and hoping for the best.',ref:null},
+  {cat:'food',lines:['PACKING YOUR OWN LUNCH','WAS A WHOLE NEGOTIATION'],sub:'Convincing a parent to add the good snack took real skill.',ref:null},
+  {cat:'food',lines:['POPPING CANDY FIZZED RIGHT','ON YOUR TONGUE'],sub:'A strange sensation that somehow never got old.',ref:null},
+  {cat:'food',lines:['BIRTHDAY PARTIES ALWAYS HAD','THE SAME SODA AND CHIPS COMBO'],sub:'A reliable lineup that never once disappointed anyone.',ref:null},
+  {cat:'food',lines:['SLUSHIES TURNED YOUR TONGUE','A WHOLE NEW COLOR'],sub:'Proof of a good time, worn proudly for the rest of the day.',ref:null},
+  {cat:'food',lines:['THE VENDING MACHINE AT SCHOOL','HAD ONE TRICKY SLOT'],sub:'Everyone knew exactly which button to avoid.',ref:null},
+  {cat:'food',lines:['SUGARY BREAKFAST CEREAL ADS','PROMISED THE WORLD'],sub:'The cartoon mascot alone could sell you on anything.',ref:null},
+  {cat:'food',lines:['CANDY STORES HAD','A WHOLE WALL OF OPTIONS'],sub:'Filling one little bag took serious decision-making.',ref:null},
+  {cat:'food',lines:['SODA FOUNTAIN MIXES BECAME','YOUR OWN SECRET RECIPE'],sub:'Half this, half that, and a flavor nobody else had.',ref:null},
+  {cat:'food',lines:['SCHOOL BAKE SALES MEANT','HOMEMADE EVERYTHING'],sub:'Every table had someone\u2019s family recipe on display.',ref:null},
+  {cat:'food',lines:['CANDY CIGARETTES RAISED','A FEW EYEBROWS LATER'],sub:'A snack that felt totally normal at the time.',ref:null},
+  {cat:'food',lines:['THE PERFECT AFTER-SCHOOL SNACK','WAS ITS OWN RITUAL'],sub:'Same time, same spot, same favorite treat every day.',ref:null},
+  {cat:'food',lines:['DRIVE-THRU COMBO MEALS','CAME WITH A SPECIAL CUP'],sub:'A limited design that made the meal feel like an event.',ref:null},
+  {cat:'food',lines:['HOMEMADE SLIME RECIPES SOMEHOW','ENDED UP IN THE KITCHEN TOO'],sub:'Half science project, half edible snack, always messy.',ref:null},
+  {cat:'food',lines:['THE ICE CREAM SANDWICH WRAPPER','STUCK TO EVERYTHING'],sub:'Peeling it off cleanly felt like a small victory.',ref:null},
+  {cat:'food',lines:['SUMMER MEANT A WHOLE SEASON','OF FROZEN TREATS'],sub:'Popsicles, snow cones, anything cold counted as dinner some days.',ref:null},
+  {cat:'food',lines:['THE CORNER STORE CANDY AISLE','WAS A WHOLE DESTINATION'],sub:'A few coins and a long walk felt completely worth it.',ref:null},
+  // — future / y2k (30) —
+  {cat:'future',lines:['THE Y2K BUG HAD','THE WHOLE WORLD WORRIED'],sub:'Computers everywhere braced for the clock to flip.',ref:null},
+  {cat:'future',lines:['EVERYTHING WENT','SILVER AND TRANSLUCENT'],sub:'Design in this era loved looking like the future.',ref:null},
+  {cat:'future',lines:['CHAT ROOMS LET YOU','TALK TO STRANGERS'],sub:'A screen name was basically your whole identity.',ref:null},
+  {cat:'future',lines:['DIAL-UP GAVE WAY','TO BROADBAND'],sub:'Suddenly downloads did not take all night.',ref:null},
+  {cat:'future',lines:['FLASH WEBSITES HAD','LOADING ANIMATIONS'],sub:'You waited through an intro just to see a homepage.',ref:null},
+  {cat:'future',lines:['EVERY GADGET PROMISED','THE WORLD OF TOMORROW'],sub:'Chrome finishes and glowing screens, right now.',ref:null},
+  {cat:'future',lines:['MIDNIGHT ON NEW YEAR\u2019S','FELT LIKE A GAMBLE'],sub:'Nobody truly knew what would happen when the clock struck twelve.',ref:null},
+  {cat:'future',lines:['PERSONAL WEBSITES CAME WITH','A GUESTBOOK TO SIGN'],sub:'Leaving a comment felt like leaving your mark online.',ref:null},
+  {cat:'future',lines:['POP-UP ADS TOOK OVER','EVERY SINGLE WEBPAGE'],sub:'Closing ten windows just to read one article.',ref:null},
+  {cat:'future',lines:['EVERYTHING METALLIC FELT','LIKE THE NEXT BIG THING'],sub:'Brushed silver finishes showed up on absolutely everything.',ref:null},
+  {cat:'future',lines:['BUDDY LISTS SHOWED YOU','WHO WAS ONLINE RIGHT NOW'],sub:'Checking the list felt like checking who was home.',ref:null},
+  {cat:'future',lines:['WEBCAMS FELT LIKE','SCIENCE FICTION COME TRUE'],sub:'Seeing someone live on a screen was genuinely amazing.',ref:null},
+  {cat:'future',lines:['EARLY SEARCH ENGINES TOOK','SOME REAL TRIAL AND ERROR'],sub:'Finding what you needed took more than one attempt.',ref:null},
+  {cat:'future',lines:['HOLOGRAPHIC STICKERS WENT','ON ABSOLUTELY EVERYTHING'],sub:'Notebooks, folders, anything that could shimmer got one.',ref:null},
+  {cat:'future',lines:['TYPING IN ALL CAPS ONLINE','MEANT SOMETHING SERIOUS'],sub:'An unwritten rule everyone somehow just knew.',ref:null},
+  {cat:'future',lines:['THE FAMILY COMPUTER ROOM','FELT LIKE MISSION CONTROL'],sub:'One desk, one chair, and the whole future at your fingertips.',ref:null},
+  {cat:'future',lines:['FUTURISTIC FONTS SHOWED UP','ON EVERY PACKAGE DESIGN'],sub:'Sleek lettering that screamed cutting edge at the time.',ref:null},
+  {cat:'future',lines:['EVERY PREDICTION SHOW PROMISED','FLYING CARS BY NOW'],sub:'The future always felt one decade away.',ref:null},
+  {cat:'future',lines:['ONLINE PROFILES NEEDED','THE PERFECT AWAY MESSAGE'],sub:'Crafting the right one took more thought than it should have.',ref:null},
+  {cat:'future',lines:['CD-BASED ENCYCLOPEDIAS FELT','LIKE HOLDING THE FUTURE'],sub:'A whole library that fit in one little disc.',ref:null},
+  {cat:'future',lines:['BLUE LED LIGHTS MEANT','SOMETHING WAS HIGH-TECH'],sub:'A single glowing light made any gadget feel advanced.',ref:null},
+  {cat:'future',lines:['THE INTERNET CONNECTION SOUND','BECAME ODDLY COMFORTING'],sub:'A strange series of beeps that somehow meant progress.',ref:null},
+  {cat:'future',lines:['EVERYONE PREDICTED ROBOTS','WOULD RUN EVERY HOUSEHOLD'],sub:'The future looked a lot shinier than it turned out to be.',ref:null},
+  {cat:'future',lines:['SEE-THROUGH TECH CASINGS','FELT INSTANTLY MODERN'],sub:'You could see the gears and wires and somehow that felt cool.',ref:null},
+  {cat:'future',lines:['EARLY ONLINE SHOPPING FELT','A LITTLE RISKY'],sub:'Typing in a card number online took a real leap of faith.',ref:null},
+  {cat:'future',lines:['THE COUNTDOWN TO MIDNIGHT','PLAYED ON EVERY CHANNEL'],sub:'Every broadcast had its own version of the same big moment.',ref:null},
+  {cat:'future',lines:['BURNED MIX CDS REPLACED','THE WALKMAN ALMOST OVERNIGHT'],sub:'A whole format shift that happened faster than anyone expected.',ref:null},
+  {cat:'future',lines:['SCREEN SAVERS BECAME','THEIR OWN KIND OF ART'],sub:'Some people left the computer on just to watch them.',ref:null},
+  {cat:'future',lines:['EVERY MOVIE ABOUT THE FUTURE','GOT SOMETHING HILARIOUSLY WRONG'],sub:'Looking back now, some predictions feel almost charming.',ref:null},
+  {cat:'future',lines:['THE WORD "CYBER" GOT ATTACHED','TO ABSOLUTELY EVERYTHING'],sub:'A prefix that made anything sound futuristic instantly.',ref:null},
+  // — song-guess (30): guess the song from the lyric. Real, short, iconic
+  // hooks (well under 15 words, one per fact) where confidently accurate;
+  // vivid non-quoted hints elsewhere rather than risk a misquote.
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Hit me baby one more time." Name the song and the singer.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"I want it that way." Name the group behind this one.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Oops, I did it again." Who sang this one, and what year?',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"My loneliness is killing me." Name the song and the singer.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Tell me why ain\u2019t nothin\u2019 but a heartache." Name the boy band.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Bye bye bye." Name the group and roughly the year.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"I\u2019m a survivor." Name the singer and the show this was tied to.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Stop, in the name of love, before you break my heart." Name that classic.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Smells like teen spirit." Name the band behind this 90s anthem.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Wannabe, wannabe, wannabe." Name the girl group behind this one.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Livin\u2019 la vida loca." Name the singer behind this Latin pop hit.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Genie in a bottle." Name the singer behind this late-90s hit.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"All the single ladies." Name the singer behind this anthem.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"In the jungle, the mighty jungle, the lion sleeps tonight." Name that one.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Hey Mickey, you\u2019re so fine." Name the singer behind this cheer classic.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Ice ice baby." Name the rapper behind this early hip-hop hit.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Don\u2019t stop believin\u2019." Name the rock band behind this karaoke staple.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"I will always love you." Name the singer behind this iconic ballad.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Larger than life." Name the boy band behind this late-90s anthem.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Tearin\u2019 up my heart." Name the boy band behind this one.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Show me the meaning of being lonely." Name the group behind this ballad.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"I\u2019m too sexy for my shirt." Name the band behind this one-hit wonder.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Hit \u2019em up style, watch."  Name the singer behind this late-90s R&B hit.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Get this party started." Name the singer behind this dance-pop anthem.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Complicated, why do you have to make things so complicated." Name the singer.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"In the end, it doesn\u2019t even matter." Name the rock band behind this hit.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Hey ya, hey ya." Name the duo behind this early-2000s smash.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Drop it like it\u2019s hot." Name the rapper behind this club classic.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"Bring me to life, wake me up inside." Name the rock band behind this one.',ref:null},
+  {cat:'song-guess',lines:['GUESS THE SONG','FROM THIS LYRIC'],sub:'"I want you to want me." Name the band behind this classic rock hook.',ref:null},
+  // — game-guess (30) —
+  {cat:'game-guess',lines:['GUESS THE GAME','FROM THIS HINT'],sub:'A plumber-themed platformer where stomping enemies was the whole strategy.',ref:null},
+  {cat:'game-guess',lines:['NAME THAT GAME','FROM THIS DESCRIPTION'],sub:'An open city game where you could cause as much chaos as you wanted.',ref:null},
+  {cat:'game-guess',lines:['WHAT YEAR DID','THIS CLASSIC RELEASE'],sub:'The racing game everyone had memorized every track of by heart.',ref:null},
+  {cat:'game-guess',lines:['GUESS THE GAME','FROM THE BOSS FIGHT'],sub:'A dungeon crawler where one boss took you a hundred tries to beat.',ref:null},
+  {cat:'game-guess',lines:['NAME THE GAME','EVERYONE RENTED ON FRIDAYS'],sub:'A fighting game where everyone had their one unbeatable character.',ref:null},
+  {cat:'game-guess',lines:['GUESS THE GAME','FROM THIS SOUNDTRACK VIBE'],sub:'A puzzle game with a theme song that got stuck in your head for years.',ref:null},
+  {cat:'game-guess',lines:['WHAT YEAR DID','THIS SEQUEL DROP'],sub:'The sequel that somehow felt even bigger than the original.',ref:null},
+  {cat:'game-guess',lines:['NAME THE GAME','FROM THIS LEVEL DESIGN'],sub:'A platformer with one level so hard friends still talk about it.',ref:null},
+  {cat:'game-guess',lines:['GUESS THE GAME','EVERYONE BEAT TOGETHER'],sub:'A co-op adventure where two players had to work as one team.',ref:null},
+  {cat:'game-guess',lines:['NAME THE GAME','FROM THIS MAIN CHARACTER'],sub:'A hero with a signature jump everyone could recognize instantly.',ref:null},
+  {cat:'game-guess',lines:['WHAT YEAR DID','THIS HANDHELD CLASSIC LAUNCH'],sub:'The handheld game that made every car ride feel shorter.',ref:null},
+  {cat:'game-guess',lines:['GUESS THE GAME','FROM THIS FINAL BOSS'],sub:'A final boss fight that everyone remembers being way too hard.',ref:null},
+  {cat:'game-guess',lines:['NAME THE GAME','WITH THIS ICONIC THEME SONG'],sub:'A theme song so catchy people hummed it long after putting the controller down.',ref:null},
+  {cat:'game-guess',lines:['WHAT YEAR DID','THIS SPORTS GAME DOMINATE'],sub:'The sports game every kid argued was the most realistic one yet.',ref:null},
+  {cat:'game-guess',lines:['GUESS THE GAME','FROM THIS SECRET LEVEL'],sub:'A hidden level only the most dedicated players ever found.',ref:null},
+  {cat:'game-guess',lines:['NAME THE GAME','EVERYONE TRADED FOR AT SCHOOL'],sub:'A handheld title that became the unofficial currency of recess.',ref:null},
+  {cat:'game-guess',lines:['WHAT YEAR DID','THIS RPG TAKE OVER'],sub:'A turn-based RPG that ate up entire weekends without anyone noticing.',ref:null},
+  {cat:'game-guess',lines:['GUESS THE GAME','FROM THIS POWER-UP'],sub:'A power-up so iconic everyone made the sound effect themselves.',ref:null},
+  {cat:'game-guess',lines:['NAME THE GAME','FROM THIS MULTIPLAYER MODE'],sub:'A split-screen mode that ended more friendships than it should have.',ref:null},
+  {cat:'game-guess',lines:['WHAT YEAR DID','THIS ARCADE HIT SHOW UP'],sub:'An arcade cabinet that always had the longest line of quarters waiting.',ref:null},
+  {cat:'game-guess',lines:['GUESS THE GAME','FROM THIS VILLAIN'],sub:'A villain so memorable kids quoted their lines for years after.',ref:null},
+  {cat:'game-guess',lines:['NAME THE GAME','EVERYONE RUSHED HOME TO PLAY'],sub:'A release day so big everyone disappeared right after school.',ref:null},
+  {cat:'game-guess',lines:['WHAT YEAR DID','THIS FRANCHISE BEGIN'],sub:'The very first game in a franchise that would go on for decades.',ref:null},
+  {cat:'game-guess',lines:['GUESS THE GAME','FROM THIS GLITCH EVERYONE FOUND'],sub:'A famous glitch that somehow became part of the fun.',ref:null},
+  {cat:'game-guess',lines:['NAME THE GAME','WITH THE UNFORGETTABLE INTRO'],sub:'An opening cutscene so good people watched it more than once on purpose.',ref:null},
+  {cat:'game-guess',lines:['WHAT YEAR DID','THIS GAME GET ITS SEQUEL'],sub:'A sequel that fans had been waiting years to finally get their hands on.',ref:null},
+  {cat:'game-guess',lines:['GUESS THE GAME','FROM THIS MINI-GAME'],sub:'A side mini-game that somehow became more fun than the main story.',ref:null},
+  {cat:'game-guess',lines:['NAME THE GAME','EVERYONE SPEEDRAN AT RECESS'],sub:'A short game everyone tried to beat faster than their friends.',ref:null},
+  {cat:'game-guess',lines:['WHAT YEAR DID','THIS CONSOLE EXCLUSIVE DROP'],sub:'A game so good it convinced people to buy a whole new console.',ref:null},
+  {cat:'game-guess',lines:['GUESS THE GAME','FROM THIS CREATE-A-CHARACTER MODE'],sub:'A character creator so deep, people spent more time there than playing.',ref:null},
+  // — remember-when (30) —
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','USED TO TRADE TAPES'],sub:'Burning a copy for a friend felt like sharing a secret.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','RODE BIKES UNTIL DARK'],sub:'No phones, just a promise to be home before the streetlights came on.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','PRINTED OUT DIRECTIONS'],sub:'A whole stack of paper just to find one address.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','WAITED BY THE PHONE'],sub:'Hoping nobody else picked it up before you could answer.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','MEMORIZED PHONE NUMBERS'],sub:'No contacts list, just numbers stuck in your head for years.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','PASSED NOTES IN CLASS'],sub:'Folded just right so nobody else could read it first.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','WAITED FOR PHOTOS TO DEVELOP'],sub:'A whole roll of film and zero idea how the pictures turned out.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','PLAYED OUTSIDE ALL SUMMER'],sub:'No real plan, just whoever showed up and whatever game we made up.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','RECORDED SONGS OFF THE RADIO'],sub:'Hitting record just in time and praying the DJ stayed quiet.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','HAD A WHOLE BINDER OF CDS'],sub:'One scratch and the whole car ride playlist was ruined.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','WROTE LETTERS TO PEN PALS'],sub:'Waiting weeks for a reply felt completely normal.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','HAD TO ASK FOR DIRECTIONS'],sub:'No map app, just a gas station clerk and your best guess.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','SAVED UP FOR WEEKS'],sub:'Just to finally afford that one thing we really wanted.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','HAD A SECRET CLUBHOUSE'],sub:'A spot only a few friends knew about, and it felt huge.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','MADE UP OUR OWN GAMES'],sub:'No rulebook, just a backyard and way too much imagination.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','WAITED FOR THE ICE CREAM TRUCK'],sub:'Sprinting outside the second you heard that jingle.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','HAD A SHOEBOX OF KEEPSAKES'],sub:'Ticket stubs and trinkets that meant absolutely everything.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','WATCHED THE SAME MOVIE'],sub:'On repeat, every single weekend, never once getting tired of it.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','HAD TO BE HOME FOR DINNER'],sub:'No texting ahead, just the sound of someone calling your name outside.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','TRADED STICKERS AT RECESS'],sub:'A whole economy built on shiny paper and good negotiation.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','BUILT FORTS OUT OF EVERYTHING'],sub:'Couch cushions and blankets turned into a whole kingdom.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','HAD ONE SHARED FAMILY COMPUTER'],sub:'And somehow we all survived sharing just one screen.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','PLANNED SLEEPOVERS FOR WEEKS'],sub:'Snacks picked out, movies chosen, the whole thing mapped out in advance.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','HAD TO WAIT FOR THE COMMERCIAL'],sub:'No skipping ahead, just patience until the show came back.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','COLLECTED EVERYTHING'],sub:'Cards, stickers, little toys, anything worth showing off.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','HAD A FAVORITE HANGOUT SPOT'],sub:'A place that felt like it belonged entirely to your friend group.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','MADE MIXTAPES FOR FRIENDS'],sub:'Picking every track felt like writing them a little letter.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','HAD TO SHARE ONE TV'],sub:'And somehow everyone agreed on something, eventually.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','SPENT THE WHOLE SUMMER OUTSIDE'],sub:'Sunburned, tired, and completely happy by the end of every day.',ref:null},
+  {cat:'remember-when',lines:['REMEMBER WHEN WE','THOUGHT WE\u2019D NEVER FORGET A NUMBER'],sub:'Funny how a few of those still come back to you instantly.',ref:null},
+  // — where-were-you (30) —
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','WHEN THIS HAPPENED'],sub:'The first time you saw a flip phone in real life. How old were you?',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN THIS CAME OUT'],sub:'The day a console you wanted for months finally hit shelves.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','FOR YOUR FIRST EMAIL'],sub:'Setting up that very first account felt like a milestone.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','FOR THE BIG GAME THAT YEAR'],sub:'The one everyone still brings up when that season gets mentioned.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','WHEN YOU GOT YOUR FIRST PHONE'],sub:'The exact moment you felt instantly more grown up.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN YOU FIRST WENT ONLINE'],sub:'That first dial-up connection and the screech that came with it.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','FOR YOUR FAVORITE MOVIE\u2019S RELEASE'],sub:'The one you begged to see in theaters the very first weekend.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN THAT SONG WAS EVERYWHERE'],sub:'The track that played on every radio station for one whole summer.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','WHEN YOU GOT YOUR FIRST CONSOLE'],sub:'Unwrapping it felt like the best day of that entire year.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','FOR THE MILLENNIUM COUNTDOWN'],sub:'Watching the clock tick toward a whole new century.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','FOR YOUR FIRST SCHOOL DANCE'],sub:'Nervous, excited, and completely unsure what to do with your hands.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN YOU SAW YOUR FAVORITE SHOW\u2019S FINALE'],sub:'A whole group of friends glued to one screen for the ending.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','WHEN YOU GOT YOUR FIRST EMAIL ADDRESS'],sub:'Picking the username alone took way longer than it should have.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','FOR YOUR FIRST CONCERT'],sub:'The moment live music became way more than just a song on the radio.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','WHEN YOU BEAT YOUR FIRST VIDEO GAME'],sub:'That ending screen felt like one of your biggest wins ever.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN YOU GOT YOUR FIRST CD PLAYER'],sub:'No more tapes, just skip-proof sound, or so you hoped.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','FOR YOUR FIRST SLEEPOVER'],sub:'Staying up way past your bedtime, completely on purpose.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN A BIG STORM HIT'],sub:'The kind of weather event everyone in town still talks about.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','WHEN YOU GOT YOUR FIRST BIKE'],sub:'The exact feeling of total freedom on two wheels.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','FOR YOUR FAVORITE TEAM\u2019S BIG WIN'],sub:'The celebration that spilled out into the streets that night.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','WHEN YOU SAW YOUR FIRST MUSIC VIDEO'],sub:'The exact moment a song became something you could watch too.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN YOU GOT YOUR FIRST GAME CONSOLE'],sub:'A whole new world that opened up the second you plugged it in.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','FOR YOUR FIRST ROAD TRIP MIXTAPE'],sub:'Hours of planning for a playlist that lasted the whole drive.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN YOUR FAVORITE BAND BROKE UP'],sub:'A genuinely sad day for fans everywhere, no exaggeration.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','FOR YOUR FIRST TEXT MESSAGE'],sub:'Typing on those tiny buttons took serious patience at first.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN YOU SAW SNOW FOR THE FIRST TIME'],sub:'A moment that felt magical no matter how old you were.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','FOR YOUR FIRST JOB'],sub:'That first paycheck felt bigger than it probably actually was.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN YOU MOVED TO A NEW SCHOOL'],sub:'The nerves of walking in not knowing a single face.',ref:null},
+  {cat:'where-were-you',lines:['HOW OLD WERE YOU','FOR YOUR FIRST TIME DRIVING'],sub:'Hands tight on the wheel and way too much concentration.',ref:null},
+  {cat:'where-were-you',lines:['WHERE WERE YOU','WHEN YOU GOT YOUR DRIVER\u2019S LICENSE'],sub:'The single most freeing piece of plastic you had ever owned.',ref:null},
+  // — nick-mtv-shows (30): nostalgic "remember this show" facts, referencing
+  // real well-known channels/shows generically by name, no dialogue quoted
+  {cat:'nick-mtv-shows',lines:['REMEMBER RUSHING HOME','FOR SPONGEBOB AFTER SCHOOL'],sub:'Bikini Bottom felt like a second home for an entire generation.',ref:null},
+  {cat:'nick-mtv-shows',lines:['WHO ELSE WATCHED','TMNT EVERY SATURDAY MORNING'],sub:'Four turtles and a whole lot of pizza-fueled chaos.',ref:null},
+  {cat:'nick-mtv-shows',lines:['DRAGON BALL Z HAD','THE LONGEST FIGHT SCENES EVER'],sub:'A single battle could stretch across several whole episodes.',ref:null},
+  {cat:'nick-mtv-shows',lines:['NICKELODEON\u2019S AFTERNOON LINEUP','WAS UNTOUCHABLE'],sub:'You planned your whole day around that programming block.',ref:null},
+  {cat:'nick-mtv-shows',lines:['CARTOON NETWORK\u2019S SATURDAY MORNINGS','WERE PURE GOLD'],sub:'Cereal in hand, remote nowhere near you, for hours straight.',ref:null},
+  {cat:'nick-mtv-shows',lines:['MTV\u2019S TRL TURNED INTO','THE AFTER-SCHOOL RITUAL'],sub:'Counting down videos felt like the whole point of getting home.',ref:null},
+  {cat:'nick-mtv-shows',lines:['WHO REMEMBERS RACING HOME','TO CATCH POKEMON'],sub:'Missing even one episode felt like a genuine crisis.',ref:null},
+  {cat:'nick-mtv-shows',lines:['NICKELODEON\u2019S GAME SHOWS HAD','THAT SIGNATURE SLIME'],sub:'Getting slimed felt like the ultimate childhood honor.',ref:null},
+  {cat:'nick-mtv-shows',lines:['CARTOON NETWORK\u2019S LATE NIGHT BLOCK','WAS A WHOLE DIFFERENT VIBE'],sub:'Sneaking to watch it past bedtime felt like a small rebellion.',ref:null},
+  {cat:'nick-mtv-shows',lines:['WHO ELSE HAD A FAVORITE','RUGRATS CHARACTER GROWING UP'],sub:'A whole nursery of personalities everyone somehow related to.',ref:null},
+  {cat:'nick-mtv-shows',lines:['MTV\u2019S REALITY SHOWS BECAME','THE NEXT DAY\u2019S SCHOOL GOSSIP'],sub:'Everyone had a strong opinion before first period even started.',ref:null},
+  {cat:'nick-mtv-shows',lines:['DBZ\u2019S POWER-UP SCREAMS','BECAME EVERY KID\u2019S IMPRESSION'],sub:'You could not walk past a friend without doing it at least once.',ref:null},
+  {cat:'nick-mtv-shows',lines:['WHO ELSE BEGGED FOR','HEY ARNOLD ON REPEAT'],sub:'A whole city full of characters that somehow felt completely real.',ref:null},
+  {cat:'nick-mtv-shows',lines:['CARTOON NETWORK\u2019S SUPERHERO SHOWS','HAD THEIR OWN LOYAL FANBASE'],sub:'Everyone had a favorite hero and defended them fiercely.',ref:null},
+  {cat:'nick-mtv-shows',lines:['REMEMBER WATCHING TMNT','AND PRETENDING TO BE ONE'],sub:'A mop handle instantly became a weapon for backyard battles.',ref:null},
+  {cat:'nick-mtv-shows',lines:['NICKELODEON\u2019S ANIMATED CLASSICS','SHAPED A WHOLE CHILDHOOD'],sub:'You can still hum half the theme songs from memory.',ref:null},
+  {cat:'nick-mtv-shows',lines:['MTV\u2019S ANIMATED SHOWS HAD','A WHOLE EDGIER SENSE OF HUMOR'],sub:'A little more grown-up than the cartoons earlier in the day.',ref:null},
+  {cat:'nick-mtv-shows',lines:['DRAGON BALL Z FANS DEBATED','POWER LEVELS ENDLESSLY AT RECESS'],sub:'Hypothetical matchups that never really had a clear winner.',ref:null},
+  {cat:'nick-mtv-shows',lines:['WHO ELSE HAD A FAVORITE','SPONGEBOB EPISODE THEY QUOTED CONSTANTLY'],sub:'One line could get the whole classroom laughing instantly.',ref:null},
+  {cat:'nick-mtv-shows',lines:['CARTOON NETWORK\u2019S ACTION SHOWS','MADE EVERY AFTERNOON FEEL EPIC'],sub:'You raced through homework just to catch the next episode.',ref:null},
+  {cat:'nick-mtv-shows',lines:['NICKELODEON\u2019S ORANGE SPLAT LOGO','BECAME INSTANTLY RECOGNIZABLE'],sub:'Seeing it pop up meant the good shows were about to start.',ref:null},
+  {cat:'nick-mtv-shows',lines:['MTV\u2019S MUSIC COUNTDOWN SHOWS','TURNED INTO A WHOLE COMPETITION'],sub:'You rooted for your favorite artist like it was a sport.',ref:null},
+  {cat:'nick-mtv-shows',lines:['WHO ELSE HAD A LUNCHBOX','COVERED IN THEIR FAVORITE CARTOON'],sub:'Picking the right design felt like a serious decision every school year.',ref:null},
+  {cat:'nick-mtv-shows',lines:['TMNT TOYS TOOK OVER','EVERY TOY BOX IN THE HOUSE'],sub:'Four turtles and somehow a hundred different action figures.',ref:null},
+  {cat:'nick-mtv-shows',lines:['CARTOON NETWORK\u2019S SUMMER MARATHONS','ATE UP WHOLE VACATION DAYS'],sub:'You planned absolutely nothing else around them, on purpose.',ref:null},
+  {cat:'nick-mtv-shows',lines:['WHO ELSE STAYED UP LATE','JUST TO CATCH ONE MORE DBZ EPISODE'],sub:'Bedtime rules got a little flexible for this one show.',ref:null},
+  {cat:'nick-mtv-shows',lines:['NICKELODEON\u2019S KIDS CHOICE AWARDS','WERE THE BIGGEST NIGHT OF THE YEAR'],sub:'Watching favorite stars get slimed live felt like pure chaos in the best way.',ref:null},
+  {cat:'nick-mtv-shows',lines:['MTV USED TO FEEL LIKE','THE COOLEST CHANNEL ON THE DIAL'],sub:'Flipping to it felt like instantly leveling up your whole afternoon.',ref:null},
+  {cat:'nick-mtv-shows',lines:['WHO ELSE COLLECTED EVERY','POKEMON OR DBZ CARD THEY COULD FIND'],sub:'Trading them at recess was basically its own full-time job.',ref:null},
+  {cat:'nick-mtv-shows',lines:['CARTOON NETWORK AND NICKELODEON BOTH','SHAPED HOW A WHOLE GENERATION GREW UP'],sub:'Two channels that somehow felt like they raised half of us.',ref:null},
+  // — engagement (30): direct comment-bait questions
+  {cat:'engagement',lines:['WHAT WAS YOUR','FAVORITE CARTOON GROWING UP'],sub:'Drop it in the comments, let\u2019s see how many people agree.',ref:null},
+  {cat:'engagement',lines:['WHO WAS YOUR','FAVORITE SINGER BACK THEN'],sub:'Tell us below, no judgment here at all.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','GO-TO AFTER-SCHOOL SNACK'],sub:'Everyone had one. What was yours?',ref:null},
+  {cat:'engagement',lines:['WHICH CONSOLE DID','YOU GROW UP PLAYING'],sub:'PS2, Xbox, or something else entirely? Let us know.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','FAVORITE NICKELODEON SHOW'],sub:'Tag a friend who would pick the same one.',ref:null},
+  {cat:'engagement',lines:['WHAT SONG INSTANTLY','TAKES YOU BACK IN TIME'],sub:'The one that plays and suddenly you\u2019re a kid again.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','FAVORITE MOVIE AS A KID'],sub:'The one you watched until the tape practically wore out.',ref:null},
+  {cat:'engagement',lines:['WHO WAS YOUR','FAVORITE CARTOON NETWORK CHARACTER'],sub:'Comment below, let\u2019s settle this once and for all.',ref:null},
+  {cat:'engagement',lines:['WHAT TREND DO YOU','WISH WOULD COME BACK'],sub:'Be honest, we all secretly miss something.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS THE FIRST','VIDEO GAME YOU EVER PLAYED'],sub:'Tell us, and tell us if you still remember beating it.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','FAVORITE FAST FOOD TOY EVER'],sub:'There\u2019s always one that stuck in your memory forever.',ref:null},
+  {cat:'engagement',lines:['WHO DO YOU THINK','HAD THE BEST ENTRANCE THEME'],sub:'Drop your pick, we know everyone has a strong opinion.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','FAVORITE SCHOOL LUNCH SNACK'],sub:'Comment your answer, let\u2019s see who remembers the same one.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','FIRST EVER PHONE'],sub:'Bonus points if you still remember the ringtone you picked.',ref:null},
+  {cat:'engagement',lines:['WHICH BOY BAND OR GIRL GROUP','WAS YOUR ABSOLUTE FAVORITE'],sub:'No wrong answers here, just nostalgia.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS THE LAST','CD YOU EVER BOUGHT'],sub:'Tell us below, bonus if you remember the exact price.',ref:null},
+  {cat:'engagement',lines:['WHAT GAME DID YOU','SPEND THE MOST HOURS ON'],sub:'We all had that one game we just could not put down.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','FAVORITE PLAYGROUND GAME'],sub:'Tag, hopscotch, something else entirely? Tell us.',ref:null},
+  {cat:'engagement',lines:['WHAT MOVIE DID YOU','WATCH THE MOST TIMES EVER'],sub:'Be honest, we know it was a lot more than ten.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','FAVORITE THING ABOUT RECESS'],sub:'Comment your answer, let\u2019s relive it together.',ref:null},
+  {cat:'engagement',lines:['WHICH WAS BETTER','PS2 OR THE ORIGINAL XBOX'],sub:'You know exactly which side you\u2019re on, tell us why.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS THE FIRST','CONCERT YOU EVER WENT TO'],sub:'Tell us who it was, we want to know.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','FAVORITE THING TO COLLECT'],sub:'Cards, stickers, something else? Let us know below.',ref:null},
+  {cat:'engagement',lines:['WHO HAD THE BEST','MUSIC VIDEO OF THE ERA'],sub:'Drop your pick, let\u2019s see what everyone agrees on.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','FAVORITE SLEEPOVER ACTIVITY'],sub:'Movies, games, or just staying up talking? Tell us.',ref:null},
+  {cat:'engagement',lines:['WHAT SHOW DID YOU','NEVER MISS AN EPISODE OF'],sub:'The one you planned your whole schedule around.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS YOUR','FAVORITE TOY GROWING UP'],sub:'The one you genuinely could not put down for months.',ref:null},
+  {cat:'engagement',lines:['WHAT WAS THE BEST','PART OF SUMMER BREAK BACK THEN'],sub:'Tell us your favorite memory, we want to hear it.',ref:null},
+  {cat:'engagement',lines:['WHICH ERA DO YOU','MISS THE MOST, 90S OR 2000S'],sub:'Pick a side and defend it in the comments.',ref:null},
+  {cat:'engagement',lines:['WHAT\u2019S ONE THING YOU WISH','KIDS TODAY COULD EXPERIENCE'],sub:'Something about growing up back then that just felt different.',ref:null},
+  // — chart-facts (30): stat/chart-flavored nostalgia facts, kept generic
+  // enough to stay accurate without inventing unverifiable specifics
+  {cat:'chart-facts',lines:['BOY BANDS DOMINATED','THE CHARTS FOR YEARS'],sub:'For a long stretch, the biggest songs almost always came from one.',ref:null},
+  {cat:'chart-facts',lines:['ONE-HIT WONDERS DEFINED','ENTIRE SUMMERS'],sub:'A single song could hit number one and then the artist vanished.',ref:null},
+  {cat:'chart-facts',lines:['MOVIE OPENING WEEKENDS','BECAME THEIR OWN HEADLINE NEWS'],sub:'Box office numbers got reported like major sporting events.',ref:null},
+  {cat:'chart-facts',lines:['ALBUM SALES IN THIS ERA','OFTEN HIT THE MILLIONS'],sub:'Physical CDs sold in numbers that feel almost unbelievable now.',ref:null},
+  {cat:'chart-facts',lines:['A SONG COULD SIT AT NUMBER ONE','FOR WEEKS ON END'],sub:'Long chart runs felt completely normal back then.',ref:null},
+  {cat:'chart-facts',lines:['TV FINALES OFTEN PULLED IN','TENS OF MILLIONS OF VIEWERS'],sub:'A single episode could become a genuine national event.',ref:null},
+  {cat:'chart-facts',lines:['VIDEO GAME SALES CHARTS','SHAPED WHAT EVERY KID WANTED'],sub:'Topping the chart basically guaranteed a spot under every tree.',ref:null},
+  {cat:'chart-facts',lines:['RADIO AIRPLAY CHARTS DECIDED','WHAT EVERY STATION PLAYED ON REPEAT'],sub:'A top song could play multiple times an hour, easily.',ref:null},
+  {cat:'chart-facts',lines:['MUSIC AWARD SHOWS DREW','HUGE LIVE TV AUDIENCES'],sub:'Millions tuned in just to see who would take home the trophy.',ref:null},
+  {cat:'chart-facts',lines:['CERTAIN MOVIES BECAME','THE HIGHEST GROSSING OF THEIR YEAR'],sub:'Lines wrapped around theaters just for opening weekend.',ref:null},
+  {cat:'chart-facts',lines:['SOME CONSOLES SOLD MILLIONS','OF UNITS WITHIN THEIR FIRST YEAR'],sub:'Demand was so high that stores regularly sold out instantly.',ref:null},
+  {cat:'chart-facts',lines:['THE BIGGEST ALBUM OF THE YEAR','OFTEN DEFINED THE WHOLE SOUND OF THAT TIME'],sub:'Everyone seemed to own a copy, no exceptions.',ref:null},
+  {cat:'chart-facts',lines:['CERTAIN SONGS STAYED ON THE CHARTS','FOR OVER A FULL YEAR STRAIGHT'],sub:'A hit could simply refuse to leave the airwaves.',ref:null},
+  {cat:'chart-facts',lines:['BLOCKBUSTER VIDEO RENTAL NUMBERS','PEAKED IN THE LATE 90S'],sub:'Thousands of stores nationwide, all packed on weekends.',ref:null},
+  {cat:'chart-facts',lines:['SOME SITCOMS RAN FOR','OVER A DECADE STRAIGHT'],sub:'A single show could become a fixture for an entire generation.',ref:null},
+  {cat:'chart-facts',lines:['CERTAIN VIDEO GAMES SOLD','TENS OF MILLIONS OF COPIES WORLDWIDE'],sub:'Numbers that turned a single game into a cultural moment.',ref:null},
+  {cat:'chart-facts',lines:['THE TOP TOY OF THE HOLIDAY SEASON','SOLD OUT EVERYWHERE EVERY YEAR'],sub:'Parents lined up at stores before the doors even opened.',ref:null},
+  {cat:'chart-facts',lines:['SOME MUSIC VIDEOS RACKED UP','HUGE REQUEST NUMBERS ON COUNTDOWN SHOWS'],sub:'Fans called and voted relentlessly to keep their favorite at number one.',ref:null},
+  {cat:'chart-facts',lines:['CERTAIN MOVIES STAYED IN THEATERS','FOR MONTHS AT A TIME'],sub:'A genuine hit could hold a screen long after its opening weekend.',ref:null},
+  {cat:'chart-facts',lines:['SOME GAME CONSOLES OUTSOLD','EVERY COMPETITOR COMBINED'],sub:'One system in particular ended up in more homes than any other.',ref:null},
+  {cat:'chart-facts',lines:['CERTAIN SONGS BECAME','THE BEST-SELLING SINGLES OF THEIR ENTIRE DECADE'],sub:'Numbers that still get referenced as a high bar today.',ref:null},
+  {cat:'chart-facts',lines:['AWARD SHOW RATINGS IN THIS ERA','OFTEN BEAT MAJOR SPORTING EVENTS'],sub:'Music and movie awards pulled in massive live audiences.',ref:null},
+  {cat:'chart-facts',lines:['SOME TV SHOWS AIRED','THEIR FINALE TO A FULL NATIONAL AUDIENCE'],sub:'Workplaces and schools genuinely planned around the broadcast time.',ref:null},
+  {cat:'chart-facts',lines:['CERTAIN ALBUMS DEBUTED AT','NUMBER ONE WITHIN THEIR FIRST WEEK'],sub:'A first-week chart debut was considered a huge milestone.',ref:null},
+  {cat:'chart-facts',lines:['SOME ARCADE GAMES EARNED','MILLIONS IN QUARTERS OVER THEIR LIFETIME'],sub:'A single popular cabinet could pay for itself many times over.',ref:null},
+  {cat:'chart-facts',lines:['CERTAIN FRANCHISES RELEASED','A NEW SEQUEL EVERY SINGLE YEAR'],sub:'Annual releases became the norm for some of the biggest series.',ref:null},
+  {cat:'chart-facts',lines:['THE BIGGEST SINGLE OF THE SUMMER','USUALLY DEFINED THAT WHOLE SEASON'],sub:'Every summer seemed to have one undisputed anthem.',ref:null},
+  {cat:'chart-facts',lines:['SOME SHOWS DREW BIGGER RATINGS','THAN MOST MOVIES IN THEATERS THAT SAME WEEK'],sub:'TV at its peak could outpull the box office entirely.',ref:null},
+  {cat:'chart-facts',lines:['CERTAIN TOY LINES GENERATED','HUNDREDS OF MILLIONS IN SALES'],sub:'A single toy craze could become a genuine retail phenomenon.',ref:null},
+  {cat:'chart-facts',lines:['THE BIGGEST GAME LAUNCHES','SOLD OUT STORE SHELVES WITHIN HOURS'],sub:'Midnight launches and long lines became their own kind of event.',ref:null},
+];
+
+// ── shared point-star helper ──
+function star(ctx,cx,cy,outerR,points,innerRatio){
+  points=points||5; innerRatio=innerRatio||0.382;
+  const innerR=outerR*innerRatio;
+  ctx.beginPath();
+  for(let k=0;k<points*2;k++){
+    const ang=(Math.PI/points)*k - Math.PI/2;
+    const rad=(k%2===0)?outerR:innerR;
+    const x=cx+Math.cos(ang)*rad,y=cy+Math.sin(ang)*rad;
+    if(k===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  }
+  ctx.closePath();ctx.fill();
+}
+
+// ── shared sci-fi HUD panel frame helper ──────────────────
+// Draws an angular, cut-corner HUD panel border (inspired by common
+// futuristic UI kits: notched corners, glow line, small tick marks).
+// x,y,w,h = bounding box. notch = size of the corner cut. color/glowColor
+// control the line + outer glow. tickSide: 'top'|'bottom'|null adds a row
+// of small dashes along that edge.
+function drawHUDFrame(ctx,x,y,w,h,opts){
+  opts=opts||{};
+  const notch=opts.notch||Math.min(w,h)*0.12;
+  const color=opts.color||'#4be8ff';
+  const lineW=opts.lineWidth||2;
+  const alpha=opts.alpha!=null?opts.alpha:1;
+  const glow=opts.glow!=null?opts.glow:10;
+  const corners=opts.corners||['tl','br']; // which corners get cut
+
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  ctx.strokeStyle=color;
+  ctx.lineWidth=lineW;
+  ctx.shadowColor=color;
+  ctx.shadowBlur=glow;
+  ctx.beginPath();
+
+  const cut=(c)=>corners.includes(c);
+  // build path clockwise from top-left, cutting requested corners
+  ctx.moveTo(x+(cut('tl')?notch:0), y);
+  ctx.lineTo(x+w-(cut('tr')?notch:0), y);
+  if(cut('tr'))ctx.lineTo(x+w,y+notch);
+  ctx.lineTo(x+w, y+h-(cut('br')?notch:0));
+  if(cut('br'))ctx.lineTo(x+w-notch,y+h);
+  ctx.lineTo(x+(cut('bl')?notch:0), y+h);
+  if(cut('bl'))ctx.lineTo(x,y+h-notch);
+  ctx.lineTo(x, y+(cut('tl')?notch:0));
+  if(cut('tl'))ctx.lineTo(x+notch,y);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+
+  // small corner tick accent (filled triangle on one cut corner)
+  if(opts.accentCorner){
+    const ac=opts.accentCorner;
+    ctx.save();ctx.globalAlpha=alpha;ctx.fillStyle=color;ctx.shadowColor=color;ctx.shadowBlur=glow*0.6;
+    ctx.beginPath();
+    if(ac==='tl'){ctx.moveTo(x,y);ctx.lineTo(x+notch,y);ctx.lineTo(x,y+notch);}
+    else if(ac==='tr'){ctx.moveTo(x+w,y);ctx.lineTo(x+w-notch,y);ctx.lineTo(x+w,y+notch);}
+    else if(ac==='br'){ctx.moveTo(x+w,y+h);ctx.lineTo(x+w-notch,y+h);ctx.lineTo(x+w,y+h-notch);}
+    else{ctx.moveTo(x,y+h);ctx.lineTo(x+notch,y+h);ctx.lineTo(x,y+h-notch);}
+    ctx.closePath();ctx.fill();
+    ctx.restore();
+  }
+
+  // optional tick-mark row (small evenly spaced dashes) along top or bottom edge
+  if(opts.tickSide){
+    const tickY=opts.tickSide==='top'?y-8:y+h+8;
+    const tickCount=Math.max(4,Math.floor(w/(opts.tickGap||14)));
+    ctx.save();ctx.globalAlpha=alpha*0.8;ctx.strokeStyle=color;ctx.lineWidth=1.4;
+    for(let i=0;i<tickCount;i++){
+      const tx=x+w*0.06+(w*0.88)*(i/(tickCount-1));
+      ctx.beginPath();ctx.moveTo(tx,tickY-4);ctx.lineTo(tx,tickY+4);ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// small circular HUD gauge/dial decoration (segmented ring, like the
+// reference corner dials) — purely decorative, drifts/rotates with t
+function drawHUDDial(ctx,t,cx,cy,r,color,segments){
+  segments=segments||14;
+  ctx.save();
+  ctx.translate(cx,cy);ctx.rotate(t*0.4);
+  ctx.strokeStyle=color;ctx.lineWidth=2;ctx.globalAlpha=0.8;
+  for(let i=0;i<segments;i++){
+    const a0=(Math.PI*2/segments)*i+0.05;
+    const a1=a0+(Math.PI*2/segments)*0.6;
+    ctx.beginPath();ctx.arc(0,0,r,a0,a1);ctx.stroke();
+  }
+  ctx.restore();
+  ctx.save();ctx.translate(cx,cy);ctx.globalAlpha=0.5;
+  ctx.strokeStyle=color;ctx.lineWidth=1;
+  ctx.beginPath();ctx.arc(0,0,r*0.6,0,Math.PI*2);ctx.stroke();
+  ctx.restore();
+}
+
+// ── CANVAS SETUP ──────────────────────────────────────────
+const bgC=document.getElementById('bgCanvas');
+const bgCtx=bgC.getContext('2d');
+let W=window.innerWidth,H=window.innerHeight;
+bgC.width=W;bgC.height=H;
+
+let _t=0,_sceneStart=0,_styleIdx=0;
+
+// ════════════════════════════════════════════════════════
+// 1. CRT — boxy TV frame, scanlines, slight curve distortion
+// ════════════════════════════════════════════════════════
+function drawCRT(ctx,t,w,h,st){
+  const g=ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#2a2118');g.addColorStop(1,'#0c0906');
+  ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+
+  const sx=w*0.08,sy=h*0.16,sw=w*0.84,sh=h*0.68;
+  const p=easeOutCubic(Math.min(1,st/1.0));
+  const screenGlow=ctx.createRadialGradient(w/2,sy+sh/2,0,w/2,sy+sh/2,safeR(Math.max(sw,sh)*0.7));
+  screenGlow.addColorStop(0,`rgba(60,80,40,${0.5*p})`);screenGlow.addColorStop(1,'rgba(20,30,15,0)');
+  ctx.save();ctx.fillStyle=screenGlow;ctx.fillRect(0,0,w,h);ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle='#16140f';
+  ctx.beginPath();ctx.roundRect?ctx.roundRect(sx-14,sy-14,sw+28,sh+28,18):ctx.rect(sx-14,sy-14,sw+28,sh+28);ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle='#1d2b14';
+  ctx.beginPath();ctx.roundRect?ctx.roundRect(sx,sy,sw,sh,10):ctx.rect(sx,sy,sw,sh);ctx.clip();
+  ctx.fillRect(sx,sy,sw,sh);
+
+  ctx.save();ctx.globalAlpha=0.18;ctx.fillStyle='#000';
+  for(let y=sy;y<sy+sh;y+=4){ctx.fillRect(sx,y,sw,1.4);}
+  ctx.restore();
+
+  ctx.save();ctx.globalAlpha=0.05+0.03*Math.sin(t*30);ctx.fillStyle='#9fffb0';
+  for(let i=0;i<60;i++){
+    ctx.fillRect(sx+Math.random()*sw,sy+Math.random()*sh,2,1);
+  }
+  ctx.restore();
+
+  const rollY=sy+((t*60)%(sh+60))-30;
+  ctx.save();ctx.globalAlpha=0.08;ctx.fillStyle='#fff';
+  ctx.fillRect(sx,rollY,sw,16);
+  ctx.restore();
+  ctx.restore();
+
+  ctx.save();ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.roundRect?ctx.roundRect(sx-14,sy-14,sw+28,sh+28,18):ctx.rect(sx-14,sy-14,sw+28,sh+28);ctx.stroke();
+  ctx.restore();
+
+  ctx.save();ctx.strokeStyle='#5a5248';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(w*0.42,sy-14);ctx.lineTo(w*0.32,sy-70);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(w*0.58,sy-14);ctx.lineTo(w*0.7,sy-70);ctx.stroke();
+  ctx.restore();
+}
+
+// ════════════════════════════════════════════════════════
+// 2. VHS — tracking glitch, chromatic aberration, REC indicator
+// ════════════════════════════════════════════════════════
+function drawVHS(ctx,t,w,h,st){
+  ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,w,h);
+
+  const grad=ctx.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0,'#1a0e22');grad.addColorStop(1,'#05030a');
+  ctx.fillStyle=grad;ctx.fillRect(0,0,w,h);
+
+  for(let i=0;i<3;i++){
+    const off=(i-1)*3;
+    ctx.save();ctx.globalAlpha=0.08;ctx.globalCompositeOperation='screen';
+    ctx.fillStyle=i===0?'#ff2f7e':i===1?'#2fe0ff':'#fff';
+    ctx.fillRect(off,0,w,h);
+    ctx.restore();
+  }
+
+  for(let i=0;i<5;i++){
+    const yy=(i*171+t*240)%h;
+    const lh=4+Math.random()*10;
+    ctx.save();ctx.globalAlpha=0.25;ctx.fillStyle='#fff';
+    ctx.fillRect(0,yy,w,lh);
+    ctx.restore();
+  }
+
+  if(Math.sin(t*3)>0.92){
+    ctx.save();
+    const jy=h*0.4+Math.sin(t*50)*20;
+    ctx.drawImage(ctx.canvas,0,jy,w,30,8,jy,w,30);
+    ctx.restore();
+  }
+
+  ctx.save();ctx.globalAlpha=0.12;ctx.fillStyle='#000';
+  for(let y=0;y<h;y+=3){ctx.fillRect(0,y,w,1);}
+  ctx.restore();
+
+  ctx.save();ctx.globalAlpha=0.05;ctx.fillStyle='#fff';
+  for(let i=0;i<200;i++){ctx.fillRect(Math.random()*w,Math.random()*h,1.5,1.5);}
+  ctx.restore();
+
+  const p=Math.min(1,st/0.6);
+  ctx.save();ctx.globalAlpha=p*(0.6+0.4*Math.sin(t*6));
+  ctx.fillStyle='#ff2f4d';
+  ctx.beginPath();ctx.arc(w*0.12,h*0.1,6,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  ctx.save();ctx.globalAlpha=p*0.8;ctx.fillStyle='#fff';
+  ctx.font=`16px 'VT323',monospace`;ctx.textAlign='left';
+  ctx.fillText('REC',w*0.15,h*0.105);
+  ctx.fillText('00:'+String(Math.floor(t)%60).padStart(2,'0'),w*0.78,h*0.105);
+  ctx.restore();
+}
+
+// ════════════════════════════════════════════════════════
+// 3. HUD-CYAN — sci-fi tech panel frames, cyan glow, corner dials
+//    (direct nod to common HUD UI kits: angular cut-corner panels,
+//    thin glowing borders, tick marks, small gauge dials)
+// ════════════════════════════════════════════════════════
+function drawHudCyan(ctx,t,w,h,st){
+  const g=ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#040b14');g.addColorStop(1,'#000308');
+  ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+
+  // faint grid backdrop
+  ctx.save();ctx.globalAlpha=0.08;ctx.strokeStyle='#2fd9ff';ctx.lineWidth=1;
+  const gridStep=Math.min(w,h)*0.07;
+  for(let x=0;x<w;x+=gridStep){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+  for(let y=0;y<h;y+=gridStep){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+  ctx.restore();
+
+  const p=easeOutCubic(Math.min(1,st/0.9));
+  const color='#4be8ff';
+
+  // main central panel frame, cut corners top-left and bottom-right
+  const px=w*0.07,py=h*0.18,pw=w*0.86,ph=h*0.64;
+  drawHUDFrame(ctx,px,py,pw,ph,{color,alpha:0.85*p,notch:Math.min(w,h)*0.05,corners:['tl','br'],accentCorner:'tl',glow:14});
+
+  // secondary inner accent frame, slightly inset, cut differently
+  drawHUDFrame(ctx,px+10,py+10,pw-20,ph-20,{color,alpha:0.35*p,notch:Math.min(w,h)*0.03,corners:['tr','bl'],glow:8,lineWidth:1.2});
+
+  // small corner dials, like the reference gauge icons
+  drawHUDDial(ctx,t,px-6,py-6,16*p,color,12);
+  drawHUDDial(ctx,t*-1,px+pw+6,py+ph+6,16*p,color,10);
+
+  // tick row along the top edge of the panel
+  if(p>0.3){
+    ctx.save();ctx.globalAlpha=(p-0.3)*0.9;ctx.strokeStyle=color;ctx.lineWidth=1.3;
+    const tickY=py-14;
+    for(let i=0;i<24;i++){
+      const tx=px+pw*0.04+(pw*0.92)*(i/23);
+      ctx.beginPath();ctx.moveTo(tx,tickY-3);ctx.lineTo(tx,tickY+3);ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // sweeping scan-line glow moving down the panel
+  const scanY=py+((t*0.5)%1)*ph;
+  ctx.save();ctx.globalAlpha=0.18*p;ctx.globalCompositeOperation='screen';
+  const scanG=ctx.createLinearGradient(0,scanY-14,0,scanY+14);
+  scanG.addColorStop(0,'rgba(75,232,255,0)');scanG.addColorStop(0.5,'rgba(75,232,255,0.8)');scanG.addColorStop(1,'rgba(75,232,255,0)');
+  ctx.fillStyle=scanG;ctx.fillRect(px,scanY-14,pw,28);
+  ctx.restore();
+
+  // small data readout text in the corner, purely decorative
+  ctx.save();ctx.globalAlpha=0.55*p;ctx.fillStyle=color;ctx.font=`14px 'VT323',monospace`;ctx.textAlign='left';
+  ctx.fillText('SYS://ARCHIVE_2000',px+14,py-20);
+  ctx.restore();
+}
+
+// ════════════════════════════════════════════════════════
+// 4. HUD-RED — warning/hazard-style tech panel, angular red frames
+//    (nod to hazard-style HUD kits: warning chevrons, biohazard-style
+//    corner icons rendered abstractly as glowing rings, red glow)
+// ════════════════════════════════════════════════════════
+function drawHudRed(ctx,t,w,h,st){
+  const g=ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#1a0508');g.addColorStop(1,'#080203');
+  ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+
+  ctx.save();ctx.globalAlpha=0.07;ctx.strokeStyle='#ff3b4a';ctx.lineWidth=1;
+  const gridStep=Math.min(w,h)*0.07;
+  for(let x=0;x<w;x+=gridStep){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+  for(let y=0;y<h;y+=gridStep){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+  ctx.restore();
+
+  const p=easeOutCubic(Math.min(1,st/0.9));
+  const color='#ff3b4a';
+
+  // top warning chevron bar, like the reference "WARNING" banner
