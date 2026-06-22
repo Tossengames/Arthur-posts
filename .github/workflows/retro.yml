@@ -61,7 +61,7 @@ jobs:
           from webdriver_manager.chrome import ChromeDriverManager
 
           # ── EDIT THIS to change which folder(s) background music is picked from ──
-          MUSIC_FOLDERS = ["bgmusic3", "Bgmusic3"]
+          MUSIC_FOLDERS = ["bgmusic", "Bgmusic3"]
           MUSIC_EXTENSIONS = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac"]
 
           ts         = os.environ.get("TS", "test")
