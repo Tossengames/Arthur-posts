@@ -109,7 +109,7 @@ jobs:
           print("Unlocking audio + starting recording...")
           driver.execute_script(f"""
               document.body.click();
-              window.startRecording(30);  // 30 = fps, recording duration controlled below
+              window.startRecording(30);
           """)
 
           print(f"Recording {RECORD_SECONDS} seconds...")
@@ -146,7 +146,6 @@ jobs:
               f.write(base64.b64decode(b64))
           print(f"WebM: {os.path.getsize(webm_file)/1024/1024:.1f} MB")
 
-          # ── CONVERT TO MP4 (landscape 1920x1080) ──
           print("Converting to MP4...")
           result = subprocess.run([
               "ffmpeg", "-y", "-i", webm_file,
@@ -164,13 +163,12 @@ jobs:
           os.remove(webm_file)
           print(f"mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
 
-          # ── GENERIC ASMR CAPTIONS ──
           captions = [
-              "Bilateral ASMR to help you relax and unwind. 🎧 #ASMR #BilateralASMR #Relax #Calm #Unwind #ASMRSounds #Relaxation #Soothing #Chill #StressRelief #Focus #Meditation #DeStress #Whoosh #ASMRTriggers #Peaceful #Mindfulness #SlowDown #ASMRCommunity #Zen",
-              "Close your eyes, put on headphones, and let go. 🌀 #ASMR #BilateralASMR #Relax #Calm #Unwind #ASMRSounds #Relaxation #Soothing #Chill #StressRelief #Focus #Meditation #DeStress #Whoosh #ASMRTriggers #Peaceful #Mindfulness #SlowDown #ASMRCommunity #Zen",
-              "Bilateral stimulation for a calmer mind. 🎧✨ #ASMR #BilateralASMR #Relax #Calm #Unwind #ASMRSounds #Relaxation #Soothing #Chill #StressRelief #Focus #Meditation #DeStress #Whoosh #ASMRTriggers #Peaceful #Mindfulness #SlowDown #ASMRCommunity #Zen",
-              "Let the whoosh carry your thoughts away. 🌊 #ASMR #BilateralASMR #Relax #Calm #Unwind #ASMRSounds #Relaxation #Soothing #Chill #StressRelief #Focus #Meditation #DeStress #Whoosh #ASMRTriggers #Peaceful #Mindfulness #SlowDown #ASMRCommunity #Zen",
-              "Headphones on. Breathe. Relax. 🎧 #ASMR #BilateralASMR #Relax #Calm #Unwind #ASMRSounds #Relaxation #Soothing #Chill #StressRelief #Focus #Meditation #DeStress #Whoosh #ASMRTriggers #Peaceful #Mindfulness #SlowDown #ASMRCommunity #Zen",
+              "fast asmr stimulation 🎧 #asmr #asmrsounds #relax #relaxation #calm #soothing #tingles #asmrtriggers #stressrelief #chill #focus #meditation #destress #mindfulness #satisfying #asmrcommunity",
+              "bilateral asmr for a calmer mind 🌀 #asmr #asmrsounds #relax #relaxation #calm #soothing #tingles #asmrtriggers #stressrelief #chill #focus #meditation #destress #mindfulness #satisfying #asmrcommunity",
+              "headphones on, let it flow 🎧 #asmr #asmrsounds #relax #relaxation #calm #soothing #tingles #asmrtriggers #stressrelief #chill #focus #meditation #destress #mindfulness #satisfying #asmrcommunity",
+              "asmr to help you unwind ✨ #asmr #asmrsounds #relax #relaxation #calm #soothing #tingles #asmrtriggers #stressrelief #chill #focus #meditation #destress #mindfulness #satisfying #asmrcommunity",
+              "quick asmr reset for your day 🎧 #asmr #asmrsounds #relax #relaxation #calm #soothing #tingles #asmrtriggers #stressrelief #chill #focus #meditation #destress #mindfulness #satisfying #asmrcommunity",
           ]
           description = random.choice(captions)
 
