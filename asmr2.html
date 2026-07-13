@@ -254,6 +254,71 @@
     osc.stop(now + 0.2);
   }
 
+  // ---------- Binaural brainwave tone ----------
+  // A pair of pure tones, one per ear, differing by a small "beat" frequency
+  // known to sit in relaxation-associated brainwave ranges. One is picked at
+  // random when audio starts and held fixed for the whole session/video —
+  // requires stereo headphones to perceive the beat.
+  const BRAINWAVE_BANDS = [
+    { name: 'Delta', min: 1.5, max: 4 },   // deep relaxation / sleep
+    { name: 'Theta', min: 4,   max: 8 },   // deep meditation, calm
+    { name: 'Alpha', min: 8,   max: 12 },  // relaxed, calm focus
+  ];
+  const CARRIER_FREQ = 136.1; // low, gentle carrier tone ("OM" frequency, common in ambient/ASMR use)
+
+  let chosenBand = BRAINWAVE_BANDS[randInt(0, BRAINWAVE_BANDS.length - 1)];
+  let beatHz = rand(chosenBand.min, chosenBand.max);
+
+  let brainwaveNodes = null;
+
+  function startBrainwaveTone() {
+    if (!audioCtx || brainwaveNodes) return;
+
+    const leftOsc = audioCtx.createOscillator();
+    const rightOsc = audioCtx.createOscillator();
+    leftOsc.type = 'sine';
+    rightOsc.type = 'sine';
+    leftOsc.frequency.value = CARRIER_FREQ;
+    rightOsc.frequency.value = CARRIER_FREQ + beatHz;
+
+    const leftPan = audioCtx.createStereoPanner();
+    const rightPan = audioCtx.createStereoPanner();
+    leftPan.pan.value = -1;
+    rightPan.pan.value = 1;
+
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0.0001;
+    // subtle: sits underneath the whoosh/SFX layer, not competing with it
+    const targetGain = 0.045;
+
+    leftOsc.connect(leftPan);
+    rightOsc.connect(rightPan);
+    leftPan.connect(gain);
+    rightPan.connect(gain);
+    gain.connect(masterGain);
+
+    const now = audioCtx.currentTime;
+    leftOsc.start(now);
+    rightOsc.start(now);
+    gain.gain.linearRampToValueAtTime(targetGain, now + 2.5); // gentle fade-in
+
+    brainwaveNodes = { leftOsc, rightOsc, gain };
+  }
+
+  function stopBrainwaveTone() {
+    if (!brainwaveNodes || !audioCtx) return;
+    const { leftOsc, rightOsc, gain } = brainwaveNodes;
+    const now = audioCtx.currentTime;
+    try {
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0.0001, now + 1.2);
+      leftOsc.stop(now + 1.3);
+      rightOsc.stop(now + 1.3);
+    } catch (e) {}
+    brainwaveNodes = null;
+  }
+
   // ---------- Motion system ----------
   const PATTERNS = ['sideToSide', 'upDown', 'circular', 'diagonal', 'freeform'];
 
@@ -275,6 +340,11 @@
     flashActive: false,
     nextFlashCheck: 0,
     blurry: false,
+    // transition blend: smoothly morphs from old actual position into the
+    // new pattern's computed path position, instead of snapping
+    transFrom: { x: 0, y: 0 },
+    transStart: 0,
+    transDuration: 550, // ms
   };
 
   const trail = []; // {x,y,radius}
@@ -333,9 +403,15 @@
     const pattern = forcedPattern || PATTERNS[randInt(0, PATTERNS.length - 1)];
     const rp = newRadiusPlan();
 
+    // capture where the ball actually is right now (rendered position),
+    // so we can smoothly blend from here into the new pattern's path
+    state.transFrom.x = state.x;
+    state.transFrom.y = state.y;
+    state.transStart = performance.now();
+
     state.pattern = pattern;
     state.t0 = performance.now();
-    state.duration = rand(2600, 5200);
+    state.duration = rand(5200, 8200); // longer segments so a 30s clip shows fewer, calmer transitions
     state.baseSpeed = rand(SPEED_MIN, SPEED_MAX);
     state.speed = state.baseSpeed;
     state.radiusMode = rp.mode;
@@ -346,15 +422,25 @@
     state.phase = 0;
     state.blurry = Math.random() < 0.3;
 
+    // pathX/pathY track the "ideal" position along the new pattern;
+    // state.x/y (the rendered position) blend toward these during the transition
     if (pattern === 'diagonal') {
-      state.x = state.params.a.x;
-      state.y = state.params.a.y;
+      state.pathX = state.params.a.x;
+      state.pathY = state.params.a.y;
     } else if (pattern === 'freeform') {
-      state.x = state.params.points[0].x;
-      state.y = state.params.points[0].y;
+      state.pathX = state.params.points[0].x;
+      state.pathY = state.params.points[0].y;
       state.segIndex = 0;
     } else if (pattern === 'circular') {
       state.angle = state.params.angle0;
+      state.pathX = state.params.cx + Math.cos(state.angle) * state.params.radiusOrbit;
+      state.pathY = state.params.cy + Math.sin(state.angle) * state.params.radiusOrbit;
+    } else if (pattern === 'sideToSide') {
+      state.pathX = margin();
+      state.pathY = state.params.y;
+    } else if (pattern === 'upDown') {
+      state.pathX = state.params.x;
+      state.pathY = margin();
     }
     state.prevX = state.x;
     state.prevY = state.y;
@@ -403,29 +489,30 @@
 
     const dist = state.speed * dt;
 
+    // drive the "ideal" path position (pathX/pathY) for the current pattern
     switch (state.pattern) {
       case 'sideToSide': {
         state.phase += dist;
         const span = W - 2 * margin();
         const cyclePos = pingPong(state.phase, span);
-        state.x = margin() + cyclePos;
-        state.y = state.params.y;
+        state.pathX = margin() + cyclePos;
+        state.pathY = state.params.y;
         break;
       }
       case 'upDown': {
         state.phase += dist;
         const span = H - 2 * margin();
         const cyclePos = pingPong(state.phase, span);
-        state.y = margin() + cyclePos;
-        state.x = state.params.x;
+        state.pathY = margin() + cyclePos;
+        state.pathX = state.params.x;
         break;
       }
       case 'circular': {
         const orbitCirc = 2 * Math.PI * state.params.radiusOrbit;
         const dAngle = (dist / orbitCirc) * 2 * Math.PI * (state.params.clockwise ? 1 : -1);
         state.angle += dAngle;
-        state.x = state.params.cx + Math.cos(state.angle) * state.params.radiusOrbit;
-        state.y = state.params.cy + Math.sin(state.angle) * state.params.radiusOrbit;
+        state.pathX = state.params.cx + Math.cos(state.angle) * state.params.radiusOrbit;
+        state.pathY = state.params.cy + Math.sin(state.angle) * state.params.radiusOrbit;
         break;
       }
       case 'diagonal': {
@@ -434,8 +521,8 @@
         const full = Math.hypot(b.x - a.x, b.y - a.y);
         const cyclePos = pingPong(state.phase, full);
         const t = cyclePos / full;
-        state.x = lerp(a.x, b.x, t);
-        state.y = lerp(a.y, b.y, t);
+        state.pathX = lerp(a.x, b.x, t);
+        state.pathY = lerp(a.y, b.y, t);
         break;
       }
       case 'freeform': {
@@ -444,7 +531,7 @@
         while (remaining > 0 && guard < 20) {
           guard++;
           const pts = state.params.points;
-          const cur = { x: state.x, y: state.y };
+          const cur = { x: state.pathX, y: state.pathY };
           const target = pts[(state.segIndex + 1) % pts.length];
           const segDist = Math.hypot(target.x - cur.x, target.y - cur.y);
           if (segDist < 0.001) {
@@ -452,19 +539,33 @@
             continue;
           }
           if (remaining >= segDist) {
-            state.x = target.x;
-            state.y = target.y;
+            state.pathX = target.x;
+            state.pathY = target.y;
             state.segIndex = (state.segIndex + 1) % pts.length;
             remaining -= segDist;
           } else {
             const t = remaining / segDist;
-            state.x = lerp(cur.x, target.x, t);
-            state.y = lerp(cur.y, target.y, t);
+            state.pathX = lerp(cur.x, target.x, t);
+            state.pathY = lerp(cur.y, target.y, t);
             remaining = 0;
           }
         }
         break;
       }
+    }
+
+    // blend rendered position (state.x/y) toward the ideal path position.
+    // right after a pattern switch this eases from the old actual position
+    // into the new path, so there's never a hard teleport/jump-cut.
+    const transElapsed = now - state.transStart;
+    if (transElapsed < state.transDuration) {
+      const tProg = clamp(transElapsed / state.transDuration, 0, 1);
+      const eased = 1 - Math.pow(1 - tProg, 3); // ease-out cubic, smooth settle
+      state.x = lerp(state.transFrom.x, state.pathX, eased);
+      state.y = lerp(state.transFrom.y, state.pathY, eased);
+    } else {
+      state.x = state.pathX;
+      state.y = state.pathY;
     }
 
     // velocity for squash/stretch + trail direction
@@ -559,11 +660,22 @@
     ctx.rotate(angle);
     ctx.scale(stretchAmount, squashAmount);
 
+    const ballFill = state.flashActive ? '#ffffff' : currentBall();
+
     if (state.blurry) {
-      ctx.filter = `blur(${6 + speedNorm * 6}px)`;
+      // cheap soft-edge look: draw a few translucent expanding rings using
+      // shadowBlur (GPU-cheap) instead of ctx.filter blur (very expensive
+      // per-frame and the main cause of recording lag)
+      ctx.shadowColor = ballFill;
+      ctx.shadowBlur = 34 + speedNorm * 20;
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.arc(0, 0, state.radius * 1.04, 0, Math.PI * 2);
+      ctx.fillStyle = ballFill;
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
 
-    const ballFill = state.flashActive ? (bgMode === 'dark' ? '#ffffff' : '#ffffff') : currentBall();
     ctx.shadowColor = ballFill;
     ctx.shadowBlur = state.flashActive ? 60 : 22;
     ctx.beginPath();
@@ -585,6 +697,10 @@
   // ---------- Init: start immediately, no overlay ----------
   state.x = W / 2;
   state.y = H / 2;
+  state.pathX = state.x;
+  state.pathY = state.y;
+  state.transFrom.x = state.x;
+  state.transFrom.y = state.y;
   lastFrameTime = performance.now();
   lastPaletteChange = performance.now();
   rotatePalette();
@@ -602,6 +718,7 @@
     initAudio();
     if (audioCtx.state === 'suspended') audioCtx.resume();
     startWhoosh();
+    startBrainwaveTone();
     window.removeEventListener('pointerdown', unlockAudio);
     window.removeEventListener('keydown', unlockAudio);
   }
