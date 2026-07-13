@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bilateral ASMR</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0a0a0f;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script>
+(function() {
+  "use strict";
+
+  // ---------- Canvas setup ----------
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H, DPR;
+
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- Speed / size config ----------
+  const SPEED_MIN = 520;
+  const SPEED_MAX = 1050;
+  const RADIUS_MIN = 40;
+  const RADIUS_MAX = 150;
+
+  function rand(min, max) { return min + Math.random() * (max - min); }
+  function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  // ---------- Color / contrast system ----------
+  // Background is either "dark" or "bright" mode, chosen randomly per cycle.
+  // Ball always hard-contrasts: dark bg -> light/bright ball, bright bg -> black ball.
+  function hsl(h, s, l) { return `hsl(${h}, ${s}%, ${l}%)`; }
+
+  let bgMode = 'dark'; // 'dark' | 'bright'
+  let bgHue = rand(0, 360);
+  let bgBase = pickBgColor();
+  let ballColor = pickBallColor();
+  let useGradient = false;
+  let gradientHue = bgHue;
+
+  function pickBgColor() {
+    if (bgMode === 'dark') {
+      return hsl(bgHue, rand(20, 45), rand(6, 13));
+    } else {
+      return hsl(bgHue, rand(30, 60), rand(82, 93));
+    }
+  }
+  function pickBallColor() {
+    if (bgMode === 'dark') {
+      // bright/light ball, hue complementary-ish for pop
+      const h = (bgHue + 150 + rand(0, 60)) % 360;
+      return hsl(h, rand(65, 95), rand(65, 82));
+    } else {
+      // bright bg -> ball is black (per spec)
+      return hsl(0, 0, 4);
+    }
+  }
+
+  let bgFrom = bgBase, bgTo = bgBase, bgBlend = 1;
+  let ballFrom = ballColor, ballTo = ballColor;
+
+  function rotatePalette() {
+    bgMode = Math.random() < 0.5 ? 'dark' : 'bright';
+    bgHue = rand(0, 360);
+    gradientHue = bgHue;
+    useGradient = Math.random() < 0.35;
+    bgBase = pickBgColor();
+    ballColor = pickBallColor();
+  }
+
+  function triggerPaletteShift() {
+    bgFrom = currentBg();
+    ballFrom = currentBall();
+    rotatePalette();
+    bgTo = bgBase;
+    ballTo = ballColor;
+    bgBlend = 0;
+  }
+
+  function parseHsl(str) {
+    const m = str.match(/hsl\(([-\d.]+),\s*([\d.]+)%,\s*([\d.]+)%\)/);
+    return [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])];
+  }
+  function lerpHsl(strA, strB, t) {
+    const a = parseHsl(strA), b = parseHsl(strB);
+    let dh = b[0] - a[0];
+    if (dh > 180) dh -= 360;
+    if (dh < -180) dh += 360;
+    const h = (a[0] + dh * t + 360) % 360;
+    const s = lerp(a[1], b[1], t);
+    const l = lerp(a[2], b[2], t);
+    return hsl(h, s, l);
+  }
+  function currentBg() { return lerpHsl(bgFrom, bgTo, bgBlend); }
+  function currentBall() { return lerpHsl(ballFrom, ballTo, bgBlend); }
+
+  let lastPaletteChange = performance.now();
+  const PALETTE_INTERVAL = 14000;
+
+  // ---------- Audio ----------
+  let audioCtx = null;
+  let masterGain = null;
+  let audioUnlocked = false;
+
+  function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.9;
+    masterGain.connect(audioCtx.destination);
+  }
+
+  let noiseBuffer = null;
+  function getNoiseBuffer() {
+    if (noiseBuffer) return noiseBuffer;
+    const bufSize = audioCtx.sampleRate * 2;
+    noiseBuffer = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+    return noiseBuffer;
+  }
+
+  let whooshNodes = null;
+
+  function startWhoosh() {
+    if (!audioCtx) return;
+    stopWhoosh();
+
+    const src = audioCtx.createBufferSource();
+    src.buffer = getNoiseBuffer();
+    src.loop = true;
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 900;
+    filter.Q.value = 0.9;
+
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0.0001;
+
+    const panner = audioCtx.createStereoPanner();
+    panner.pan.value = 0;
+
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(masterGain);
+
+    src.start();
+    whooshNodes = { src, filter, gain, panner };
+  }
+
+  function stopWhoosh() {
+    if (whooshNodes) {
+      const { src, gain } = whooshNodes;
+      const now = audioCtx.currentTime;
+      try {
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(gain.gain.value, now);
+        gain.gain.linearRampToValueAtTime(0.0001, now + 0.08);
+        src.stop(now + 0.1);
+      } catch (e) {}
+      whooshNodes = null;
+    }
+  }
+
+  function updateWhoosh(normX, speedNorm, sizeNorm) {
+    if (!whooshNodes || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    const { filter, gain, panner } = whooshNodes;
+
+    panner.pan.linearRampToValueAtTime(clamp(normX * 2 - 1, -1, 1), now + 0.03);
+
+    const freq = 500 + speedNorm * 1600;
+    filter.frequency.linearRampToValueAtTime(freq, now + 0.03);
+
+    const targetGain = (0.12 + speedNorm * 0.35) * (0.8 + sizeNorm * 0.3);
+    gain.gain.linearRampToValueAtTime(targetGain, now + 0.05);
+  }
+
+  function pinchPitch() {
+    if (!whooshNodes || !audioCtx) return;
+    const { filter } = whooshNodes;
+    const now = audioCtx.currentTime;
+    const base = filter.frequency.value;
+    filter.frequency.cancelScheduledValues(now);
+    filter.frequency.setValueAtTime(base, now);
+    filter.frequency.linearRampToValueAtTime(base * 1.9, now + 0.09);
+    filter.frequency.linearRampToValueAtTime(base, now + 0.28);
+  }
+
+  function playTransitionTick() {
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(320, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.18);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.25, now + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+    osc.connect(g);
+    g.connect(masterGain);
+    osc.start(now);
+    osc.stop(now + 0.3);
+  }
+
+  // sparkle/blip SFX synced to flash
+  function playFlashSfx() {
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    const baseFreq = rand(900, 1500);
+    osc.frequency.setValueAtTime(baseFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.8, now + 0.06);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.18, now + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+    osc.connect(g);
+    g.connect(masterGain);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  }
+
+  // ---------- Motion system ----------
+  const PATTERNS = ['sideToSide', 'upDown', 'circular', 'diagonal', 'freeform'];
+
+  let state = {
+    pattern: null,
+    t0: 0,
+    duration: 0,
+    baseSpeed: 0,
+    speed: 0,
+    radius: 0,
+    radiusMode: 'static',
+    radiusStart: 0,
+    radiusEnd: 0,
+    params: {},
+    x: 0, y: 0,
+    prevX: 0, prevY: 0,
+    vx: 0, vy: 0,
+    flashUntil: 0,
+    flashActive: false,
+    nextFlashCheck: 0,
+    blurry: false,
+  };
+
+  const trail = []; // {x,y,radius}
+  const MAX_TRAIL = 6;
+
+  const margin = () => Math.max(state.radius + 10, 60);
+
+  function pickPatternParams(pattern) {
+    const m = margin();
+    const p = {};
+    switch (pattern) {
+      case 'sideToSide':
+        p.y = rand(m, H - m);
+        break;
+      case 'upDown':
+        p.x = rand(m, W - m);
+        break;
+      case 'circular':
+        p.cx = rand(W * 0.3, W * 0.7);
+        p.cy = rand(H * 0.3, H * 0.7);
+        p.radiusOrbit = Math.min(W, H) * rand(0.22, 0.42);
+        p.clockwise = Math.random() < 0.5;
+        p.angle0 = rand(0, Math.PI * 2);
+        break;
+      case 'diagonal':
+        p.a = { x: m, y: m };
+        p.b = { x: W - m, y: H - m };
+        if (Math.random() < 0.5) {
+          p.a = { x: W - m, y: m };
+          p.b = { x: m, y: H - m };
+        }
+        break;
+      case 'freeform':
+        p.points = [];
+        const nPts = randInt(3, 5);
+        for (let i = 0; i < nPts; i++) {
+          p.points.push({ x: rand(m, W - m), y: rand(m, H - m) });
+        }
+        break;
+    }
+    return p;
+  }
+
+  function newRadiusPlan() {
+    const modes = ['static', 'static', 'grow', 'shrink', 'pulse'];
+    const mode = modes[randInt(0, modes.length - 1)];
+    const r1 = rand(RADIUS_MIN, RADIUS_MAX);
+    let r2 = r1;
+    if (mode === 'grow') r2 = rand(r1, RADIUS_MAX);
+    if (mode === 'shrink') r2 = rand(RADIUS_MIN, r1);
+    if (mode === 'pulse') r2 = rand(RADIUS_MIN, RADIUS_MAX);
+    return { mode, r1, r2 };
+  }
+
+  function startNewPattern(forcedPattern) {
+    const pattern = forcedPattern || PATTERNS[randInt(0, PATTERNS.length - 1)];
+    const rp = newRadiusPlan();
+
+    state.pattern = pattern;
+    state.t0 = performance.now();
+    state.duration = rand(2600, 5200);
+    state.baseSpeed = rand(SPEED_MIN, SPEED_MAX);
+    state.speed = state.baseSpeed;
+    state.radiusMode = rp.mode;
+    state.radiusStart = rp.r1;
+    state.radiusEnd = rp.r2;
+    state.radius = rp.r1;
+    state.params = pickPatternParams(pattern);
+    state.phase = 0;
+    state.blurry = Math.random() < 0.3;
+
+    if (pattern === 'diagonal') {
+      state.x = state.params.a.x;
+      state.y = state.params.a.y;
+    } else if (pattern === 'freeform') {
+      state.x = state.params.points[0].x;
+      state.y = state.params.points[0].y;
+      state.segIndex = 0;
+    } else if (pattern === 'circular') {
+      state.angle = state.params.angle0;
+    }
+    state.prevX = state.x;
+    state.prevY = state.y;
+
+    if (audioUnlocked) {
+      playTransitionTick();
+      startWhoosh();
+    }
+  }
+
+  function updateRadius(progress01) {
+    if (state.radiusMode === 'static') {
+      state.radius = state.radiusStart;
+    } else if (state.radiusMode === 'pulse') {
+      const cycles = 2.5;
+      const s = (Math.sin(progress01 * Math.PI * 2 * cycles) + 1) / 2;
+      state.radius = lerp(state.radiusStart, state.radiusEnd, s);
+    } else {
+      state.radius = lerp(state.radiusStart, state.radiusEnd, progress01);
+    }
+  }
+
+  function pingPong(value, length) {
+    if (length <= 0) return 0;
+    const period = length * 2;
+    let v = value % period;
+    if (v < 0) v += period;
+    return v <= length ? v : period - v;
+  }
+
+  let lastFrameTime = performance.now();
+
+  function updateMotion(now, dt) {
+    const elapsed = now - state.t0;
+    const progress01 = clamp(elapsed / state.duration, 0, 1);
+    updateRadius(progress01);
+
+    // physics-like speed easing: slow at start/end of pattern segment, faster mid-travel.
+    // shaped by a sine ease so it accelerates out then decelerates in.
+    const easeShape = Math.sin(progress01 * Math.PI); // 0 at ends, 1 at middle
+    const speedFactor = 0.55 + easeShape * 0.75; // ranges ~0.55x to ~1.3x base
+    state.speed = state.baseSpeed * speedFactor;
+
+    state.prevX = state.x;
+    state.prevY = state.y;
+
+    const dist = state.speed * dt;
+
+    switch (state.pattern) {
+      case 'sideToSide': {
+        state.phase += dist;
+        const span = W - 2 * margin();
+        const cyclePos = pingPong(state.phase, span);
+        state.x = margin() + cyclePos;
+        state.y = state.params.y;
+        break;
+      }
+      case 'upDown': {
+        state.phase += dist;
+        const span = H - 2 * margin();
+        const cyclePos = pingPong(state.phase, span);
+        state.y = margin() + cyclePos;
+        state.x = state.params.x;
+        break;
+      }
+      case 'circular': {
+        const orbitCirc = 2 * Math.PI * state.params.radiusOrbit;
+        const dAngle = (dist / orbitCirc) * 2 * Math.PI * (state.params.clockwise ? 1 : -1);
+        state.angle += dAngle;
+        state.x = state.params.cx + Math.cos(state.angle) * state.params.radiusOrbit;
+        state.y = state.params.cy + Math.sin(state.angle) * state.params.radiusOrbit;
+        break;
+      }
+      case 'diagonal': {
+        state.phase += dist;
+        const a = state.params.a, b = state.params.b;
+        const full = Math.hypot(b.x - a.x, b.y - a.y);
+        const cyclePos = pingPong(state.phase, full);
+        const t = cyclePos / full;
+        state.x = lerp(a.x, b.x, t);
+        state.y = lerp(a.y, b.y, t);
+        break;
+      }
+      case 'freeform': {
+        let remaining = dist;
+        let guard = 0;
+        while (remaining > 0 && guard < 20) {
+          guard++;
+          const pts = state.params.points;
+          const cur = { x: state.x, y: state.y };
+          const target = pts[(state.segIndex + 1) % pts.length];
+          const segDist = Math.hypot(target.x - cur.x, target.y - cur.y);
+          if (segDist < 0.001) {
+            state.segIndex = (state.segIndex + 1) % pts.length;
+            continue;
+          }
+          if (remaining >= segDist) {
+            state.x = target.x;
+            state.y = target.y;
+            state.segIndex = (state.segIndex + 1) % pts.length;
+            remaining -= segDist;
+          } else {
+            const t = remaining / segDist;
+            state.x = lerp(cur.x, target.x, t);
+            state.y = lerp(cur.y, target.y, t);
+            remaining = 0;
+          }
+        }
+        break;
+      }
+    }
+
+    // velocity for squash/stretch + trail direction
+    state.vx = (state.x - state.prevX) / Math.max(dt, 0.0001);
+    state.vy = (state.y - state.prevY) / Math.max(dt, 0.0001);
+
+    // push trail sample
+    trail.push({ x: state.x, y: state.y, radius: state.radius });
+    if (trail.length > MAX_TRAIL) trail.shift();
+
+    if (progress01 >= 1) {
+      startNewPattern();
+      return;
+    }
+
+    if (now > state.nextFlashCheck) {
+      state.nextFlashCheck = now + rand(600, 1800);
+      if (Math.random() < 0.35) {
+        state.flashActive = true;
+        state.flashUntil = now + rand(90, 180);
+        if (audioUnlocked) playFlashSfx();
+      }
+    }
+    if (state.flashActive && now > state.flashUntil) {
+      state.flashActive = false;
+    }
+
+    if (Math.random() < 0.004 && audioUnlocked) {
+      pinchPitch();
+    }
+
+    const normX = clamp(state.x / W, 0, 1);
+    const speedNorm = clamp((state.speed - SPEED_MIN * 0.5) / (SPEED_MAX * 1.3 - SPEED_MIN * 0.5), 0, 1);
+    const sizeNorm = clamp((state.radius - RADIUS_MIN) / (RADIUS_MAX - RADIUS_MIN), 0, 1);
+    if (audioUnlocked) updateWhoosh(normX, speedNorm, sizeNorm);
+  }
+
+  // ---------- Render ----------
+  function render(now) {
+    if (now - lastPaletteChange > PALETTE_INTERVAL) {
+      lastPaletteChange = now;
+      triggerPaletteShift();
+    }
+    if (bgBlend < 1) {
+      bgBlend = clamp(bgBlend + 0.01, 0, 1);
+    }
+
+    const bg = currentBg();
+
+    if (useGradient) {
+      const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.7);
+      const [h, s, l] = parseHsl(bg);
+      const centerL = bgMode === 'dark' ? Math.min(l + 10, 20) : Math.max(l - 8, 70);
+      grad.addColorStop(0, hsl(h, s, centerL));
+      grad.addColorStop(1, bg);
+      ctx.fillStyle = grad;
+    } else {
+      ctx.fillStyle = bg;
+    }
+    ctx.fillRect(0, 0, W, H);
+
+    // trail: smooth tapered line following the recent path, short + subtle
+    if (trail.length >= 2) {
+      const ballC = currentBall();
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (let i = 1; i < trail.length; i++) {
+        const t0 = trail[i - 1];
+        const t1 = trail[i];
+        const progress = i / trail.length; // 0 (oldest) -> 1 (newest)
+        ctx.globalAlpha = progress * 0.22;
+        ctx.strokeStyle = ballC;
+        ctx.lineWidth = t1.radius * (0.5 + progress * 0.35);
+        ctx.beginPath();
+        ctx.moveTo(t0.x, t0.y);
+        ctx.lineTo(t1.x, t1.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // squash & stretch based on speed/direction
+    const speed = Math.hypot(state.vx, state.vy);
+    const speedNorm = clamp(speed / (SPEED_MAX * 1.3), 0, 1);
+    const stretchAmount = 1 + speedNorm * 0.14; // elongate along travel (slight)
+    const squashAmount = 1 - speedNorm * 0.08;  // compress perpendicular (slight)
+    const angle = Math.atan2(state.vy, state.vx);
+
+    ctx.save();
+    ctx.translate(state.x, state.y);
+    ctx.rotate(angle);
+    ctx.scale(stretchAmount, squashAmount);
+
+    if (state.blurry) {
+      ctx.filter = `blur(${6 + speedNorm * 6}px)`;
+    }
+
+    const ballFill = state.flashActive ? (bgMode === 'dark' ? '#ffffff' : '#ffffff') : currentBall();
+    ctx.shadowColor = ballFill;
+    ctx.shadowBlur = state.flashActive ? 60 : 22;
+    ctx.beginPath();
+    ctx.arc(0, 0, state.radius, 0, Math.PI * 2);
+    ctx.fillStyle = ballFill;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function loop(now) {
+    const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+    lastFrameTime = now;
+
+    updateMotion(now, dt);
+    render(now);
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Init: start immediately, no overlay ----------
+  state.x = W / 2;
+  state.y = H / 2;
+  lastFrameTime = performance.now();
+  lastPaletteChange = performance.now();
+  rotatePalette();
+  bgBase = pickBgColor();
+  ballColor = pickBallColor();
+  bgFrom = bgBase; bgTo = bgBase; bgBlend = 1;
+  ballFrom = ballColor; ballTo = ballColor;
+  startNewPattern();
+  requestAnimationFrame(loop);
+
+  // unlock audio on first user interaction anywhere, silently
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    initAudio();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    startWhoosh();
+    window.removeEventListener('pointerdown', unlockAudio);
+    window.removeEventListener('keydown', unlockAudio);
+  }
+  window.addEventListener('pointerdown', unlockAudio);
+  window.addEventListener('keydown', unlockAudio);
+
+  // tap anywhere (after first tap) also forces new motion pattern
+  window.addEventListener('pointerdown', function() {
+    if (audioUnlocked) {
+      startNewPattern();
+    }
+  });
+
+  // ---------- Recording (for headless capture -> mp4 -> Facebook) ----------
+  // Exposes window.startRecording/stopRecording/forceFinalize/getRecordingBase64
+  // so an external Selenium script can drive recording the same way as the
+  // Japan Facts reel. Captures the existing canvas directly (no DOM overlay
+  // to composite here) plus the Web Audio master bus.
+  let _recorder = null;
+  let _recChunks = [];
+  let _recDest = null;
+  window._recActive = false;
+  window._recordingDone = false;
+  window._recordingBlob = null;
+
+  window.startRecording = function(fps) {
+    fps = fps || 30;
+    try {
+      // make sure audio is running and unlocked before we start capturing
+      unlockAudio();
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
+      window._recActive = true;
+      window._recordingDone = false;
+      window._recordingBlob = null;
+      _recChunks = [];
+
+      const videoStream = canvas.captureStream(fps);
+
+      let combined = videoStream;
+      if (audioCtx && masterGain) {
+        _recDest = audioCtx.createMediaStreamDestination();
+        masterGain.connect(_recDest);
+        combined = new MediaStream([
+          ...videoStream.getVideoTracks(),
+          ..._recDest.stream.getAudioTracks()
+        ]);
+      }
+
+      const mimeCandidates = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ];
+      const mime = mimeCandidates.find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+
+      _recorder = new MediaRecorder(combined, {
+        mimeType: mime,
+        videoBitsPerSecond: 8000000,
+        audioBitsPerSecond: 192000
+      });
+      _recorder.ondataavailable = function(e) {
+        if (e.data && e.data.size > 0) _recChunks.push(e.data);
+      };
+      _recorder.onstop = function() {
+        window._recActive = false;
+        try { if (_recDest) masterGain.disconnect(_recDest); } catch (e) {}
+        window._recordingBlob = new Blob(_recChunks, { type: 'video/webm' });
+        window._recordingDone = true;
+      };
+      _recorder.start(200);
+      console.log('Recording started');
+    } catch (e) {
+      console.error('startRecording error:', e);
+    }
+  };
+
+  window.stopRecording = function() {
+    try {
+      if (_recorder && _recorder.state !== 'inactive') _recorder.stop();
+    } catch (e) {}
+  };
+
+  window.forceFinalize = function() {
+    window._recActive = false;
+    if (_recChunks.length > 0 && !window._recordingDone) {
+      window._recordingBlob = new Blob(_recChunks, { type: 'video/webm' });
+      window._recordingDone = true;
+    }
+  };
+
+  window.getRecordingBase64 = function() {
+    return new Promise(function(resolve, reject) {
+      const check = function() {
+        if (!window._recordingBlob) { setTimeout(check, 100); return; }
+        const r = new FileReader();
+        r.onloadend = function() { resolve(r.result.split(',')[1]); };
+        r.onerror = reject;
+        r.readAsDataURL(window._recordingBlob);
+      };
+      check();
+    });
+  };
+
+  // expose for parity with reference script conventions
+  window.AC = null;
+  Object.defineProperty(window, 'AC', {
+    get: function() { return audioCtx; }
+  });
+})();
+</script>
+</body>
+</html>
