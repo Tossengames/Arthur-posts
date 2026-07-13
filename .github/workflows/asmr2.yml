@@ -67,12 +67,13 @@ jobs:
           fb_token   = os.environ.get("FB_PAGE_TOKEN")
           fb_page_id = os.environ.get("FB_PAGE_ID")
 
-          RECORD_SECONDS = 15
+          RECORD_SECONDS = 30
 
           if not fb_token or not fb_page_id:
               raise RuntimeError("FB_PAGE_TOKEN or FB_PAGE_ID secret is missing/empty")
 
           opts = Options()
+          opts.add_argument("--headless=new")
           opts.add_argument("--no-sandbox")
           opts.add_argument("--disable-dev-shm-usage")
           opts.add_argument("--disable-gpu")
@@ -108,7 +109,7 @@ jobs:
           print("Unlocking audio + starting recording...")
           driver.execute_script(f"""
               document.body.click();
-              window.startRecording(30);
+              window.startRecording(30);  // 30 = fps, recording duration controlled below
           """)
 
           print(f"Recording {RECORD_SECONDS} seconds...")
