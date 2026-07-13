@@ -45,8 +45,8 @@
   resize();
 
   // ---------- Speed / size config ----------
-  const SPEED_MIN = 520;
-  const SPEED_MAX = 1050;
+  const SPEED_MIN = 900;
+  const SPEED_MAX = 1500;
   const RADIUS_MIN = 40;
   const RADIUS_MAX = 150;
 
@@ -198,12 +198,17 @@
     const now = audioCtx.currentTime;
     const { filter, gain, panner } = whooshNodes;
 
-    panner.pan.linearRampToValueAtTime(clamp(normX * 2 - 1, -1, 1), now + 0.03);
+    // stronger bilateral pan: push harder toward full left/right rather than
+    // a soft partial pan, so the ear-to-ear effect is more pronounced
+    const rawPan = clamp(normX * 2 - 1, -1, 1);
+    const strongPan = Math.sign(rawPan) * Math.pow(Math.abs(rawPan), 0.6); // pushes mid-range values closer to the extremes
+    panner.pan.linearRampToValueAtTime(clamp(strongPan, -1, 1), now + 0.02);
 
     const freq = 500 + speedNorm * 1600;
     filter.frequency.linearRampToValueAtTime(freq, now + 0.03);
 
-    const targetGain = (0.12 + speedNorm * 0.35) * (0.8 + sizeNorm * 0.3);
+    // louder overall + wider dynamic swing so the whoosh feels more present
+    const targetGain = (0.18 + speedNorm * 0.5) * (0.85 + sizeNorm * 0.35);
     gain.gain.linearRampToValueAtTime(targetGain, now + 0.05);
   }
 
@@ -233,6 +238,34 @@
     g.connect(masterGain);
     osc.start(now);
     osc.stop(now + 0.3);
+  }
+
+  // "pong" SFX for wall/edge bounces in sideToSide and upDown motion.
+  // Slight random pitch + volume variation each hit so it's not identical every time.
+  function playPongSfx(panValue) {
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const panner = audioCtx.createStereoPanner();
+
+    osc.type = 'sine';
+    const baseFreq = rand(360, 460); // slight random pitch each hit
+    osc.frequency.setValueAtTime(baseFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.55, now + 0.09);
+
+    const peakGain = rand(0.22, 0.34); // slight random volume each hit
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(peakGain, now + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
+    panner.pan.value = clamp(panValue, -1, 1);
+
+    osc.connect(g);
+    g.connect(panner);
+    panner.connect(masterGain);
+    osc.start(now);
+    osc.stop(now + 0.25);
   }
 
   // sparkle/blip SFX synced to flash
@@ -421,6 +454,8 @@
     state.params = pickPatternParams(pattern);
     state.phase = 0;
     state.blurry = Math.random() < 0.3;
+    state._lastCyclePos = undefined;
+    state._lastGoingUp = undefined;
 
     // pathX/pathY track the "ideal" position along the new pattern;
     // state.x/y (the rendered position) blend toward these during the transition
@@ -445,10 +480,17 @@
     state.prevX = state.x;
     state.prevY = state.y;
 
+    // no transition tick sound anymore — this single pattern runs for the whole video
     if (audioUnlocked) {
-      playTransitionTick();
       startWhoosh();
     }
+  }
+
+  // Called when the current pattern's timed segment finishes. Keeps the same
+  // motion type (no switching) but refreshes speed/radius/params so the loop
+  // doesn't feel robotic, blending smoothly rather than jumping.
+  function restartSamePattern() {
+    startNewPattern(state.pattern);
   }
 
   function updateRadius(progress01) {
@@ -497,6 +539,16 @@
         const cyclePos = pingPong(state.phase, span);
         state.pathX = margin() + cyclePos;
         state.pathY = state.params.y;
+        // detect wall hit: cyclePos reverses direction at 0 or span
+        if (state._lastCyclePos !== undefined) {
+          const goingUp = cyclePos > state._lastCyclePos;
+          if (state._lastGoingUp !== undefined && goingUp !== state._lastGoingUp) {
+            const hitLeft = cyclePos < span / 2;
+            if (audioUnlocked) playPongSfx(hitLeft ? -1 : 1);
+          }
+          state._lastGoingUp = goingUp;
+        }
+        state._lastCyclePos = cyclePos;
         break;
       }
       case 'upDown': {
@@ -505,6 +557,17 @@
         const cyclePos = pingPong(state.phase, span);
         state.pathY = margin() + cyclePos;
         state.pathX = state.params.x;
+        // detect wall hit (top/bottom): pan follows the ball's x (center-ish),
+        // still gives a bilateral-flavored pong even for vertical motion
+        if (state._lastCyclePos !== undefined) {
+          const goingUp = cyclePos > state._lastCyclePos;
+          if (state._lastGoingUp !== undefined && goingUp !== state._lastGoingUp) {
+            const normX = clamp(state.pathX / W, 0, 1);
+            if (audioUnlocked) playPongSfx(normX * 2 - 1);
+          }
+          state._lastGoingUp = goingUp;
+        }
+        state._lastCyclePos = cyclePos;
         break;
       }
       case 'circular': {
@@ -577,7 +640,10 @@
     if (trail.length > MAX_TRAIL) trail.shift();
 
     if (progress01 >= 1) {
-      startNewPattern();
+      // one motion runs for the entire video — just restart this same
+      // pattern's timing/radius plan instead of picking a new motion,
+      // so it keeps going smoothly forever with no mid-video switch
+      restartSamePattern();
       return;
     }
 
@@ -725,12 +791,8 @@
   window.addEventListener('pointerdown', unlockAudio);
   window.addEventListener('keydown', unlockAudio);
 
-  // tap anywhere (after first tap) also forces new motion pattern
-  window.addEventListener('pointerdown', function() {
-    if (audioUnlocked) {
-      startNewPattern();
-    }
-  });
+  // Note: tapping no longer changes the motion — one motion runs for the
+  // whole video/session. First tap only unlocks audio (handled above).
 
   // ---------- Recording (for headless capture -> mp4 -> Facebook) ----------
   // Exposes window.startRecording/stopRecording/forceFinalize/getRecordingBase64
