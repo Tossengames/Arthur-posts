@@ -18,6 +18,8 @@
     display: block;
     width: 100vw;
     height: 100vh;
+    object-fit: contain;
+    background: #000;
   }
 </style>
 </head>
@@ -29,26 +31,29 @@
   "use strict";
 
   // ---------- Canvas setup ----------
+  // Locked to a fixed 1920x1080 internal resolution regardless of the actual
+  // browser viewport/window size. This guarantees the exported recording is
+  // exactly 16:9 with no letterboxing/black bars from an aspect-ratio
+  // mismatch during the ffmpeg scale step.
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
-  let W, H, DPR;
+  const W = 1920;
+  const H = 1080;
+  canvas.width = W;
+  canvas.height = H;
 
   function resize() {
-    DPR = window.devicePixelRatio || 1;
-    W = window.innerWidth;
-    H = window.innerHeight;
-    canvas.width = W * DPR;
-    canvas.height = H * DPR;
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // canvas internal resolution is fixed; CSS just scales it to fill
+    // whatever the actual window size is, letterbox-free either way since
+    // we control aspect ratio at the source.
   }
   window.addEventListener('resize', resize);
-  resize();
 
   // ---------- Speed / size config ----------
   const SPEED_MIN = 900;
   const SPEED_MAX = 1500;
-  const RADIUS_MIN = 40;
-  const RADIUS_MAX = 150;
+  const RADIUS_MIN = 80;
+  const RADIUS_MAX = 300;
 
   function rand(min, max) { return min + Math.random() * (max - min); }
   function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
@@ -149,78 +154,187 @@
     return noiseBuffer;
   }
 
-  let whooshNodes = null;
+  // ---------- Whoosh (exact same approach as the reference script) ----------
+  // Continuous filtered-noise bed. Pan/gain/filter are driven by
+  // setTargetAtTime with a short time constant, fed by REAL raw measured
+  // speed (pixels/frame-ish) computed directly from position deltas each
+  // frame in updateMotion — not a scripted/eased speed profile. This exactly
+  // mirrors the reference script's setWhoosh() behavior.
+  let wN = null, wG = null, wP = null, wF = null;
 
   function startWhoosh() {
     if (!audioCtx) return;
-    stopWhoosh();
+    if (wN) { try { wN.stop(); } catch (e) {} }
+    const sr = audioCtx.sampleRate, len = sr * 4;
+    const buf = audioCtx.createBuffer(1, len, sr);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    wN = audioCtx.createBufferSource();
+    wN.buffer = buf;
+    wN.loop = true;
+    wF = audioCtx.createBiquadFilter();
+    wF.type = 'bandpass';
+    wF.frequency.value = 480;
+    wF.Q.value = 1.0;
+    wG = audioCtx.createGain();
+    wG.gain.value = 0.85;
+    wP = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+    wN.connect(wF);
+    wF.connect(wG);
+    if (wP) { wG.connect(wP); wP.connect(masterGain); } else { wG.connect(masterGain); }
+    wN.start();
+  }
 
-    const src = audioCtx.createBufferSource();
-    src.buffer = getNoiseBuffer();
-    src.loop = true;
+  function stopWhoosh() {
+    if (wN) { try { wN.stop(); } catch (e) {} wN = null; }
+  }
 
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 900;
-    filter.Q.value = 0.9;
+  // xFrac: 0..1 horizontal position. spd: raw measured px/frame-ish speed.
+  function setWhoosh(xFrac, spd) {
+    if (!wP || !wG || !audioCtx) return;
+    wP.pan.setTargetAtTime(clamp(xFrac * 2 - 1, -1, 1), audioCtx.currentTime, 0.04);
+    wG.gain.setTargetAtTime(clamp(0.35 + spd * 0.055, 0.35, 1.6), audioCtx.currentTime, 0.04);
+    if (wF) wF.frequency.setTargetAtTime(300 + spd * 22, audioCtx.currentTime, 0.04);
+  }
 
-    const gain = audioCtx.createGain();
-    gain.gain.value = 0.0001;
+  // Discrete percussive "scratch" hit — fired only at the actual moment the
+  // ball's direction reverses (a real kinematic event), exact same approach
+  // as the reference script's playScratch().
+  let scCool = 0;
+  function playScratch(freq, vol) {
+    if (!audioCtx) return;
+    try {
+      const sr = audioCtx.sampleRate, len = Math.floor(sr * 0.07);
+      const buf = audioCtx.createBuffer(1, len, sr);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) {
+        const e = Math.pow(1 - i / len, 0.5);
+        d[i] = (Math.random() * 2 - 1) * e;
+      }
+      const src = audioCtx.createBufferSource();
+      const f = audioCtx.createBiquadFilter();
+      const g = audioCtx.createGain();
+      f.type = 'bandpass';
+      f.frequency.value = freq;
+      f.Q.value = 1.6;
+      g.gain.value = Math.min(0.65, vol);
+      src.buffer = buf;
+      src.connect(f);
+      f.connect(g);
+      g.connect(masterGain);
+      src.start();
+      src.stop(audioCtx.currentTime + 0.09);
+    } catch (e) {}
+  }
+
+  // ---------- Lightsaber-style SFX (independent new layer, does not touch whoosh) ----------
+  // A low sustained "hum/idle" tone always quietly present, like a saber
+  // powered on, which swells brighter and more "electric" as the ball moves
+  // faster (like a saber swing), using a detuned dual-oscillator hum plus a
+  // resonant bandpass filter that opens up with speed for that zzzip brightness.
+  let saberNodes = null;
+
+  function startSaber() {
+    if (!audioCtx) return;
+    stopSaber();
+
+    const now = audioCtx.currentTime;
+
+    // low hum: two slightly detuned oscillators for a subtle beating/thickness
+    const humA = audioCtx.createOscillator();
+    const humB = audioCtx.createOscillator();
+    humA.type = 'sawtooth';
+    humB.type = 'sawtooth';
+    humA.frequency.value = 65;
+    humB.frequency.value = 65 * 1.008; // slight detune
+
+    // low-pass to keep the hum warm/rounded, not buzzy
+    const humFilter = audioCtx.createBiquadFilter();
+    humFilter.type = 'lowpass';
+    humFilter.frequency.value = 320;
+    humFilter.Q.value = 0.5;
+
+    // bright "electric swell" layer: filtered noise that opens up with speed
+    const swellSrc = audioCtx.createBufferSource();
+    swellSrc.buffer = getNoiseBuffer();
+    swellSrc.loop = true;
+
+    const swellFilter = audioCtx.createBiquadFilter();
+    swellFilter.type = 'bandpass';
+    swellFilter.frequency.value = 1200;
+    swellFilter.Q.value = 4;
+
+    const humGain = audioCtx.createGain();
+    humGain.gain.value = 0.0001;
+
+    const swellGain = audioCtx.createGain();
+    swellGain.gain.value = 0.0001;
 
     const panner = audioCtx.createStereoPanner();
     panner.pan.value = 0;
 
-    src.connect(filter);
-    filter.connect(gain);
-    gain.connect(panner);
+    humA.connect(humFilter);
+    humB.connect(humFilter);
+    humFilter.connect(humGain);
+    humGain.connect(panner);
+
+    swellSrc.connect(swellFilter);
+    swellFilter.connect(swellGain);
+    swellGain.connect(panner);
+
     panner.connect(masterGain);
 
-    src.start();
-    whooshNodes = { src, filter, gain, panner };
+    humA.start(now);
+    humB.start(now);
+    swellSrc.start(now);
+
+    // gentle fade-in to the quiet idle hum level
+    humGain.gain.linearRampToValueAtTime(0.035, now + 1.2);
+
+    saberNodes = { humA, humB, humFilter, swellSrc, swellFilter, humGain, swellGain, panner };
   }
 
-  function stopWhoosh() {
-    if (whooshNodes) {
-      const { src, gain } = whooshNodes;
+  function stopSaber() {
+    if (saberNodes) {
+      const { humA, humB, swellSrc, humGain, swellGain } = saberNodes;
       const now = audioCtx.currentTime;
       try {
-        gain.gain.cancelScheduledValues(now);
-        gain.gain.setValueAtTime(gain.gain.value, now);
-        gain.gain.linearRampToValueAtTime(0.0001, now + 0.08);
-        src.stop(now + 0.1);
+        humGain.gain.cancelScheduledValues(now);
+        humGain.gain.setValueAtTime(humGain.gain.value, now);
+        humGain.gain.linearRampToValueAtTime(0.0001, now + 0.2);
+        swellGain.gain.cancelScheduledValues(now);
+        swellGain.gain.setValueAtTime(swellGain.gain.value, now);
+        swellGain.gain.linearRampToValueAtTime(0.0001, now + 0.2);
+        humA.stop(now + 0.25);
+        humB.stop(now + 0.25);
+        swellSrc.stop(now + 0.25);
       } catch (e) {}
-      whooshNodes = null;
+      saberNodes = null;
     }
   }
 
-  function updateWhoosh(normX, speedNorm, sizeNorm) {
-    if (!whooshNodes || !audioCtx) return;
+  function updateSaber(normX, speedNorm) {
+    if (!saberNodes || !audioCtx) return;
     const now = audioCtx.currentTime;
-    const { filter, gain, panner } = whooshNodes;
+    const { humFilter, swellFilter, humGain, swellGain, panner } = saberNodes;
 
-    // stronger bilateral pan: push harder toward full left/right rather than
-    // a soft partial pan, so the ear-to-ear effect is more pronounced
+    // pan follows the ball too, so this layer is also bilateral
     const rawPan = clamp(normX * 2 - 1, -1, 1);
-    const strongPan = Math.sign(rawPan) * Math.pow(Math.abs(rawPan), 0.6); // pushes mid-range values closer to the extremes
-    panner.pan.linearRampToValueAtTime(clamp(strongPan, -1, 1), now + 0.02);
+    panner.pan.linearRampToValueAtTime(rawPan, now + 0.04);
 
-    const freq = 500 + speedNorm * 1600;
-    filter.frequency.linearRampToValueAtTime(freq, now + 0.03);
+    // idle hum stays quietly present always (never fully silent, like a
+    // saber that's switched on) — small variation with speed for life
+    const humTarget = 0.03 + speedNorm * 0.02;
+    humGain.gain.linearRampToValueAtTime(humTarget, now + 0.08);
+    humFilter.frequency.linearRampToValueAtTime(300 + speedNorm * 260, now + 0.08);
 
-    // louder overall + wider dynamic swing so the whoosh feels more present
-    const targetGain = (0.18 + speedNorm * 0.5) * (0.85 + sizeNorm * 0.35);
-    gain.gain.linearRampToValueAtTime(targetGain, now + 0.05);
-  }
-
-  function pinchPitch() {
-    if (!whooshNodes || !audioCtx) return;
-    const { filter } = whooshNodes;
-    const now = audioCtx.currentTime;
-    const base = filter.frequency.value;
-    filter.frequency.cancelScheduledValues(now);
-    filter.frequency.setValueAtTime(base, now);
-    filter.frequency.linearRampToValueAtTime(base * 1.9, now + 0.09);
-    filter.frequency.linearRampToValueAtTime(base, now + 0.28);
+    // bright electric "zzzip" swell: opens up only as speed increases,
+    // this is the part that actually sounds like a fast swing/movement
+    const swellCurve = Math.pow(speedNorm, 2.2);
+    const swellTarget = swellCurve * 0.16;
+    swellGain.gain.linearRampToValueAtTime(swellTarget, now + 0.05);
+    swellFilter.frequency.linearRampToValueAtTime(900 + speedNorm * 3200, now + 0.05);
+    swellFilter.Q.value = 3 + speedNorm * 5;
   }
 
   function playTransitionTick() {
@@ -483,6 +597,7 @@
     // no transition tick sound anymore — this single pattern runs for the whole video
     if (audioUnlocked) {
       startWhoosh();
+      startSaber();
     }
   }
 
@@ -635,6 +750,28 @@
     state.vx = (state.x - state.prevX) / Math.max(dt, 0.0001);
     state.vy = (state.y - state.prevY) / Math.max(dt, 0.0001);
 
+    // REAL, MEASURED speed this frame, expressed as pixels-per-frame (not
+    // per-second) to match the reference script's tuning exactly — it
+    // computes spd = hypot(dx,dy) directly between frames at ~60fps, so we
+    // convert our dt-based velocity back into that same per-frame scale.
+    const rawSpeedPerFrame = Math.hypot(state.x - state.prevX, state.y - state.prevY);
+
+    // direction-change "scratch" hit: fires a short percussive sound the
+    // instant the ball's horizontal direction actually reverses — exact
+    // same trigger condition as the reference script's dX!==lastDirX check.
+    // Scoped away from sideToSide/upDown since those already have their own
+    // dedicated wall-hit pong sound (avoids double-firing at the same moment).
+    const usesPongInstead = (state.pattern === 'sideToSide' || state.pattern === 'upDown');
+    if (!usesPongInstead) {
+      const dirX = state.vx >= 0 ? 1 : -1;
+      if (state._lastDirX !== undefined && dirX !== state._lastDirX && rawSpeedPerFrame > 2.5 && state._scratchCooldown <= 0) {
+        if (audioUnlocked) playScratch(rand(280, 1100), rand(0.10, 0.40));
+        state._scratchCooldown = randInt(3, 10);
+      }
+      state._lastDirX = dirX;
+      if (state._scratchCooldown > 0) state._scratchCooldown--;
+    }
+
     // push trail sample
     trail.push({ x: state.x, y: state.y, radius: state.radius });
     if (trail.length > MAX_TRAIL) trail.shift();
@@ -659,14 +796,13 @@
       state.flashActive = false;
     }
 
-    if (Math.random() < 0.004 && audioUnlocked) {
-      pinchPitch();
-    }
-
     const normX = clamp(state.x / W, 0, 1);
-    const speedNorm = clamp((state.speed - SPEED_MIN * 0.5) / (SPEED_MAX * 1.3 - SPEED_MIN * 0.5), 0, 1);
-    const sizeNorm = clamp((state.radius - RADIUS_MIN) / (RADIUS_MAX - RADIUS_MIN), 0, 1);
-    if (audioUnlocked) updateWhoosh(normX, speedNorm, sizeNorm);
+    // rawSpeedNorm (0..1-ish) still used for the saber layer's speed reactivity
+    const rawSpeedNorm = clamp(rawSpeedPerFrame / 30, 0, 1.4);
+    if (audioUnlocked) {
+      setWhoosh(normX, rawSpeedPerFrame);
+      updateSaber(normX, rawSpeedNorm);
+    }
   }
 
   // ---------- Render ----------
@@ -760,21 +896,40 @@
     requestAnimationFrame(loop);
   }
 
-  // ---------- Init: start immediately, no overlay ----------
-  state.x = W / 2;
-  state.y = H / 2;
-  state.pathX = state.x;
-  state.pathY = state.y;
-  state.transFrom.x = state.x;
-  state.transFrom.y = state.y;
+  // ---------- Init / Session control ----------
+  // startSession() fully resets everything: new palette, new pattern, new
+  // ball size/motion, cleared trail — as if the page was closed and reopened.
+  // Called once on load, and again on every tap (after the very first tap,
+  // which is reserved for unlocking audio per browser autoplay rules).
+  function startSession() {
+    trail.length = 0;
+
+    state.x = W / 2;
+    state.y = H / 2;
+    state.pathX = state.x;
+    state.pathY = state.y;
+    state.transFrom.x = state.x;
+    state.transFrom.y = state.y;
+    state._lastDirX = undefined;
+    state._scratchCooldown = 0;
+
+    lastPaletteChange = performance.now();
+    rotatePalette();
+    bgBase = pickBgColor();
+    ballColor = pickBallColor();
+    bgFrom = bgBase; bgTo = bgBase; bgBlend = 1;
+    ballFrom = ballColor; ballTo = ballColor;
+
+    startNewPattern();
+
+    if (audioUnlocked) {
+      startWhoosh();
+      startSaber();
+    }
+  }
+
   lastFrameTime = performance.now();
-  lastPaletteChange = performance.now();
-  rotatePalette();
-  bgBase = pickBgColor();
-  ballColor = pickBallColor();
-  bgFrom = bgBase; bgTo = bgBase; bgBlend = 1;
-  ballFrom = ballColor; ballTo = ballColor;
-  startNewPattern();
+  startSession();
   requestAnimationFrame(loop);
 
   // unlock audio on first user interaction anywhere, silently
@@ -784,6 +939,7 @@
     initAudio();
     if (audioCtx.state === 'suspended') audioCtx.resume();
     startWhoosh();
+    startSaber();
     startBrainwaveTone();
     window.removeEventListener('pointerdown', unlockAudio);
     window.removeEventListener('keydown', unlockAudio);
@@ -791,8 +947,14 @@
   window.addEventListener('pointerdown', unlockAudio);
   window.addEventListener('keydown', unlockAudio);
 
-  // Note: tapping no longer changes the motion — one motion runs for the
-  // whole video/session. First tap only unlocks audio (handled above).
+  // Tapping the screen fully restarts the session — new pattern, new ball
+  // color/size, cleared trail — as if the page were closed and reopened.
+  // The very first tap still only unlocks audio (handled above); this
+  // listener fires on every tap including that first one, but startSession()
+  // re-running immediately after unlock on the first tap is fine/expected.
+  window.addEventListener('pointerdown', function() {
+    startSession();
+  });
 
   // ---------- Recording (for headless capture -> mp4 -> Facebook) ----------
   // Exposes window.startRecording/stopRecording/forceFinalize/getRecordingBase64
