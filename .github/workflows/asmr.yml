@@ -1,9 +1,9 @@
-name: 🧠 Post ASMR Eye Movement to Facebook
+name: 🧠 Post ASMR to Facebook
 
 on:
   workflow_dispatch:
   schedule:
-  #  - cron: "0 8 * * *"
+    - cron: "0 8 * * *"
 
 jobs:
   record:
@@ -17,7 +17,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /var/cache/apt/archives
-          key: apt-ubuntu22-asmr-v4
+          key: apt-ubuntu22-asmr-v5
 
       - name: Install dependencies
         run: |
@@ -25,13 +25,13 @@ jobs:
           sudo apt-get install -y \
             xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio
 
-      - name: Cache pip and ChromeDriver
+      - name: Cache pip
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pip
             ~/.wdm
-          key: pip-wdm-asmr-v4
+          key: pip-wdm-asmr-v5
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -81,7 +81,6 @@ jobs:
           opts.add_argument("--no-first-run")
           opts.add_argument("--disable-infobars")
           opts.add_argument("--disable-notifications")
-          opts.add_argument("--disable-translate")
           opts.add_argument("--use-fake-ui-for-media-stream")
           opts.add_argument("--use-fake-device-for-media-stream")
           opts.add_argument("--allow-file-access-from-files")
@@ -97,22 +96,21 @@ jobs:
             service=Service(ChromeDriverManager().install()), options=opts
           )
           driver.set_window_size(390, 844)
-          driver.set_script_timeout(60)
+          driver.set_script_timeout(90)
 
           print(f"Loading file://{html_path}")
           driver.get(f"file://{html_path}")
           time.sleep(2)
 
           driver.execute_script("""
-            if (typeof initAudio === 'function') initAudio();
-            if (typeof AC !== 'undefined' && AC) AC.resume();
+            if (typeof AC !== 'undefined' && AC) AC.resume().catch(()=>{});
           """)
           time.sleep(1)
 
           driver.execute_script("window.startRecording(30);")
-          print("Recording started — waiting ~10s...")
+          print("Recording started — waiting ~22s for page to finish...")
 
-          for _ in range(40):
+          for _ in range(60):
             done = driver.execute_script("return window._recordingDone;")
             if done:
               print("Page signalled done")
@@ -133,10 +131,9 @@ jobs:
           print("Extracting video...")
           b64 = driver.execute_async_script("""
             var done = arguments[0];
-            window.getRecordingBase64().then(done).catch(function(e){ console.error(e); done(null); });
+            window.getRecordingBase64().then(done).catch(function(e){ done(null); });
           """)
           driver.quit()
-          print("Browser closed")
 
           if not b64:
             raise RuntimeError("Failed to get base64")
@@ -162,18 +159,18 @@ jobs:
           print(f"mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
 
           captions = [
-            "follow the circle with your eyes to relax 👁 #asmr #eyerelaxation #calm",
-            "just follow it and breathe 🌀 #relaxation #stressrelief #mindfulness",
-            "let your eyes follow and your mind slow down 💆 #brainwaves #meditation #anxiety",
-            "follow the circle to unwind 👁 #asmr #sleep #mentalhealth",
-            "eyes follow, body relaxes 🌙 #calmdown #relax #binaural",
-            "soft movement for your eyes and mind 🌀 #eyerelaxation #healing #peace",
-            "take 10 seconds and just follow 💙 #asmr #calm #stressrelief",
-            "best thing you can do for your eyes right now 👁 #eyehealth #relax #mindfulness",
-            "follow the light and feel the calm 🌟 #brainwaves #meditation #sleep",
-            "10 seconds of this actually works 💆 #relaxation #asmr #mentalhealth",
-            "let your eyes drift with it 🌀 #calm #binaural #healing",
-            "follow and feel your jaw unclench 😮‍💨 #stressrelief #asmr #relax",
+            "follow the circle with your eyes 👁 alpha waves playing to calm your brain 🎧",
+            "your nervous system needs this 🌀 follow and just breathe... theta waves doing the work 💆",
+            "eye movement + binaural beats = actual relaxation 🧠 just follow 👁",
+            "tried this before bed and knocked out in minutes 💤 follow the ball 🌙",
+            "if you're anxious rn just watch this 👁 your brain slows down on its own 🌀",
+            "the sound tracks where the ball is 🎧 left ear left side right ear right side 👁",
+            "10 seconds of real relaxation 🌀 binaural beats + smooth movement just follow 👁",
+            "follow the ball and do nothing else 👁 theta waves slowing your brain down 💆",
+            "your eyes follow the circle your brain chills 🧠 alpha waves for stress relief 🎧",
+            "follow the light and feel your jaw unclench 😮‍💨 binaural beats in both ears 🌀",
+            "this is EMDR-inspired eye movement therapy 🧠 follow the ball to release tension 👁",
+            "5 minutes of this daily actually changes how stressed you feel 💆 just follow 🌀",
           ]
           description = random.choice(captions)
 
@@ -186,7 +183,6 @@ jobs:
             )
 
           print(f"Facebook: {response.status_code}")
-          print(response.text)
           if response.status_code == 200:
             print(f"Posted! ID: {response.json().get('id')}")
           else:
