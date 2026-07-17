@@ -17,7 +17,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /var/cache/apt/archives
-          key: apt-ubuntu22-asmr-v5
+          key: apt-ubuntu22-asmr-v6
 
       - name: Install dependencies
         run: |
@@ -31,7 +31,7 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.wdm
-          key: pip-wdm-asmr-v5
+          key: pip-wdm-asmr-v6
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -101,14 +101,11 @@ jobs:
           print(f"Loading file://{html_path}")
           driver.get(f"file://{html_path}")
           time.sleep(2)
-
-          driver.execute_script("""
-            if (typeof AC !== 'undefined' && AC) AC.resume().catch(()=>{});
-          """)
+          driver.execute_script("if(typeof AC!=='undefined'&&AC)AC.resume().catch(()=>{});")
           time.sleep(1)
 
           driver.execute_script("window.startRecording(30);")
-          print("Recording started — waiting ~22s for page to finish...")
+          print("Recording started — waiting ~22s...")
 
           for _ in range(60):
             done = driver.execute_script("return window._recordingDone;")
@@ -123,15 +120,14 @@ jobs:
             driver.execute_script("window.forceFinalize();")
             time.sleep(2)
 
-          done = driver.execute_script("return window._recordingDone;")
-          if not done:
+          if not driver.execute_script("return window._recordingDone;"):
             driver.quit()
             raise RuntimeError("Recording failed to finalize")
 
           print("Extracting video...")
           b64 = driver.execute_async_script("""
             var done = arguments[0];
-            window.getRecordingBase64().then(done).catch(function(e){ done(null); });
+            window.getRecordingBase64().then(done).catch(function(){ done(null); });
           """)
           driver.quit()
 
@@ -159,18 +155,21 @@ jobs:
           print(f"mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
 
           captions = [
-            "follow the circle with your eyes 👁 alpha waves playing to calm your brain 🎧",
-            "your nervous system needs this 🌀 follow and just breathe... theta waves doing the work 💆",
-            "eye movement + binaural beats = actual relaxation 🧠 just follow 👁",
-            "tried this before bed and knocked out in minutes 💤 follow the ball 🌙",
-            "if you're anxious rn just watch this 👁 your brain slows down on its own 🌀",
-            "the sound tracks where the ball is 🎧 left ear left side right ear right side 👁",
-            "10 seconds of real relaxation 🌀 binaural beats + smooth movement just follow 👁",
-            "follow the ball and do nothing else 👁 theta waves slowing your brain down 💆",
-            "your eyes follow the circle your brain chills 🧠 alpha waves for stress relief 🎧",
-            "follow the light and feel your jaw unclench 😮‍💨 binaural beats in both ears 🌀",
-            "this is EMDR-inspired eye movement therapy 🧠 follow the ball to release tension 👁",
-            "5 minutes of this daily actually changes how stressed you feel 💆 just follow 🌀",
+            "follow the circle with your eyes and just breathe 👁 #asmr #relax #brainwaves",
+            "your nervous system needs this today 🌀 #stressrelief #asmr #mentalhealth",
+            "eye movement + binaural beats = real relaxation 🧠 #binaural #asmr #anxiety",
+            "tried this before bed and knocked out in minutes 💤 #sleep #asmr #relax",
+            "if you're stressed rn just watch this 👁 #calm #stressrelief #asmr",
+            "the sound follows the ball left and right ear 🎧 #asmr #binaural #relax",
+            "follow the light and feel your jaw unclench 😮‍💨 #asmr #calm #anxiety",
+            "this is emdr-inspired eye movement therapy 🧠 #mentalhealth #asmr #healing",
+            "alpha waves playing while you follow the circle 👁 #brainwaves #asmr #relax",
+            "theta waves slow your brain down naturally 🌙 #theta #binaural #sleep",
+            "follow the ball and do nothing else 👁 #asmr #stressrelief #calm",
+            "5 min of this daily actually changes how stressed you feel 💆 #asmr #mentalhealth #relax",
+            "let your eyes follow and your mind go quiet 🌀 #asmr #meditation #brainwaves",
+            "binaural beats in both ears while you follow 🎧 #binaural #asmr #anxiety",
+            "528hz healing frequency playing right now 🌿 #528hz #healing #asmr",
           ]
           description = random.choice(captions)
 
