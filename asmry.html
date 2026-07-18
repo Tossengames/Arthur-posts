@@ -147,8 +147,10 @@ function drawTrail(trail,r,h,s,l){
 function mkBall(){
   const h=rndInt(0,359),s=rndInt(55,95),l=rndInt(45,72);
   const gh=(h+40)%360,gs=s,gl=Math.min(85,l+18),th=(h+20)%360;
-  const base=Math.min(W,H)*rnd(0.038,0.080);
-  return{h,s,l,gh,gs,gl,th,ts:s,tl:l,base,
+  const ts=s,tl=l;
+  // DOUBLED BALL SIZE
+  const base=Math.min(W,H)*rnd(0.076,0.160);
+  return{h,s,l,gh,gs,gl,th,ts,tl,base,
     pulsing:Math.random()<0.5,minR:base*rnd(0.50,0.78),maxR:base*rnd(1.15,1.60),pulseSpd:rnd(0.04,0.16)};
 }
 function getBR(b,tf){if(!b.pulsing)return b.base;return b.minR+(b.maxR-b.minR)*(0.5+Math.sin(tf*b.pulseSpd)*0.5);}
@@ -162,129 +164,21 @@ const WAVES=[
   {name:'Schumann',help:'Earth resonance',base:185,hz:7.83,pad:[111,166,222]},
 ];
 
-// ─── KEY DESIGN: patterns are OBJECTS not factories ────
-// Each mkPat() call returns a fresh pattern object directly.
-function mkPat(){
-  const type=rndInt(0,6);
-  if(type===0){
-    const cx=rnd(0.25,0.75),cy=rnd(0.25,0.75),rx=rnd(0.14,0.38),ry=rnd(0.12,0.32);
-    const dir=Math.random()<0.5?1:-1,spd=rnd(0.025,0.070);let t=rnd(0,Math.PI*2);
-    return{label:'Circle',ls:rnd(0.10,0.22),getTarget(){t+=spd*dir;return{x:cx+Math.cos(t)*rx,y:cy+Math.sin(t)*ry};}};
-  }
-  if(type===1){
-    const cy=rnd(0.25,0.75),yw=rnd(0.02,0.10),spd=rnd(0.055,0.130);let t=0;
-    return{label:'Side to Side',ls:rnd(0.15,0.30),getTarget(){t+=spd;return{x:0.5+Math.sin(t)*0.44,y:cy+Math.sin(t*2.1)*yw};}};
-  }
-  if(type===2){
-    const cx=rnd(0.25,0.75),xw=rnd(0.02,0.09),spd=rnd(0.055,0.130);let t=0;
-    return{label:'Up Down',ls:rnd(0.15,0.30),getTarget(){t+=spd;return{x:cx+Math.sin(t*1.7)*xw,y:0.5+Math.sin(t)*0.42};}};
-  }
-  if(type===3){
-    const aUp=Math.random()<0.5,gR=Math.random()<0.5,sy=rnd(0.35,0.65),ey=rnd(0.35,0.65),pY=aUp?rnd(0.06,0.22):rnd(0.78,0.94);
-    let t=0;const spd=rnd(0.015,0.045);
-    return{label:'Arch',ls:rnd(0.08,0.20),getTarget(){t=(t+spd)%1;const u=t,sx=gR?0.04:0.96,ex=gR?0.96:0.04,mx=(sx+ex)/2;return{x:(1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex,y:(1-u)*(1-u)*sy+2*(1-u)*u*pY+u*u*ey};}};
-  }
-  if(type===4){
-    const bCX=rnd(0.30,0.70),bCY=rnd(0.30,0.70),bRX=rnd(0.18,0.35),bRY=rnd(0.14,0.28);
-    const bS=rnd(0.012,0.028)*(Math.random()<0.5?1:-1),sR=rnd(0.05,0.14),sS=rnd(0.045,0.130)*(Math.random()<0.5?1:-1);
-    let bT=rnd(0,Math.PI*2),sT=rnd(0,Math.PI*2);
-    return{label:'Orbital',ls:rnd(0.10,0.22),getTarget(){bT+=bS;sT+=sS;return{x:Math.max(0.02,Math.min(0.98,bCX+Math.cos(bT)*bRX+Math.cos(sT)*sR)),y:Math.max(0.02,Math.min(0.98,bCY+Math.sin(bT)*bRY+Math.sin(sT)*sR))};}};
-  }
-  if(type===5){
-    let tx=rnd(0.1,0.9),ty=rnd(0.1,0.9),timer=0,iv=rndInt(3,10);
-    return{label:'Aggressive',ls:rnd(0.28,0.48),getTarget(){timer++;if(timer>=iv){timer=0;iv=rndInt(3,10);tx=rnd(0.05,0.95);ty=rnd(0.05,0.95);}return{x:tx,y:ty};}};
-  }
-  // type===6 figure8
-  let t=rnd(0,Math.PI*2);const spd=rnd(0.04,0.10);
-  return{label:'Figure8',ls:rnd(0.12,0.25),getTarget(){t+=spd;return{x:0.5+Math.sin(t)*0.42,y:0.5+Math.sin(t*2)*0.22};}};
-}
-
-// Half-screen pattern — side: 'left' or 'right'
-function mkHalfPat(side){
-  const xl=side==='left'?0.01:0.51,xh=side==='left'?0.49:0.99,xm=(xl+xh)/2;
-  const cl=x=>Math.max(xl,Math.min(xh,x));
-  const type=rndInt(0,4);
-  if(type===0){
-    const cy=rnd(0.25,0.75),yw=rnd(0.01,0.06),spd=rnd(0.09,0.22);let t=0;
-    return{label:'Side Sweep',ls:rnd(0.28,0.48),getTarget(){t+=spd;return{x:cl(xm+Math.sin(t)*(xh-xm)*0.88),y:cy+Math.sin(t*2)*yw};}};
-  }
-  if(type===1){
-    const cx=cl(rnd(xl+0.04,xh-0.04)),xw=rnd(0.01,0.04),spd=rnd(0.08,0.20);let t=0;
-    return{label:'Up Down',ls:rnd(0.28,0.48),getTarget(){t+=spd;return{x:cl(cx+Math.sin(t*1.5)*xw),y:0.5+Math.sin(t)*0.42};}};
-  }
-  if(type===2){
-    const cx=xm,cy=rnd(0.30,0.70),rx=Math.min((xh-xm)*0.82,0.17),ry=rnd(0.12,0.28);
-    const dir=Math.random()<0.5?1:-1,spd=rnd(0.06,0.14);let t=rnd(0,Math.PI*2);
-    return{label:'Circle',ls:rnd(0.25,0.42),getTarget(){t+=spd*dir;return{x:cl(cx+Math.cos(t)*rx),y:cy+Math.sin(t)*ry};}};
-  }
-  if(type===3){
-    let tx=xm,ty=0.5,timer=0,iv=rndInt(4,14);
-    return{label:'Chaos',ls:rnd(0.28,0.50),getTarget(){timer++;if(timer>=iv){timer=0;iv=rndInt(3,12);tx=cl(rnd(xl+0.02,xh-0.02));ty=rnd(0.05,0.95);}return{x:tx,y:ty};}};
-  }
-  // type===4 arch
-  const aUp=Math.random()<0.5,pY=aUp?rnd(0.06,0.22):rnd(0.78,0.94);let t=0;const spd=rnd(0.025,0.060);
-  return{label:'Arch',ls:rnd(0.22,0.40),getTarget(){t=(t+spd)%1;const u=t,sx=xl+0.03,ex=xh-0.03,mx=(sx+ex)/2;return{x:cl((1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex),y:0.5+Math.sin(u*Math.PI*2)*(aUp?-0.32:0.32)};}};
-}
-
-// Light ball motion object
-function mkLightPat(){
-  const type=rndInt(0,4);
-  const bl=(cx,cy,base)=>{const d=Math.hypot(cx-0.5,cy-0.5);return Math.max(0.05,Math.min(0.95,base*(1.0+(0.70-d)*2.2)));};
-  if(type===0){
-    const bx2=rnd(0.30,0.70),xw=rnd(0.01,0.04),spd=rnd(0.065,0.140);let t=rnd(0,Math.PI*2);const base=rnd(0.10,0.18);
-    return{getTarget(cx,cy){t+=spd;return{x:bx2+Math.sin(t*0.5)*xw,y:0.5+Math.sin(t)*0.48,lerp:bl(cx,cy,base)};}};
-  }
-  if(type===1){
-    const by2=rnd(0.30,0.70),yw=rnd(0.01,0.04),spd=rnd(0.065,0.140);let t=rnd(0,Math.PI*2);const base=rnd(0.10,0.18);
-    return{getTarget(cx,cy){t+=spd;return{x:0.5+Math.sin(t)*0.48,y:by2+Math.sin(t*0.6)*yw,lerp:bl(cx,cy,base)};}};
-  }
-  if(type===2){
-    const ocx=rnd(0.30,0.70),ocy=rnd(0.30,0.70),rx=rnd(0.20,0.40),ry=rnd(0.18,0.36);
-    const dir=Math.random()<0.5?1:-1,spd=rnd(0.040,0.090);let t=rnd(0,Math.PI*2);const base=rnd(0.10,0.18);
-    return{getTarget(cx,cy){t+=spd*dir;return{x:Math.max(0.01,Math.min(0.99,ocx+Math.cos(t)*rx)),y:Math.max(0.01,Math.min(0.99,ocy+Math.sin(t)*ry)),lerp:bl(cx,cy,base)};}};
-  }
-  if(type===3){
-    const aUp=Math.random()<0.5,gR=Math.random()<0.5,sy=rnd(0.30,0.70),ey=rnd(0.30,0.70),pY=aUp?rnd(0.04,0.18):rnd(0.82,0.96);
-    let t=0;const spd=rnd(0.030,0.070);const base=rnd(0.10,0.18);
-    return{getTarget(cx,cy){t=(t+spd)%1;const u=t,sx=gR?0.02:0.98,ex=gR?0.98:0.02,mx=(sx+ex)/2;return{x:(1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex,y:(1-u)*(1-u)*sy+2*(1-u)*u*pY+u*u*ey,lerp:bl(cx,cy,base)};}};
-  }
-  // chaos
-  const wps=[()=>({x:rnd(0.01,0.07),y:rnd(0.05,0.95)}),()=>({x:rnd(0.93,0.99),y:rnd(0.05,0.95)}),()=>({x:rnd(0.05,0.95),y:rnd(0.01,0.07)}),()=>({x:rnd(0.05,0.95),y:rnd(0.93,0.99)}),()=>({x:rnd(0.40,0.60),y:rnd(0.40,0.60)}),()=>({x:rnd(0.10,0.90),y:rnd(0.10,0.90)})];
-  let tx=0.5,ty=0.5,timer=0,iv=rndInt(6,22);const base=rnd(0.12,0.22);
-  return{getTarget(cx,cy){timer++;if(timer>=iv){timer=0;iv=rndInt(5,20);const w=pick(wps)();tx=w.x;ty=w.y;}return{x:tx,y:ty,lerp:bl(cx,cy,base)};}};
-}
-
-// Flash light motion object
-function mkFlashPat(){
-  const type=rndInt(0,3);
-  if(type===0){const spd=rnd(0.04,0.10);let t=rnd(0,Math.PI*2);return{fn(){t+=spd;return{x:0.5+Math.sin(t)*0.44,y:0.50};}};}
-  if(type===1){const spd=rnd(0.04,0.10);let t=rnd(0,Math.PI*2);return{fn(){t+=spd;return{x:0.50,y:0.5+Math.sin(t)*0.40};}};}
-  if(type===2){const spd=rnd(0.04,0.10);let t=rnd(0,Math.PI*2);return{fn(){t+=spd;return{x:0.5+Math.cos(t)*0.38,y:0.5+Math.sin(t)*0.34};}};}
-  const wps=[()=>({x:rnd(0.05,0.95),y:rnd(0.05,0.95)}),()=>({x:rnd(0.02,0.10),y:rnd(0.05,0.95)}),()=>({x:rnd(0.90,0.98),y:rnd(0.05,0.95)})];
-  let tx=0.5,ty=0.5,timer=0,iv=rndInt(15,45);
-  return{fn(){timer++;if(timer>=iv){timer=0;iv=rndInt(12,40);const w=pick(wps)();tx=w.x;ty=w.y;}return{x:tx,y:ty};}};
-}
-
-// UI — only shown when explicitly called, disabled for clean video recording
-function drawUI(l1,l2,wl,dark){
-  // Text overlays disabled — clean video output
-}
+// ─── UI DISABLED (transparent background) ──────────────
+function drawUI(l1,l2,wl,dark){/* DO NOTHING */}
 
 // ─── SCENE 1: SMOOTH FOLLOW ───────────────────────────
 function scene1(){
   const wave=pick(WAVES),b=mkBall(),pat=mkPat();
-  const bgH=rndInt(0,359),bgDark=Math.random()<0.7;
   let tf=0,trail=[];let cx=0.5,cy=0.5,pcx=0.5,pcy=0.5;
   startWhoosh(0.9);startBinaural(wave.base,wave.hz,0.20);startPad(wave.pad,0.050);
-  const bgL=bgDark?rndInt(4,15):rndInt(78,95),bgS=rndInt(20,50);
   return {run(){
     tf++;const tgt=pat.getTarget();pcx=cx;pcy=cy;
     cx+=(tgt.x-cx)*pat.ls;cy+=(tgt.y-cy)*pat.ls;
     const spd=Math.hypot((cx-pcx)*W,(cy-pcy)*H);setWhoosh(cx,spd,0.9);
     trail.push({x:cx*W,y:cy*H});if(trail.length>42)trail.shift();
-    ctx.fillStyle=`hsl(${bgH},${bgS}%,${bgL}%)`;ctx.fillRect(0,0,W,H);
+    ctx.clearRect(0,0,W,H);
     const r=getBR(b,tf);drawTrail(trail,r,b.th,b.ts,b.tl);drawBall(cx*W,cy*H,r,b.h,b.s,b.l,b.gh,b.gs,b.gl);
-    drawUI('👁  Follow the circle','with your eyes to relax',`${wave.name}  ·  ${wave.help}`,bgDark);
   }};
 }
 
@@ -297,7 +191,6 @@ function scene2(){
   const bgPat=mkPat();let bgCx=0.5,bgCy=0.5,bgPcx=0.5,bgPcy=0.5;
   const accel=Math.random()<0.4,accelAmt=rnd(0.002,0.008);let accelDir=1;
   const basePitch=rnd(200,600),baseVol=rnd(0.12,0.30);
-  const bgH=rndInt(0,359),bgDark=Math.random()<0.7,bgS=rndInt(20,50),bgL2=bgDark?rndInt(4,15):rndInt(78,95);
   startWhoosh(0.6);
   return {run(){
     tf++;const r=getBR(b,tf),pad=r;
@@ -310,10 +203,9 @@ function scene2(){
     if(hasBg){const bp=bgPat.getTarget();bgPcx=bgCx;bgPcy=bgCy;bgCx+=(bp.x-bgCx)*0.06;bgCy+=(bp.y-bgCy)*0.06;}
     setWhoosh(cx/W,Math.hypot(vx,vy),0.6);
     trail.push({x:cx,y:cy});if(trail.length>38)trail.shift();
-    ctx.fillStyle=`hsl(${bgH},${bgS}%,${bgL2}%)`;ctx.fillRect(0,0,W,H);
+    ctx.clearRect(0,0,W,H);
     if(hasBg){ctx.save();ctx.globalAlpha=0.35;drawBall(bgCx*W,bgCy*H,getBR(b2,tf),b2.h,70,60,b2.gh,70,75);ctx.restore();}
     drawTrail(trail,r,b.th,b.ts,b.tl);drawBall(cx,cy,r,b.h,b.s,b.l,b.gh,b.gs,b.gl);
-    drawUI('👁  Follow the ball','it will bounce off the edges','',bgDark);
   }};
 }
 
@@ -322,7 +214,6 @@ function scene3(){
   let b=mkBall(),pat=mkPat();
   let patDur=rndInt(600,1800),patTimer=0;
   let cx=0.5,cy=0.5,pcx=0.5,pcy=0.5,scCool=0,lastDX=0,tf=0,trail=[];
-  const bgDark=Math.random()<0.8,bgH=rndInt(0,359),bgS=rndInt(20,50),bgL2=bgDark?rndInt(4,15):rndInt(78,95);
   startWhoosh(0.85);
   return {run(){
     tf++;patTimer++;
@@ -333,9 +224,8 @@ function scene3(){
     const dX=cx>pcx?1:-1;scCool--;
     if(dX!==lastDX&&spd>2.5&&scCool<=0){playScratch(rnd(280,1100),rnd(0.10,0.40));scCool=rndInt(3,10);}
     lastDX=dX;trail.push({x:cx*W,y:cy*H});if(trail.length>38)trail.shift();
-    ctx.fillStyle=`hsl(${bgH},${bgS}%,${bgL2}%)`;ctx.fillRect(0,0,W,H);
+    ctx.clearRect(0,0,W,H);
     const r=getBR(b,tf);drawTrail(trail,r,b.th,b.ts,b.tl);drawBall(cx*W,cy*H,r,b.h,b.s,b.l,b.gh,b.gs,b.gl);
-    drawUI('👁  Watch the movement','let your eyes follow','',bgDark);
   }};
 }
 
@@ -348,7 +238,6 @@ function scene4(){
   let cxR=0.75,cyR=0.5,pcxR=0.75,pcyR=0.5;
   let dxL=0,dxR=0,scL=0,scR=0,tf=0;
   let trailL=[],trailR=[];
-  const bgDark=Math.random()<0.8,bgH=rndInt(0,359),bgS=rndInt(20,50),bgL2=bgDark?rndInt(4,15):rndInt(78,95);
   startWhoosh(0.85);
   return {run(){
     tf++;ptL++;ptR++;
@@ -363,12 +252,11 @@ function scene4(){
     const ndxR=cxR>pcxR?1:-1;scR--;if(ndxR!==dxR&&spdR>2.5&&scR<=0){playScratch(rnd(280,1000),rnd(0.10,0.38),0.85);scR=rndInt(3,10);}dxR=ndxR;
     trailR.push({x:cxR*W,y:cyR*H});if(trailR.length>35)trailR.shift();
     setWhoosh((spdL>spdR?cxL:cxR),Math.max(spdL,spdR),0.85);
-    ctx.fillStyle=`hsl(${bgH},${bgS}%,${bgL2}%)`;ctx.fillRect(0,0,W,H);
+    ctx.clearRect(0,0,W,H);
     ctx.save();ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;ctx.setLineDash([6,10]);ctx.beginPath();ctx.moveTo(CX,0);ctx.lineTo(CX,H);ctx.stroke();ctx.setLineDash([]);ctx.restore();
     const rL=getBR(bL,tf),rR=getBR(bR,tf);
     drawTrail(trailL,rL,bL.th,bL.ts,bL.tl);drawBall(cxL*W,cyL*H,rL,bL.h,bL.s,bL.l,bL.gh,bL.gs,bL.gl);
     drawTrail(trailR,rR,bR.th,bR.ts,bR.tl);drawBall(cxR*W,cyR*H,rR,bR.h,bR.s,bR.l,bR.gh,bR.gs,bR.gl);
-    drawUI('👁  Follow the movements','each side independently','',bgDark);
   }};
 }
 
@@ -376,7 +264,10 @@ function scene4(){
 function scene5(){
   const bH=rndInt(0,359),bS=rndInt(0,100),bL2=rndInt(72,96);
   const half=Math.min(W,H)*0.5,base=half*0.90;
-  let minR=base*rnd(0.70,0.88),maxR=base*rnd(1.08,1.20),pulseSpd=rnd(0.015,0.060),pulsePhase=rnd(0,Math.PI*2);
+  // DOUBLED LIGHT BALL SIZE
+  let minR=base*rnd(1.40,1.76);
+  let maxR=base*rnd(2.16,2.40);
+  let pulseSpd=rnd(0.015,0.060),pulsePhase=rnd(0,Math.PI*2);
   let curM=mkLightPat(),mDur=rndInt(600,1800),mTimer=0;
   let cx=0.5,cy=0.5,pcx=0.5,pcy=0.5,scCool=0,lastDX=0,tf=0;
   startWhoosh(1.0);
@@ -388,13 +279,12 @@ function scene5(){
     setWhoosh(cx,spd,1.0);
     const dX=cx>pcx?1:-1;scCool--;if(dX!==lastDX&&spd>1.5&&scCool<=0){playScratch(rnd(250,900),rnd(0.08,0.35));scCool=rndInt(5,18);}lastDX=dX;
     const r=minR+(maxR-minR)*(0.5+Math.sin(tf*pulseSpd+pulsePhase)*0.5);
-    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+    ctx.clearRect(0,0,W,H);
     const g=ctx.createRadialGradient(bx,by,0,bx,by,r*1.6);
     g.addColorStop(0.00,'rgba(255,255,255,1.00)');g.addColorStop(0.06,'rgba(255,255,255,0.96)');
     g.addColorStop(0.20,`hsla(${bH},${bS}%,${bL2}%,0.90)`);g.addColorStop(0.50,`hsla(${bH},${bS}%,${Math.max(40,bL2-20)}%,0.50)`);
     g.addColorStop(0.82,`hsla(${bH},${bS}%,${Math.max(20,bL2-40)}%,0.14)`);g.addColorStop(1.00,'transparent');
     ctx.fillStyle=g;ctx.beginPath();ctx.arc(bx,by,r*1.6,0,Math.PI*2);ctx.fill();
-    drawUI('👁  Follow the light','let your eyes drift with it','',true);
   }};
 }
 
@@ -434,7 +324,7 @@ function scene6(){
     const tgt=motPat.fn();lx+=(tgt.x-lx)*0.12;ly+=(tgt.y-ly)*0.12;
     if(_wG)_wG.gain.setTargetAtTime(brightness*0.9,AC.currentTime,0.04);
     if(_wP)_wP.pan.setTargetAtTime(Math.max(-1,Math.min(1,lx*2-1)),AC.currentTime,0.04);
-    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+    ctx.clearRect(0,0,W,H);
     if(brightness>0.001){
       const bx=lx*W,by=ly*H,rv=Math.min(W,H)*0.75;
       const g=ctx.createRadialGradient(bx,by,0,bx,by,rv);
@@ -445,28 +335,158 @@ function scene6(){
       ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
       if(brightness>0.5){const hot=ctx.createRadialGradient(bx,by,0,bx,by,Math.min(W,H)*0.22);hot.addColorStop(0,`rgba(255,255,255,${(brightness-0.5)*2*0.88})`);hot.addColorStop(1,'transparent');ctx.fillStyle=hot;ctx.fillRect(0,0,W,H);}
     }
-    drawUI('👁  Watch the light','let your mind relax','',true);
   }};
 }
 
-// ─── SESSION + FADE ───────────────────────────────────
+// ─── PATTERN GENERATORS ──────────────────────────────
+function mkPat(){
+  const type=rndInt(0,6);
+  if(type===0){
+    const cx=rnd(0.25,0.75),cy=rnd(0.25,0.75),rx=rnd(0.14,0.38),ry=rnd(0.12,0.32);
+    const dir=Math.random()<0.5?1:-1,spd=rnd(0.025,0.070);let t=rnd(0,Math.PI*2);
+    return{label:'Circle',ls:rnd(0.10,0.22),getTarget(){t+=spd*dir;return{x:cx+Math.cos(t)*rx,y:cy+Math.sin(t)*ry};}};
+  }
+  if(type===1){
+    const cy=rnd(0.25,0.75),yw=rnd(0.02,0.10),spd=rnd(0.055,0.130);let t=0;
+    return{label:'Side to Side',ls:rnd(0.15,0.30),getTarget(){t+=spd;return{x:0.5+Math.sin(t)*0.44,y:cy+Math.sin(t*2.1)*yw};}};
+  }
+  if(type===2){
+    const cx=rnd(0.25,0.75),xw=rnd(0.02,0.09),spd=rnd(0.055,0.130);let t=0;
+    return{label:'Up Down',ls:rnd(0.15,0.30),getTarget(){t+=spd;return{x:cx+Math.sin(t*1.7)*xw,y:0.5+Math.sin(t)*0.42};}};
+  }
+  if(type===3){
+    const aUp=Math.random()<0.5,gR=Math.random()<0.5,sy=rnd(0.35,0.65),ey=rnd(0.35,0.65),pY=aUp?rnd(0.06,0.22):rnd(0.78,0.94);
+    let t=0;const spd=rnd(0.015,0.045);
+    return{label:'Arch',ls:rnd(0.08,0.20),getTarget(){t=(t+spd)%1;const u=t,sx=gR?0.04:0.96,ex=gR?0.96:0.04,mx=(sx+ex)/2;return{x:(1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex,y:(1-u)*(1-u)*sy+2*(1-u)*u*pY+u*u*ey};}};
+  }
+  if(type===4){
+    const bCX=rnd(0.30,0.70),bCY=rnd(0.30,0.70),bRX=rnd(0.18,0.35),bRY=rnd(0.14,0.28);
+    const bS=rnd(0.012,0.028)*(Math.random()<0.5?1:-1),sR=rnd(0.05,0.14),sS=rnd(0.045,0.130)*(Math.random()<0.5?1:-1);
+    let bT=rnd(0,Math.PI*2),sT=rnd(0,Math.PI*2);
+    return{label:'Orbital',ls:rnd(0.10,0.22),getTarget(){bT+=bS;sT+=sS;return{x:Math.max(0.02,Math.min(0.98,bCX+Math.cos(bT)*bRX+Math.cos(sT)*sR)),y:Math.max(0.02,Math.min(0.98,bCY+Math.sin(bT)*bRY+Math.sin(sT)*sR)};}};
+  }
+  if(type===5){
+    let tx=rnd(0.1,0.9),ty=rnd(0.1,0.9),timer=0,iv=rndInt(3,10);
+    return{label:'Aggressive',ls:rnd(0.28,0.48),getTarget(){timer++;if(timer>=iv){timer=0;iv=rndInt(3,10);tx=rnd(0.05,0.95);ty=rnd(0.05,0.95);}return{x:tx,y:ty};}};
+  }
+  // type===6 figure8
+  let t=rnd(0,Math.PI*2);const spd=rnd(0.04,0.10);
+  return{label:'Figure8',ls:rnd(0.12,0.25),getTarget(){t+=spd;return{x:0.5+Math.sin(t)*0.42,y:0.5+Math.sin(t*2)*0.22};}};
+}
+
+function mkHalfPat(side){
+  const xl=side==='left'?0.01:0.51,xh=side==='left'?0.49:0.99,xm=(xl+xh)/2;
+  const cl=x=>Math.max(xl,Math.min(xh,x));
+  const type=rndInt(0,4);
+  if(type===0){
+    const cy=rnd(0.25,0.75),yw=rnd(0.01,0.06),spd=rnd(0.09,0.22);let t=0;
+    return{label:'Side Sweep',ls:rnd(0.28,0.48),getTarget(){t+=spd;return{x:cl(xm+Math.sin(t)*(xh-xm)*0.88),y:cy+Math.sin(t*2)*yw};}};
+  }
+  if(type===1){
+    const cx=cl(rnd(xl+0.04,xh-0.04)),xw=rnd(0.01,0.04),spd=rnd(0.08,0.20);let t=0;
+    return{label:'Up Down',ls:rnd(0.28,0.48),getTarget(){t+=spd;return{x:cl(cx+Math.sin(t*1.5)*xw),y:0.5+Math.sin(t)*0.42};}};
+  }
+  if(type===2){
+    const cx=xm,cy=rnd(0.30,0.70),rx=Math.min((xh-xm)*0.82,0.17),ry=rnd(0.12,0.28);
+    const dir=Math.random()<0.5?1:-1,spd=rnd(0.06,0.14);let t=rnd(0,Math.PI*2);
+    return{label:'Circle',ls:rnd(0.25,0.42),getTarget(){t+=spd*dir;return{x:cl(cx+Math.cos(t)*rx),y:cy+Math.sin(t)*ry};}};
+  }
+  if(type===3){
+    let tx=xm,ty=0.5,timer=0,iv=rndInt(4,14);
+    return{label:'Chaos',ls:rnd(0.28,0.50),getTarget(){timer++;if(timer>=iv){timer=0;iv=rndInt(3,12);tx=cl(rnd(xl+0.02,xh-0.02));ty=rnd(0.05,0.95);}return{x:tx,y:ty};}};
+  }
+  // type===4 arch
+  const aUp=Math.random()<0.5,pY=aUp?rnd(0.06,0.22):rnd(0.78,0.94);let t=0;const spd=rnd(0.025,0.060);
+  return{label:'Arch',ls:rnd(0.22,0.40),getTarget(){t=(t+spd)%1;const u=t,sx=xl+0.03,ex=xh-0.03,mx=(sx+ex)/2;return{x:cl((1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex),y:0.5+Math.sin(u*Math.PI*2)*(aUp?-0.32:0.32)};}};
+}
+
+function mkLightPat(){
+  const type=rndInt(0,4);
+  const bl=(cx,cy,base)=>{const d=Math.hypot(cx-0.5,cy-0.5);return Math.max(0.05,Math.min(0.95,base*(1.0+(0.70-d)*2.2)));};
+  if(type===0){
+    const bx2=rnd(0.30,0.70),xw=rnd(0.01,0.04),spd=rnd(0.065,0.140);let t=rnd(0,Math.PI*2);const base=rnd(0.10,0.18);
+    return{getTarget(cx,cy){t+=spd;return{x:bx2+Math.sin(t*0.5)*xw,y:0.5+Math.sin(t)*0.48,lerp:bl(cx,cy,base)};}};
+  }
+  if(type===1){
+    const by2=rnd(0.30,0.70),yw=rnd(0.01,0.04),spd=rnd(0.065,0.140);let t=rnd(0,Math.PI*2);const base=rnd(0.10,0.18);
+    return{getTarget(cx,cy){t+=spd;return{x:0.5+Math.sin(t)*0.48,y:by2+Math.sin(t*0.6)*yw,lerp:bl(cx,cy,base)};}};
+  }
+  if(type===2){
+    const ocx=rnd(0.30,0.70),ocy=rnd(0.30,0.70),rx=rnd(0.20,0.40),ry=rnd(0.18,0.36);
+    const dir=Math.random()<0.5?1:-1,spd=rnd(0.040,0.090);let t=rnd(0,Math.PI*2);const base=rnd(0.10,0.18);
+    return{getTarget(cx,cy){t+=spd*dir;return{x:Math.max(0.01,Math.min(0.99,ocx+Math.cos(t)*rx)),y:Math.max(0.01,Math.min(0.99,ocy+Math.sin(t)*ry)),lerp:bl(cx,cy,base)};}};
+  }
+  if(type===3){
+    const aUp=Math.random()<0.5,gR=Math.random()<0.5,sy=rnd(0.30,0.70),ey=rnd(0.30,0.70),pY=aUp?rnd(0.04,0.18):rnd(0.82,0.96);
+    let t=0;const spd=rnd(0.030,0.070);const base=rnd(0.10,0.18);
+    return{getTarget(cx,cy){t=(t+spd)%1;const u=t,sx=gR?0.02:0.98,ex=gR?0.98:0.02,mx=(sx+ex)/2;return{x:(1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex,y:(1-u)*(1-u)*sy+2*(1-u)*u*pY+u*u*ey,lerp:bl(cx,cy,base)};}};
+  }
+  // chaos
+  const wps=[()=>({x:rnd(0.01,0.07),y:rnd(0.05,0.95)}),()=>({x:rnd(0.93,0.99),y:rnd(0.05,0.95)}),()=>({x:rnd(0.05,0.95),y:rnd(0.01,0.07)}),()=>({x:rnd(0.05,0.95),y:rnd(0.93,0.99)}),()=>({x:rnd(0.40,0.60),y:rnd(0.40,0.60)}),()=>({x:rnd(0.10,0.90),y:rnd(0.10,0.90)})];
+  let tx=0.5,ty=0.5,timer=0,iv=rndInt(6,22);const base=rnd(0.12,0.22);
+  return{getTarget(cx,cy){timer++;if(timer>=iv){timer=0;iv=rndInt(5,20);const w=pick(wps)();tx=w.x;ty=w.y;}return{x:tx,y:ty,lerp:bl(cx,cy,base)};}};
+}
+
+function mkFlashPat(){
+  const type=rndInt(0,3);
+  if(type===0){const spd=rnd(0.04,0.10);let t=rnd(0,Math.PI*2);return{fn(){t+=spd;return{x:0.5+Math.sin(t)*0.44,y:0.50};}};}
+  if(type===1){const spd=rnd(0.04,0.10);let t=rnd(0,Math.PI*2);return{fn(){t+=spd;return{x:0.50,y:0.5+Math.sin(t)*0.40};}};}
+  if(type===2){const spd=rnd(0.04,0.10);let t=rnd(0,Math.PI*2);return{fn(){t+=spd;return{x:0.5+Math.cos(t)*0.38,y:0.5+Math.sin(t)*0.34};}};}
+  const wps=[()=>({x:rnd(0.05,0.95),y:rnd(0.05,0.95)}),()=>({x:rnd(0.02,0.10),y:rnd(0.05,0.95)}),()=>({x:rnd(0.90,0.98),y:rnd(0.05,0.95)})];
+  let tx=0.5,ty=0.5,timer=0,iv=rndInt(15,45);
+  return{fn(){timer++;if(timer>=iv){timer=0;iv=rndInt(12,40);const w=pick(wps)();tx=w.x;ty=w.y;}return{x:tx,y:ty};}};
+}
+
+// ─── 3-MINUTE LOOPING SESSION ─────────────────────────
 const SCENE_FNS=[scene1,scene2,scene3,scene4,scene5,scene6];
 let SESSION=null,TF=0,RAF=null;
-const TOTAL_F=20*60,FADE_IN=60,FADE_OUT=90;
+const SCENE_DURATION = 20 * 60; // 20 seconds per scene
+const TOTAL_DURATION = 180 * 60; // 180 seconds = 3 minutes
 
 function startSession(){
   if(RAF){cancelAnimationFrame(RAF);RAF=null;}
   stopBinaural();stopPad();stopWhoosh();TF=0;
-  SESSION=pick(SCENE_FNS)();
+  // Start with a random scene
+  const SceneFn = pick(SCENE_FNS);
+  SESSION = SceneFn();
   loop();
 }
 
 function loop(){
-  RAF=requestAnimationFrame(loop);TF++;
+  RAF=requestAnimationFrame(loop);
+  TF++;
+  
+  // Run current scene
   SESSION.run();
-  if(TF<=FADE_IN){ctx.fillStyle=`rgba(0,0,0,${1-TF/FADE_IN})`;ctx.fillRect(0,0,W,H);}
-  if(TF>=TOTAL_F-FADE_OUT){const a=(TF-(TOTAL_F-FADE_OUT))/FADE_OUT;ctx.fillStyle=`rgba(0,0,0,${Math.min(1,a)})`;ctx.fillRect(0,0,W,H);}
-  if(TF>=TOTAL_F){stopBinaural();stopPad();stopWhoosh();window.stopRecording();cancelAnimationFrame(RAF);RAF=null;}
+  
+  // Check if current scene should end (after 20 seconds)
+  if (TF % SCENE_DURATION === 0 && TF < TOTAL_DURATION) {
+    // Clean up current scene's audio
+    stopWhoosh();
+    stopBinaural();
+    stopPad();
+    
+    // Start a new random scene
+    const SceneFn = pick(SCENE_FNS);
+    SESSION = SceneFn();
+  }
+  
+  // Fade out at the end
+  if (TF >= TOTAL_DURATION - 90) {
+    const a = (TF - (TOTAL_DURATION - 90)) / 90;
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(1, a)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  
+  // Stop at 3 minutes
+  if (TF >= TOTAL_DURATION) {
+    stopBinaural();
+    stopPad();
+    stopWhoosh();
+    window.stopRecording();
+    cancelAnimationFrame(RAF);
+    RAF = null;
+  }
 }
 
 window.addEventListener('DOMContentLoaded',()=>{resize();startSession();});
