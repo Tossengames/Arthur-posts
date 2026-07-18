@@ -17,7 +17,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /var/cache/apt/archives
-          key: apt-ubuntu22-asmr-yt-v3
+          key: apt-ubuntu22-asmr-yt-v5
 
       - name: Install dependencies
         run: |
@@ -31,7 +31,7 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.wdm
-          key: pip-wdm-asmr-yt-v3
+          key: pip-wdm-asmr-yt-v5
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -58,9 +58,6 @@ jobs:
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
           from selenium.webdriver.chrome.service import Service
-          from selenium.webdriver.common.by import By
-          from selenium.webdriver.support.ui import WebDriverWait
-          from selenium.webdriver.support import expected_conditions as EC
           from webdriver_manager.chrome import ChromeDriverManager
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
@@ -78,11 +75,12 @@ jobs:
               else:
                   used_ids = []
               
-              search_terms = ["rain forest nature", "waterfall nature", "river nature", "ocean waves", "forest landscape", "mountains nature", "clouds time lapse", "sunset nature"]
+              # Search terms for nature footage
+              search_terms = ["rain forest nature", "waterfall nature", "river nature", "ocean waves", "forest landscape", "mountains nature", "clouds time lapse", "sunset nature", "nature relaxing", "green nature", "calm nature"]
               random.shuffle(search_terms)
               
               for term in search_terms[:3]:
-                  url = f"https://pixabay.com/api/videos/?key={pixabay_key}&q={term}&per_page=50&video_type=film"
+                  url = f"https://pixabay.com/api/videos/?key={pixabay_key}&q={term}&per_page=50&video_type=film&duration=1,5"
                   try:
                       response = requests.get(url, timeout=30)
                       data = response.json()
@@ -100,7 +98,12 @@ jobs:
                       if video_id in used_ids:
                           continue
                       
-                      if 'audio' not in video or not video.get('audio'):
+                      # Only use videos with audio and under 5 minutes
+                      if not video.get('audio'):
+                          continue
+                      
+                      # Check duration (Pixabay returns duration in seconds)
+                      if video.get('duration', 999) > 300:  # Skip if over 5 minutes
                           continue
                       
                       video_url = None
@@ -111,7 +114,7 @@ jobs:
                       
                       if video_url:
                           video_file = f"/tmp/background_{ts}.mp4"
-                          print(f"Downloading background: {video_url}")
+                          print(f"Downloading background ({video.get('duration', 0)}s): {video_url[:100]}...")
                           try:
                               r = requests.get(video_url, stream=True, timeout=60)
                               with open(video_file, 'wb') as f:
@@ -122,12 +125,13 @@ jobs:
                               with open(used_videos_file, 'w') as f:
                                   json.dump(used_ids, f)
                               
-                              print(f"Downloaded: {video_file}")
-                              return video_file, video.get('audio', False)
-                          except:
+                              print(f"Downloaded: {video_file} ({os.path.getsize(video_file)/1024/1024:.1f} MB)")
+                              return video_file, True
+                          except Exception as e:
+                              print(f"Download failed: {e}")
                               continue
               
-              print("No video found, using generated background")
+              print("No suitable video found, using canvas only")
               return None, False
           
           background_file, has_audio = get_pixabay_video()
@@ -155,7 +159,6 @@ jobs:
           opts.add_argument("--use-fake-ui-for-media-stream")
           opts.add_argument("--use-fake-device-for-media-stream")
           opts.add_argument("--allow-file-access-from-files")
-          opts.add_argument("--remote-debugging-port=9222")
           opts.add_experimental_option("excludeSwitches", ["enable-automation"])
           opts.add_experimental_option("useAutomationExtension", False)
 
@@ -167,7 +170,7 @@ jobs:
               service=service, options=opts
           )
           driver.set_window_size(1920, 1080)
-          driver.set_script_timeout(600)  # 10 minutes timeout
+          driver.set_script_timeout(600)
           driver.implicitly_wait(10)
 
           driver.get(f"file://{html_path}")
@@ -175,55 +178,15 @@ jobs:
           driver.execute_script("if(typeof AC!=='undefined'&&AC)AC.resume().catch(()=>{});")
           time.sleep(2)
 
-          # ─── MODIFY HTML: REMOVE BACKGROUND + DOUBLE BALL SIZE ───
-          driver.execute_script("""
-            // MODIFICATION 1: Remove solid backgrounds (use clearRect instead of fillRect)
-            // Override the drawUI function to not draw background
-            const originalDrawUI = window.drawUI;
-            window.drawUI = function(l1, l2, wl, dark) {
-              // Do nothing - removes text overlays too
-            };
-            
-            // MODIFICATION 2: Double ball sizes globally
-            const originalMkBall = window.mkBall;
-            window.mkBall = function() {
-              const ball = originalMkBall();
-              ball.base = ball.base * 2;
-              ball.minR = ball.minR * 2;
-              ball.maxR = ball.maxR * 2;
-              return ball;
-            };
-            
-            // For Light Ball scene (Scene 5)
-            const originalMkLightPat = window.mkLightPat;
-            window.mkLightPat = function() {
-              const pat = originalMkLightPat();
-              const origGetTarget = pat.getTarget;
-              pat.getTarget = function(cx, cy) {
-                const result = origGetTarget(cx, cy);
-                result.lerp = Math.min(0.95, result.lerp * 2);
-                return result;
-              };
-              return pat;
-            };
-            
-            console.log("✅ HTML modifications applied");
-          """)
+          # ─── START RECORDING ──────────────────────────────
+          driver.execute_script("window.startRecording(30);")
+          print("Recording started (3 minutes with looping scenes + transparent background)...")
 
-          # ─── RECORD TRANSPARENT CANVAS ──────────────────────
-          # Start recording
-          driver.execute_script("""
-            window.startRecording(180);
-            console.log("Recording started...");
-          """)
-          print("Recording started (3 minutes)...")
-
-          # Wait for recording to complete (with progress updates)
-          for i in range(380):  # 190 seconds
+          for i in range(400):  # 200 seconds - enough for 3 min + buffer
               if driver.execute_script("return window._recordingDone;"):
                   print(f"Recording complete at {i*0.5:.1f} seconds")
                   break
-              if i % 20 == 0:  # Every 10 seconds
+              if i % 20 == 0:
                   print(f"Recording in progress... {i*0.5:.1f}s")
               time.sleep(0.5)
           else:
@@ -235,36 +198,35 @@ jobs:
               """)
               time.sleep(3)
 
-          # Check if recording completed
           if not driver.execute_script("return window._recordingDone;"):
               driver.quit()
+              service.stop()
               raise RuntimeError("Recording failed to complete")
 
-          # Get video data with longer timeout
           print("Retrieving video data...")
           b64 = driver.execute_async_script("""
-            var done = arguments[0];
-            var attempts = 0;
-            var maxAttempts = 60;
-            
-            function checkRecording() {
-              if (window._recordingDone && window._rb) {
-                var reader = new FileReader();
-                reader.onload = function() {
-                  done(reader.result.split(',')[1]);
-                };
-                reader.onerror = function() {
+              var done = arguments[0];
+              var attempts = 0;
+              var maxAttempts = 60;
+              
+              function checkRecording() {
+                if (window._recordingDone && window._rb) {
+                  var reader = new FileReader();
+                  reader.onload = function() {
+                    done(reader.result.split(',')[1]);
+                  };
+                  reader.onerror = function() {
+                    done(null);
+                  };
+                  reader.readAsDataURL(window._rb);
+                } else if (attempts < maxAttempts) {
+                  attempts++;
+                  setTimeout(checkRecording, 500);
+                } else {
                   done(null);
-                };
-                reader.readAsDataURL(window._rb);
-              } else if (attempts < maxAttempts) {
-                attempts++;
-                setTimeout(checkRecording, 500);
-              } else {
-                done(null);
+                }
               }
-            }
-            checkRecording();
+              checkRecording();
           """)
           
           driver.quit()
@@ -279,7 +241,6 @@ jobs:
           print(f"Video data saved: {os.path.getsize(webm_file)/1024/1024:.1f} MB")
 
           # ─── ENCODE TRANSPARENT VIDEO ───────────────────────
-          # First check if webm is valid
           if os.path.getsize(webm_file) < 10000:
               raise RuntimeError("Video file too small - likely corrupt")
 
@@ -338,14 +299,13 @@ jobs:
                   
                   print(f"Final video ready: {os.path.getsize(final_output)/1024/1024:.1f} MB")
                   os.remove(background_file)
-              except:
-                  print("Background overlay failed, using canvas only")
+              except Exception as e:
+                  print(f"Background overlay failed: {e}, using canvas only")
                   final_output = mp4_file
           else:
-              print("No background found, using canvas only")
+              print("No suitable background found, using canvas only")
               final_output = mp4_file
 
-          # Clean up mp4 if final is different
           if final_output != mp4_file and os.path.exists(mp4_file):
               os.remove(mp4_file)
 
