@@ -1,0 +1,213 @@
+name: 🧠 Post ASMR to YouTube landscape
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * *"
+
+jobs:
+  record:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache apt
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ubuntu22-asmr-yt-v1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.wdm
+          key: pip-wdm-asmr-yt-v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install selenium webdriver-manager requests google-auth google-auth-oauthlib google-api-python-client
+
+      - name: Set timestamp
+        run: echo "TS=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
+
+      - name: Start virtual display and audio
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 -ac &
+          pulseaudio --start --exit-idle-time=-1 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+          sleep 3
+
+      - name: Record and Post to YouTube
+        run: |
+          python3 << 'PYEOF'
+          import os, time, subprocess, random, base64
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.chrome.service import Service
+          from webdriver_manager.chrome import ChromeDriverManager
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+          from google.oauth2.credentials import Credentials
+
+          ts       = os.environ.get("TS", "test")
+          webm_file = f"/tmp/asmr_{ts}.webm"
+          mp4_file  = f"/tmp/asmr_{ts}.mp4"
+          html_path = os.path.abspath("asmr.html")
+
+          opts = Options()
+          opts.add_argument("--no-sandbox")
+          opts.add_argument("--disable-dev-shm-usage")
+          opts.add_argument("--disable-gpu")
+          opts.add_argument("--window-size=1920,1080")
+          opts.add_argument("--window-position=0,0")
+          opts.add_argument("--force-device-scale-factor=1")
+          opts.add_argument("--autoplay-policy=no-user-gesture-required")
+          opts.add_argument("--disable-background-timer-throttling")
+          opts.add_argument("--disable-renderer-backgrounding")
+          opts.add_argument("--disable-backgrounding-occluded-windows")
+          opts.add_argument("--no-first-run")
+          opts.add_argument("--disable-infobars")
+          opts.add_argument("--disable-notifications")
+          opts.add_argument("--use-fake-ui-for-media-stream")
+          opts.add_argument("--use-fake-device-for-media-stream")
+          opts.add_argument("--allow-file-access-from-files")
+          opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+          opts.add_experimental_option("useAutomationExtension", False)
+
+          print("Starting Chrome 1920x1080...")
+          driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()), options=opts
+          )
+          driver.set_window_size(1920, 1080)
+          driver.set_script_timeout(90)
+
+          print(f"Loading file://{html_path}")
+          driver.get(f"file://{html_path}")
+          time.sleep(2)
+          driver.execute_script("if(typeof AC!=='undefined'&&AC)AC.resume().catch(()=>{});")
+          time.sleep(1)
+
+          driver.execute_script("window.startRecording(30);")
+          print("Recording started — waiting ~22s...")
+
+          for _ in range(60):
+            done = driver.execute_script("return window._recordingDone;")
+            if done:
+              print("Page signalled done")
+              break
+            time.sleep(0.5)
+          else:
+            print("Timeout — force finalizing")
+            driver.execute_script("window.stopRecording();")
+            time.sleep(2)
+            driver.execute_script("window.forceFinalize();")
+            time.sleep(2)
+
+          if not driver.execute_script("return window._recordingDone;"):
+            driver.quit()
+            raise RuntimeError("Recording failed to finalize")
+
+          print("Extracting video...")
+          b64 = driver.execute_async_script("""
+            var done = arguments[0];
+            window.getRecordingBase64().then(done).catch(function(){ done(null); });
+          """)
+          driver.quit()
+
+          if not b64:
+            raise RuntimeError("Failed to get base64")
+
+          with open(webm_file, 'wb') as f:
+            f.write(base64.b64decode(b64))
+          print(f"Webm: {os.path.getsize(webm_file)/1024/1024:.1f} MB")
+
+          print("Converting to mp4 1920x1080...")
+          result = subprocess.run([
+            "ffmpeg", "-y", "-i", webm_file,
+            "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+            "-pix_fmt", "yuv420p", "-vf", "scale=1920:1080:flags=lanczos",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+            "-movflags", "+faststart", mp4_file
+          ], capture_output=True, text=True)
+
+          if not os.path.exists(mp4_file) or os.path.getsize(mp4_file) < 10000:
+            print("ffmpeg stderr:", result.stderr[-2000:])
+            raise RuntimeError("mp4 conversion failed")
+
+          os.remove(webm_file)
+          print(f"mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
+
+          titles = [
+            "Follow the circle with your eyes to relax | binaural beats asmr",
+            "ASMR eye movement therapy | alpha waves for stress relief",
+            "binaural beats + eye tracking | relax your nervous system",
+            "ASMR eye relaxation | theta waves for deep calm",
+            "follow the light | 528hz healing frequency asmr",
+            "eye movement relaxation | binaural beats to calm anxiety",
+            "ASMR bilateral stimulation | alpha waves 10hz",
+            "follow the ball with your eyes | theta waves sleep",
+          ]
+          descriptions = [
+            "follow the circle with your eyes and just breathe 👁 alpha waves playing in the background to calm your brain 🎧\n\n#asmr #relax #brainwaves #binaural #stressrelief",
+            "your nervous system needs this 🌀 follow the ball and breathe... theta waves doing the work 💆\n\n#asmr #theta #binaural #anxiety #mentalhealth",
+            "eye movement + binaural beats = actual relaxation 🧠 follow the circle and feel your shoulders drop 👁\n\n#asmr #binaural #relax #calm #stressrelief",
+            "tried this before bed and knocked out in minutes 💤 alpha waves + eye tracking\n\n#asmr #sleep #brainwaves #relax #insomnia",
+            "follow the light and feel your jaw unclench 😮‍💨 binaural beats in both ears 🎧\n\n#asmr #calm #anxiety #binaural #healing",
+            "this is emdr-inspired eye movement therapy 🧠 follow the ball to release tension 👁\n\n#asmr #mentalhealth #emdr #brainwaves #healing",
+          ]
+
+          title = random.choice(titles)
+          description = random.choice(descriptions)
+
+          print("Uploading to YouTube...")
+          creds = Credentials(
+            token=os.environ.get("YT_ACCESS_TOKEN"),
+            refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.environ.get("YT_CLIENT_ID"),
+            client_secret=os.environ.get("YT_CLIENT_SECRET"),
+          )
+          youtube = build("youtube", "v3", credentials=creds)
+          request = youtube.videos().insert(
+            part="snippet,status",
+            body={
+              "snippet": {
+                "title": title,
+                "description": description,
+                "tags": ["asmr","binaural beats","relax","stress relief","eye relaxation","alpha waves","theta waves","brainwaves","calm","anxiety relief"],
+                "categoryId": "22"
+              },
+              "status": {"privacyStatus": "public"}
+            },
+            media_body=MediaFileUpload(mp4_file, mimetype="video/mp4", resumable=True)
+          )
+          response = None
+          while response is None:
+            status, response = request.next_chunk()
+            if status:
+              print(f"Upload {int(status.progress()*100)}%")
+
+          print(f"Done! YouTube video ID: {response['id']}")
+          os.remove(mp4_file)
+          PYEOF
+        env:
+          TS:               ${{ env.TS }}
+          DISPLAY:          ":99"
+          YT_ACCESS_TOKEN:  ${{ secrets.YT_ACCESS_TOKEN }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_CLIENT_ID:     ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
