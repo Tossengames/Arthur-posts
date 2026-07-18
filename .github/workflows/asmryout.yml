@@ -17,39 +17,28 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y \
-            xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio \
-            x11-utils x11-xserver-utils mesa-utils
+            ffmpeg \
+            pulseaudio \
+            xvfb
           echo "✅ Dependencies installed"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Puppeteer
+        run: |
+          npm install puppeteer
+          echo "✅ Puppeteer installed"
 
       - name: Install Python deps
         run: |
-          pip install selenium webdriver-manager requests google-auth google-auth-oauthlib google-api-python-client
+          pip install requests google-auth google-auth-oauthlib google-api-python-client
           echo "✅ Python deps installed"
 
       - name: Set timestamp
         run: echo "TS=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
-
-      - name: Verify asmr.html exists
-        run: |
-          ls -la asmr.html || echo "❌ asmr.html NOT FOUND in repo root"
-          echo "✅ File check done"
-
-      - name: Start virtual display and audio
-        run: |
-          # Kill any existing Xvfb
-          pkill Xvfb || true
-          pkill pulseaudio || true
-          
-          # Start Xvfb with proper configuration
-          Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +extension RANDR &
-          sleep 3
-          
-          # Start pulseaudio
-          pulseaudio --start --exit-idle-time=-1 || true
-          sleep 2
-          
-          echo "DISPLAY=:99" >> $GITHUB_ENV
-          echo "✅ Display and audio started"
 
       - name: Download Pixabay nature footage
         run: |
@@ -86,7 +75,6 @@ jobs:
             print("❌ No results from Pixabay")
             sys.exit(1)
 
-          # Prefer short clips, fallback to any
           short = [h for h in hits if h.get("duration", 999) < 180]
           hits = short[:10] if short else hits[:5]
           hit = random.choice(hits)
@@ -141,136 +129,115 @@ jobs:
         env:
           PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
 
-      - name: Record ASMR canvas
+      - name: Record canvas with Puppeteer
         run: |
-          python3 << 'PYEOF'
-          import os, time, base64, sys
-          from selenium import webdriver
-          from selenium.webdriver.chrome.options import Options
-          from selenium.webdriver.chrome.service import Service
-          from webdriver_manager.chrome import ChromeDriverManager
+          node << 'NODEEOF'
+          const puppeteer = require('puppeteer');
+          const fs = require('fs');
+          const path = require('path');
 
-          html_path = os.path.abspath("asmr.html")
-          if not os.path.exists(html_path):
-            print(f"❌ asmr.html not found at {html_path}")
-            sys.exit(1)
-          print(f"✅ Found: {html_path}")
+          (async () => {
+            console.log('🚀 Launching browser...');
+            
+            const browser = await puppeteer.launch({
+              headless: 'new',
+              args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--window-size=1920,1080',
+                '--autoplay-policy=no-user-gesture-required',
+                '--use-fake-ui-for-media-stream',
+                '--use-fake-device-for-media-stream',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process'
+              ]
+            });
 
-          webm_file = "/tmp/asmr_canvas.webm"
+            const page = await browser.newPage();
+            await page.setViewport({ width: 1920, height: 1080 });
+            
+            const htmlPath = path.resolve('asmr.html');
+            console.log(`📄 Loading: file://${htmlPath}`);
+            
+            await page.goto(`file://${htmlPath}`, { waitUntil: 'networkidle0' });
+            await page.waitForTimeout(3000);
 
-          opts = Options()
-          opts.add_argument("--no-sandbox")
-          opts.add_argument("--disable-dev-shm-usage")
-          opts.add_argument("--disable-gpu")
-          opts.add_argument("--window-size=1920,1080")
-          opts.add_argument("--window-position=0,0")
-          opts.add_argument("--force-device-scale-factor=1")
-          opts.add_argument("--autoplay-policy=no-user-gesture-required")
-          opts.add_argument("--disable-background-timer-throttling")
-          opts.add_argument("--disable-renderer-backgrounding")
-          opts.add_argument("--disable-backgrounding-occluded-windows")
-          opts.add_argument("--no-first-run")
-          opts.add_argument("--disable-infobars")
-          opts.add_argument("--disable-notifications")
-          opts.add_argument("--use-fake-ui-for-media-stream")
-          opts.add_argument("--use-fake-device-for-media-stream")
-          opts.add_argument("--allow-file-access-from-files")
-          opts.add_argument("--disable-web-security")
-          opts.add_argument("--disable-features=IsolateOrigins,site-per-process")
-          opts.add_experimental_option("excludeSwitches", ["enable-automation"])
-          opts.add_experimental_option("useAutomationExtension", False)
+            // Start the recording
+            console.log('🎬 Starting recording...');
+            await page.evaluate(() => {
+              window.startRecording(30);
+            });
 
-          print("🚀 Starting Chrome...")
-          driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
-          driver.set_window_size(1920, 1080)
-          driver.set_script_timeout(180)
-
-          print(f"📄 Loading file://{html_path}")
-          driver.get(f"file://{html_path}")
-          time.sleep(5)
-          
-          # Check if audio context is working
-          print("🔊 Checking audio...")
-          audio_ok = driver.execute_script("""
-            try {
-              var ac = new (window.AudioContext || window.webkitAudioContext)();
-              ac.resume();
-              return ac.state === 'running';
-            } catch(e) {
-              return false;
+            // Wait for recording to complete (120 seconds)
+            console.log('⏳ Recording for 120 seconds...');
+            let elapsed = 0;
+            while (elapsed < 125) {
+              await page.waitForTimeout(1000);
+              elapsed++;
+              if (elapsed % 10 === 0) {
+                console.log(`  ${elapsed}s elapsed`);
+              }
+              
+              const done = await page.evaluate(() => window._recordingDone || false);
+              if (done) {
+                console.log(`✅ Recording complete at ${elapsed}s`);
+                break;
+              }
             }
-          """)
-          print(f"Audio state: {audio_ok}")
 
-          print("🎬 Starting recording...")
-          driver.execute_script("window.startRecording(30);")
-          time.sleep(2)
-
-          print("⏳ Recording for 120 seconds...")
-          for i in range(240):  # 120 seconds at 0.5s intervals
-            done = driver.execute_script("return window._recordingDone;")
-            if done:
-              print(f"✅ Recording complete after {i*0.5:.0f}s")
-              break
-            if i % 20 == 0:
-              print(f"  Still recording... {i*0.5:.0f}s elapsed")
-            time.sleep(0.5)
-          else:
-            print("⏰ Timeout — forcing finalize")
-            driver.execute_script("window.stopRecording();")
-            time.sleep(3)
-            driver.execute_script("window.forceFinalize();")
-            time.sleep(2)
-
-          # Verify recording is done
-          if not driver.execute_script("return window._recordingDone;"):
-            print("❌ Recording failed to finalize")
-            driver.quit()
-            sys.exit(1)
-
-          print("📦 Extracting video data...")
-          b64 = driver.execute_async_script("""
-            var done = arguments[0];
-            if (window.getRecordingBase64) {
-              window.getRecordingBase64().then(done).catch(function(e){ 
-                console.error(e); 
-                done(null); 
+            // Force stop if not done
+            if (!await page.evaluate(() => window._recordingDone)) {
+              console.log('⏰ Force stopping recording...');
+              await page.evaluate(() => {
+                window.stopRecording();
+                window.forceFinalize();
               });
-            } else {
-              done(null);
+              await page.waitForTimeout(3000);
             }
-          """)
-          driver.quit()
-          print("🖥️  Browser closed")
 
-          if not b64 or len(b64) < 1000:
-            print(f"❌ No valid video data returned (length: {len(b64) if b64 else 0})")
-            sys.exit(1)
+            // Extract video data
+            console.log('📦 Extracting video...');
+            const b64 = await page.evaluate(async () => {
+              if (window.getRecordingBase64) {
+                return await window.getRecordingBase64();
+              }
+              return null;
+            });
 
-          with open(webm_file, "wb") as f:
-            f.write(base64.b64decode(b64))
-          size = os.path.getsize(webm_file)
-          print(f"✅ Canvas webm: {size/1024/1024:.1f} MB")
-          if size < 10000:
-            print("❌ Webm too small — recording likely empty")
-            sys.exit(1)
-          PYEOF
-        env:
-          DISPLAY: ":99"
+            await browser.close();
+
+            if (!b64 || b64.length < 1000) {
+              console.error(`❌ No video data (length: ${b64 ? b64.length : 0})`);
+              process.exit(1);
+            }
+
+            const buffer = Buffer.from(b64, 'base64');
+            fs.writeFileSync('/tmp/asmr_canvas.webm', buffer);
+            
+            const size = fs.statSync('/tmp/asmr_canvas.webm').size;
+            console.log(`✅ Canvas video: ${(size/1024/1024).toFixed(1)} MB`);
+            
+            if (size < 10000) {
+              console.error('❌ Video too small');
+              process.exit(1);
+            }
+          })();
+          NODEEOF
 
       - name: Merge canvas over nature footage
         run: |
           python3 << 'PYEOF'
           import subprocess, os, sys
 
-          # Check if files exist
           for f in ["/tmp/nature_bg.mp4", "/tmp/asmr_canvas.webm"]:
             if not os.path.exists(f):
-              print(f"❌ Missing file: {f}")
+              print(f"❌ Missing: {f}")
               sys.exit(1)
-            print(f"✅ {f} exists ({os.path.getsize(f)/1024/1024:.1f} MB)")
+            print(f"✅ {f}: {os.path.getsize(f)/1024/1024:.1f} MB")
 
-          print("🎬 Merging canvas over nature footage...")
+          print("🎬 Merging...")
           result = subprocess.run([
             "ffmpeg", "-y",
             "-i", "/tmp/nature_bg.mp4",
@@ -295,10 +262,6 @@ jobs:
           if result.returncode != 0:
             print(f"❌ Merge failed:\n{result.stderr[-3000:]}")
             sys.exit(1)
-
-          for f in ["/tmp/nature_bg.mp4", "/tmp/asmr_canvas.webm"]:
-            try: os.remove(f)
-            except: pass
 
           size = os.path.getsize("/tmp/final_asmr.mp4")
           print(f"✅ Final video: {size/1024/1024:.1f} MB")
