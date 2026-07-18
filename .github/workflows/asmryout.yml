@@ -1,9 +1,9 @@
-name: 🧠 Post ASMR to YouTube landscape
+name: 🧠 Post ASMR YouTube Landscape to Facebook
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 9 * * *"
+    - cron: "0 10 * * 0"  # Sunday at 10:00 AM UTC
 
 jobs:
   record:
@@ -17,7 +17,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /var/cache/apt/archives
-          key: apt-ubuntu22-asmr-yt-v1
+          key: apt-ubuntu22-asmr-yt-v2
 
       - name: Install dependencies
         run: |
@@ -31,7 +31,7 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.wdm
-          key: pip-wdm-asmr-yt-v1
+          key: pip-wdm-asmr-yt-v2
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -39,7 +39,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install Python deps
-        run: pip install selenium webdriver-manager requests google-auth google-auth-oauthlib google-api-python-client
+        run: pip install selenium webdriver-manager google-auth google-auth-oauthlib google-api-python-client
 
       - name: Set timestamp
         run: echo "TS=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
@@ -51,7 +51,7 @@ jobs:
           echo "DISPLAY=:99" >> $GITHUB_ENV
           sleep 3
 
-      - name: Record and Post to YouTube
+      - name: Record and Upload to YouTube
         run: |
           python3 << 'PYEOF'
           import os, time, subprocess, random, base64
@@ -63,10 +63,10 @@ jobs:
           from googleapiclient.http import MediaFileUpload
           from google.oauth2.credentials import Credentials
 
-          ts       = os.environ.get("TS", "test")
+          ts        = os.environ.get("TS", "test")
           webm_file = f"/tmp/asmr_{ts}.webm"
           mp4_file  = f"/tmp/asmr_{ts}.mp4"
-          html_path = os.path.abspath("asmr.html")
+          html_path = os.path.abspath("asmry.html")
 
           opts = Options()
           opts.add_argument("--no-sandbox")
@@ -95,23 +95,19 @@ jobs:
           driver.set_window_size(1920, 1080)
           driver.set_script_timeout(90)
 
-          print(f"Loading file://{html_path}")
           driver.get(f"file://{html_path}")
           time.sleep(2)
           driver.execute_script("if(typeof AC!=='undefined'&&AC)AC.resume().catch(()=>{});")
           time.sleep(1)
 
-          driver.execute_script("window.startRecording(30);")
-          print("Recording started — waiting ~22s...")
+          # RECORD FOR 3 MINUTES (180 seconds)
+          driver.execute_script("window.startRecording(180);")
+          print("Recording started (3 minutes)...")
 
-          for _ in range(60):
-            done = driver.execute_script("return window._recordingDone;")
-            if done:
-              print("Page signalled done")
-              break
+          for _ in range(360):  # Check every 0.5s, 360 checks = 3 minutes
+            if driver.execute_script("return window._recordingDone;"): break
             time.sleep(0.5)
           else:
-            print("Timeout — force finalizing")
             driver.execute_script("window.stopRecording();")
             time.sleep(2)
             driver.execute_script("window.forceFinalize();")
@@ -119,9 +115,8 @@ jobs:
 
           if not driver.execute_script("return window._recordingDone;"):
             driver.quit()
-            raise RuntimeError("Recording failed to finalize")
+            raise RuntimeError("Recording failed")
 
-          print("Extracting video...")
           b64 = driver.execute_async_script("""
             var done = arguments[0];
             window.getRecordingBase64().then(done).catch(function(){ done(null); });
@@ -129,49 +124,1025 @@ jobs:
           driver.quit()
 
           if not b64:
-            raise RuntimeError("Failed to get base64")
+            raise RuntimeError("No video data")
 
           with open(webm_file, 'wb') as f:
             f.write(base64.b64decode(b64))
-          print(f"Webm: {os.path.getsize(webm_file)/1024/1024:.1f} MB")
 
-          print("Converting to mp4 1920x1080...")
-          result = subprocess.run([
+          subprocess.run([
             "ffmpeg", "-y", "-i", webm_file,
             "-c:v", "libx264", "-preset", "slow", "-crf", "16",
             "-pix_fmt", "yuv420p", "-vf", "scale=1920:1080:flags=lanczos",
             "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
             "-movflags", "+faststart", mp4_file
-          ], capture_output=True, text=True)
-
-          if not os.path.exists(mp4_file) or os.path.getsize(mp4_file) < 10000:
-            print("ffmpeg stderr:", result.stderr[-2000:])
-            raise RuntimeError("mp4 conversion failed")
-
+          ], check=True)
           os.remove(webm_file)
-          print(f"mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
+          print(f"mp4 ready: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
 
-          titles = [
-            "Follow the circle with your eyes to relax | binaural beats asmr",
-            "ASMR eye movement therapy | alpha waves for stress relief",
-            "binaural beats + eye tracking | relax your nervous system",
-            "ASMR eye relaxation | theta waves for deep calm",
-            "follow the light | 528hz healing frequency asmr",
-            "eye movement relaxation | binaural beats to calm anxiety",
-            "ASMR bilateral stimulation | alpha waves 10hz",
-            "follow the ball with your eyes | theta waves sleep",
-          ]
-          descriptions = [
-            "follow the circle with your eyes and just breathe 👁 alpha waves playing in the background to calm your brain 🎧\n\n#asmr #relax #brainwaves #binaural #stressrelief",
-            "your nervous system needs this 🌀 follow the ball and breathe... theta waves doing the work 💆\n\n#asmr #theta #binaural #anxiety #mentalhealth",
-            "eye movement + binaural beats = actual relaxation 🧠 follow the circle and feel your shoulders drop 👁\n\n#asmr #binaural #relax #calm #stressrelief",
-            "tried this before bed and knocked out in minutes 💤 alpha waves + eye tracking\n\n#asmr #sleep #brainwaves #relax #insomnia",
-            "follow the light and feel your jaw unclench 😮‍💨 binaural beats in both ears 🎧\n\n#asmr #calm #anxiety #binaural #healing",
-            "this is emdr-inspired eye movement therapy 🧠 follow the ball to release tension 👁\n\n#asmr #mentalhealth #emdr #brainwaves #healing",
+          videos = [
+            {
+              "title": "EMDR Rapid Eye Movement Therapy ⚡ (Fast Bilateral Stimulation)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Brain Stimulation 🧠 (Follow the Fast Light)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Therapy for Anxiety Relief 🌿 (Intense Eye Movement Session)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Stop Overthinking Instantly 🧠 (Rapid EMDR Eye Tracking)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Fast EMDR Session 🔥 (Bilateral Stimulation for Stress Relief)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Eye Movement Therapy 👁️ (Follow the Fast Ball)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Rapid Processing ⚡ (Heal Trauma with Eye Movement)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Brain Hemisphere Balancing 🧠 (Bilateral Stimulation Music)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Light Bar Therapy 💫 (Fast Visual Stimulation)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Rapid Bilateral Stimulation 🔥 (EMDR at Home)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Eye Movement for Panic 🏃 (Fast + Intense)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Brainwave Entrainment 🧠 (Follow the Rhythm)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Trauma Processing ⚡ (Rapid Eye Movement Session)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Fast Bilateral Stimulation Therapy 👁️ (Reset Your Nervous System)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR for PTSD Relief 🌿 (Intense Bilateral Eye Movement)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Brain Synchronization 🧠 (EMDR Bilateral Stimulation)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Rapid EMDR Eye Tracking ⚡ (Follow the Fast Light)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Stimulation for Anxiety 🔥 (Fast + Effective)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Rapid Processing Session 💫 (Heal Trauma Fast)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Brain Training 🧠 (EMDR Eye Movement Therapy)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Light Therapy 🔦 (Fast Bilateral Stimulation)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Rapid Bilateral Eye Movement 👁️ (EMDR at Home)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR for Overthinking 🧠 (Fast Bilateral Stimulation)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Stimulation Music 🎵 (EMDR Therapy Session)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Rapid Eye Movement ⚡ (Follow the Fast Ball)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Brain Activation 🧠 (Heal with Eye Movement)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Therapy for Stress Relief 🌿 (Fast Bilateral Session)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Rapid EMDR Processing 🔥 (Trauma Healing at Home)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Stimulation for Sleep 😴 (EMDR Eye Movement)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Light Bar Rapid Session 💫 (Follow the Fast Light)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Brain Hemispheres 🧠 (EMDR Eye Tracking)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR for Panic Attacks ⚡ (Rapid Bilateral Stimulation)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Fast Bilateral Eye Movement 🔥 (EMDR Therapy Session)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Rapid Processing Music 🎵 (Bilateral Stimulation)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Stimulation for Trauma 🌿 (Follow the Light)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Rapid Eye Tracking 👁️ (Heal Fast)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Brain Reset 🧠 (EMDR Therapy at Home)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Light Therapy Session 💫 (Fast Bilateral Stimulation)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Rapid Bilateral Eye Movement Therapy ⚡ (EMDR)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR for Anxiety and Stress 🔥 (Fast Bilateral Session)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Stimulation for Mental Health 🌿 (Follow the Ball)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Rapid Processing Light Bar 💫 (Heal Fast)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Brain Entrainment 🧠 (EMDR Eye Movement)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR for Trauma Relief ⚡ (Rapid Bilateral Session)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Fast Bilateral Stimulation Therapy 👁️ (EMDR at Home)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Rapid Eye Movement Music 🎵 (Follow the Rhythm)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Stimulation for Overthinking 🧠 (EMDR Therapy)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR Rapid Processing 🌿 (Heal with Eye Movement)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "Bilateral Brain Stimulation ⚡ (EMDR Light Therapy)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            },
+            {
+              "title": "EMDR for Stress Relief 🔥 (Fast Bilateral Eye Movement)",
+              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+
+          🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
+          🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
+          🔹 Use headphones for the best binaural experience 🎧
+
+          ⚡ WHY BILATERAL STIMULATION WORKS:
+          - Activates parasympathetic nervous system (rest & digest)
+          - Reduces amygdala activity (fear center)
+          - Helps break anxious thought patterns
+          - Promotes emotional regulation
+
+          💬 How do you feel after watching? Comment below!
+
+          👇 SUBSCRIBE for daily EMDR therapy sessions
+
+          #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
+            }
           ]
 
-          title = random.choice(titles)
-          description = random.choice(descriptions)
+          video = random.choice(videos)
 
           print("Uploading to YouTube...")
           creds = Credentials(
@@ -186,12 +1157,17 @@ jobs:
             part="snippet,status",
             body={
               "snippet": {
-                "title": title,
-                "description": description,
-                "tags": ["asmr","binaural beats","relax","stress relief","eye relaxation","alpha waves","theta waves","brainwaves","calm","anxiety relief"],
-                "categoryId": "22"
+                "title": video["title"],
+                "description": video["description"],
+                "tags": ["emdr","bilateral stimulation","eye movement therapy","anxiety relief","trauma healing","rapid emdr","brain hemispheres","stress relief","asmr","mental health","nervous system reset","panic attack relief","bilateral beats","overthinking","calm mind","healing frequency","brainwave entrainment","emdr therapy","bilateral music","mindfulness","meditation","trauma processing","ptsd recovery","mental wellness","relaxation","fast emdr","bilateral eye movement","emdr at home","emdr light therapy","brain synchronization"],
+                "categoryId": "22",
+                "defaultLanguage": "en"
               },
-              "status": {"privacyStatus": "public"}
+              "status": {
+                "privacyStatus": "public",
+                "madeForKids": False,
+                "selfDeclaredMadeForKids": False
+              }
             },
             media_body=MediaFileUpload(mp4_file, mimetype="video/mp4", resumable=True)
           )
@@ -201,7 +1177,7 @@ jobs:
             if status:
               print(f"Upload {int(status.progress()*100)}%")
 
-          print(f"Done! YouTube video ID: {response['id']}")
+          print(f"Done! Video ID: {response['id']}")
           os.remove(mp4_file)
           PYEOF
         env:
