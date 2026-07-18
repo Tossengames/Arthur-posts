@@ -148,7 +148,6 @@ function mkBall(){
   const h=rndInt(0,359),s=rndInt(55,95),l=rndInt(45,72);
   const gh=(h+40)%360,gs=s,gl=Math.min(85,l+18),th=(h+20)%360;
   const ts=s,tl=l;
-  // DOUBLED BALL SIZE
   const base=Math.min(W,H)*rnd(0.076,0.160);
   return{h,s,l,gh,gs,gl,th,ts,tl,base,
     pulsing:Math.random()<0.5,minR:base*rnd(0.50,0.78),maxR:base*rnd(1.15,1.60),pulseSpd:rnd(0.04,0.16)};
@@ -164,10 +163,9 @@ const WAVES=[
   {name:'Schumann',help:'Earth resonance',base:185,hz:7.83,pad:[111,166,222]},
 ];
 
-// ─── UI DISABLED (transparent background) ──────────────
-function drawUI(l1,l2,wl,dark){/* DO NOTHING */}
+function drawUI(l1,l2,wl,dark){}
 
-// ─── SCENE 1: SMOOTH FOLLOW ───────────────────────────
+// ─── SCENE 1 ───────────────────────────────────────────
 function scene1(){
   const wave=pick(WAVES),b=mkBall(),pat=mkPat();
   let tf=0,trail=[];let cx=0.5,cy=0.5,pcx=0.5,pcy=0.5;
@@ -182,7 +180,7 @@ function scene1(){
   }};
 }
 
-// ─── SCENE 2: PONG BOUNCE ────────────────────────────
+// ─── SCENE 2 ───────────────────────────────────────────
 function scene2(){
   const b=mkBall(),ang=rnd(0.3,1.2),baseSpd=rnd(4.0,11.0);
   let vx=Math.cos(ang)*baseSpd,vy=Math.sin(ang)*baseSpd;
@@ -209,7 +207,7 @@ function scene2(){
   }};
 }
 
-// ─── SCENE 3: SCRATCH ────────────────────────────────
+// ─── SCENE 3 ───────────────────────────────────────────
 function scene3(){
   let b=mkBall(),pat=mkPat();
   let patDur=rndInt(600,1800),patTimer=0;
@@ -229,7 +227,7 @@ function scene3(){
   }};
 }
 
-// ─── SCENE 4: DUAL SCRATCH ───────────────────────────
+// ─── SCENE 4 ───────────────────────────────────────────
 function scene4(){
   let bL=mkBall(),bR=mkBall();bR.h=(bL.h+150+rndInt(-30,30)+360)%360;bR.gh=(bR.h+40)%360;bR.th=(bR.h+20)%360;
   let patL=mkHalfPat('left'),patR=mkHalfPat('right');
@@ -260,11 +258,10 @@ function scene4(){
   }};
 }
 
-// ─── SCENE 5: LIGHT BALL ─────────────────────────────
+// ─── SCENE 5 ───────────────────────────────────────────
 function scene5(){
   const bH=rndInt(0,359),bS=rndInt(0,100),bL2=rndInt(72,96);
   const half=Math.min(W,H)*0.5,base=half*0.90;
-  // DOUBLED LIGHT BALL SIZE
   let minR=base*rnd(1.40,1.76);
   let maxR=base*rnd(2.16,2.40);
   let pulseSpd=rnd(0.015,0.060),pulsePhase=rnd(0,Math.PI*2);
@@ -288,7 +285,7 @@ function scene5(){
   }};
 }
 
-// ─── SCENE 6: FLASH LIGHT ────────────────────────────
+// ─── SCENE 6 ───────────────────────────────────────────
 function scene6(){
   const modes=['strobe','single','flicker','slow_pulse','burst'];
   const flashMode=pick(modes);
@@ -369,7 +366,6 @@ function mkPat(){
     let tx=rnd(0.1,0.9),ty=rnd(0.1,0.9),timer=0,iv=rndInt(3,10);
     return{label:'Aggressive',ls:rnd(0.28,0.48),getTarget(){timer++;if(timer>=iv){timer=0;iv=rndInt(3,10);tx=rnd(0.05,0.95);ty=rnd(0.05,0.95);}return{x:tx,y:ty};}};
   }
-  // type===6 figure8
   let t=rnd(0,Math.PI*2);const spd=rnd(0.04,0.10);
   return{label:'Figure8',ls:rnd(0.12,0.25),getTarget(){t+=spd;return{x:0.5+Math.sin(t)*0.42,y:0.5+Math.sin(t*2)*0.22};}};
 }
@@ -395,7 +391,6 @@ function mkHalfPat(side){
     let tx=xm,ty=0.5,timer=0,iv=rndInt(4,14);
     return{label:'Chaos',ls:rnd(0.28,0.50),getTarget(){timer++;if(timer>=iv){timer=0;iv=rndInt(3,12);tx=cl(rnd(xl+0.02,xh-0.02));ty=rnd(0.05,0.95);}return{x:tx,y:ty};}};
   }
-  // type===4 arch
   const aUp=Math.random()<0.5,pY=aUp?rnd(0.06,0.22):rnd(0.78,0.94);let t=0;const spd=rnd(0.025,0.060);
   return{label:'Arch',ls:rnd(0.22,0.40),getTarget(){t=(t+spd)%1;const u=t,sx=xl+0.03,ex=xh-0.03,mx=(sx+ex)/2;return{x:cl((1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex),y:0.5+Math.sin(u*Math.PI*2)*(aUp?-0.32:0.32)};}};
 }
@@ -421,7 +416,6 @@ function mkLightPat(){
     let t=0;const spd=rnd(0.030,0.070);const base=rnd(0.10,0.18);
     return{getTarget(cx,cy){t=(t+spd)%1;const u=t,sx=gR?0.02:0.98,ex=gR?0.98:0.02,mx=(sx+ex)/2;return{x:(1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex,y:(1-u)*(1-u)*sy+2*(1-u)*u*pY+u*u*ey,lerp:bl(cx,cy,base)};}};
   }
-  // chaos
   const wps=[()=>({x:rnd(0.01,0.07),y:rnd(0.05,0.95)}),()=>({x:rnd(0.93,0.99),y:rnd(0.05,0.95)}),()=>({x:rnd(0.05,0.95),y:rnd(0.01,0.07)}),()=>({x:rnd(0.05,0.95),y:rnd(0.93,0.99)}),()=>({x:rnd(0.40,0.60),y:rnd(0.40,0.60)}),()=>({x:rnd(0.10,0.90),y:rnd(0.10,0.90)})];
   let tx=0.5,ty=0.5,timer=0,iv=rndInt(6,22);const base=rnd(0.12,0.22);
   return{getTarget(cx,cy){timer++;if(timer>=iv){timer=0;iv=rndInt(5,20);const w=pick(wps)();tx=w.x;ty=w.y;}return{x:tx,y:ty,lerp:bl(cx,cy,base)};}};
@@ -440,13 +434,12 @@ function mkFlashPat(){
 // ─── 3-MINUTE LOOPING SESSION ─────────────────────────
 const SCENE_FNS=[scene1,scene2,scene3,scene4,scene5,scene6];
 let SESSION=null,TF=0,RAF=null;
-const SCENE_DURATION = 20 * 60; // 20 seconds per scene
-const TOTAL_DURATION = 180 * 60; // 180 seconds = 3 minutes
+const SCENE_DURATION = 20 * 60;
+const TOTAL_DURATION = 180 * 60;
 
 function startSession(){
   if(RAF){cancelAnimationFrame(RAF);RAF=null;}
   stopBinaural();stopPad();stopWhoosh();TF=0;
-  // Start with a random scene
   const SceneFn = pick(SCENE_FNS);
   SESSION = SceneFn();
   loop();
@@ -455,30 +448,19 @@ function startSession(){
 function loop(){
   RAF=requestAnimationFrame(loop);
   TF++;
-  
-  // Run current scene
   SESSION.run();
-  
-  // Check if current scene should end (after 20 seconds)
   if (TF % SCENE_DURATION === 0 && TF < TOTAL_DURATION) {
-    // Clean up current scene's audio
     stopWhoosh();
     stopBinaural();
     stopPad();
-    
-    // Start a new random scene
     const SceneFn = pick(SCENE_FNS);
     SESSION = SceneFn();
   }
-  
-  // Fade out at the end
   if (TF >= TOTAL_DURATION - 90) {
     const a = (TF - (TOTAL_DURATION - 90)) / 90;
     ctx.fillStyle = `rgba(0,0,0,${Math.min(1, a)})`;
     ctx.fillRect(0, 0, W, H);
   }
-  
-  // Stop at 3 minutes
   if (TF >= TOTAL_DURATION) {
     stopBinaural();
     stopPad();
