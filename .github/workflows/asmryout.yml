@@ -118,7 +118,10 @@ jobs:
             "-t", "125",
             "-vf", "scale=1920:1080:flags=lanczos,gblur=sigma=3",
             "-c:v", "libx264", "-preset", "fast", "-crf", "24",
-            "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+            "-c:a", "copy",  # Keep original audio if it exists
+            "-map", "0:v",   # Video from input 0
+            "-map", "0:a?",  # Audio from input 0 if it exists (optional)
+            "-map_metadata", "-1",  # Remove metadata
             "/tmp/nature_bg.mp4"
           ], capture_output=True, text=True)
 
@@ -229,43 +232,125 @@ jobs:
       - name: Merge canvas over nature footage
         run: |
           python3 << 'PYEOF'
-          import subprocess, os, sys
+          import subprocess, os, sys, json
+
+          def ensure_audio_track(input_file):
+              """Add silent audio if file has no audio track"""
+              try:
+                  # Check if file has audio
+                  result = subprocess.run([
+                      "ffprobe", "-v", "error", "-show_entries", 
+                      "stream=codec_type", "-of", "json",
+                      input_file
+                  ], capture_output=True, text=True, timeout=10)
+                  
+                  data = json.loads(result.stdout)
+                  has_audio = any(s.get("codec_type") == "audio" for s in data.get("streams", []))
+                  
+                  if has_audio:
+                      print("✅ Nature footage has audio track")
+                      return input_file
+                  
+                  print("🔇 No audio track found, adding silent audio...")
+                  output_file = "/tmp/nature_with_audio.mp4"
+                  
+                  result = subprocess.run([
+                      "ffmpeg", "-y",
+                      "-i", input_file,
+                      "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                      "-c:v", "copy",
+                      "-c:a", "aac", "-b:a", "128k",
+                      "-map", "0:v:0",
+                      "-map", "1:a:0",
+                      "-shortest",
+                      "-map_metadata", "-1",
+                      output_file
+                  ], capture_output=True, text=True, timeout=60)
+                  
+                  if result.returncode != 0:
+                      print(f"⚠️  Failed to add audio: {result.stderr[-200:]}")
+                      print("⚠️  Using original file (merge may fail)")
+                      return input_file
+                  
+                  print(f"✅ Added silent audio: {os.path.getsize(output_file)/1024/1024:.1f} MB")
+                  return output_file
+                  
+              except Exception as e:
+                  print(f"⚠️  Audio check failed: {e}")
+                  return input_file
 
           print("🎬 Merging canvas over nature footage...")
-          result = subprocess.run([
-            "ffmpeg", "-y",
-            "-i", "/tmp/nature_bg.mp4",
-            "-i", "/tmp/asmr_canvas.webm",
-            "-filter_complex",
-            "[0:v]scale=1920:1080[bg];"
-            "[1:v]scale=1920:1080[fg];"
-            "[bg][fg]overlay=0:0[outv];"
-            "[0:a]volume=0.5[a1];"
-            "[1:a]volume=0.5[a2];"
-            "[a1][a2]amix=inputs=2:duration=first[outa]",
-            "-map", "[outv]",
-            "-map", "[outa]",
-            "-c:v", "libx264", "-preset", "slow", "-crf", "16",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-            "-movflags", "+faststart",
-            "-t", "120",
-            "/tmp/final_asmr.mp4"
-          ], capture_output=True, text=True)
+          
+          # Ensure nature footage has audio
+          nature_file = ensure_audio_track("/tmp/nature_bg.mp4")
+          
+          # Build filter based on whether nature has audio
+          filter_complex = "[0:v]scale=1920:1080[bg];[1:v]scale=1920:1080[fg];[bg][fg]overlay=0:0[outv]"
+          
+          # Try to include audio if it exists
+          if nature_file == "/tmp/nature_bg.mp4":
+              # Try to use original audio
+              filter_complex += ";[0:a]volume=0.5[a1]"
+          else:
+              # Use the audio we added
+              filter_complex += ";[0:a]volume=0.5[a1]"
+          
+          filter_complex += ";[1:a]volume=0.5[a2];[a1][a2]amix=inputs=2:duration=first[outa]"
+          
+          cmd = [
+              "ffmpeg", "-y",
+              "-i", nature_file,
+              "-i", "/tmp/asmr_canvas.webm",
+              "-filter_complex", filter_complex,
+              "-map", "[outv]",
+              "-map", "[outa]",
+              "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+              "-pix_fmt", "yuv420p",
+              "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+              "-movflags", "+faststart",
+              "-t", "120",
+              "/tmp/final_asmr.mp4"
+          ]
+          
+          print(f"🔧 Running: {' '.join(cmd[:6])}...")
+          result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
 
           if result.returncode != 0:
-            print(f"❌ Merge failed:\n{result.stderr[-3000:]}")
-            sys.exit(1)
+              # Try fallback: just overlay video without audio mixing
+              print("⚠️  Audio mix failed, trying video-only overlay...")
+              result = subprocess.run([
+                  "ffmpeg", "-y",
+                  "-i", nature_file,
+                  "-i", "/tmp/asmr_canvas.webm",
+                  "-filter_complex",
+                  "[0:v]scale=1920:1080[bg];[1:v]scale=1920:1080[fg];[bg][fg]overlay=0:0[outv]",
+                  "-map", "[outv]",
+                  "-map", "1:a:0",  # Use canvas audio
+                  "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+                  "-movflags", "+faststart",
+                  "-t", "120",
+                  "/tmp/final_asmr.mp4"
+              ], capture_output=True, text=True, timeout=180)
 
-          for f in ["/tmp/nature_bg.mp4", "/tmp/asmr_canvas.webm"]:
-            try: os.remove(f)
-            except: pass
+          if result.returncode != 0:
+              print(f"❌ Merge failed:\n{result.stderr[-3000:]}")
+              sys.exit(1)
+
+          # Cleanup
+          for f in ["/tmp/nature_bg.mp4", "/tmp/asmr_canvas.webm", "/tmp/nature_with_audio.mp4"]:
+              try: 
+                  if os.path.exists(f):
+                      os.remove(f)
+              except:
+                  pass
 
           size = os.path.getsize("/tmp/final_asmr.mp4")
           print(f"✅ Final video: {size/1024/1024:.1f} MB")
           if size < 100000:
-            print("❌ Final video too small")
-            sys.exit(1)
+              print("❌ Final video too small")
+              sys.exit(1)
           PYEOF
 
       - name: Upload to YouTube
