@@ -3,7 +3,7 @@ name: 🧠 Post ASMR YouTube Landscape to Facebook
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 10 * * 0"  # Sunday at 10:00 AM UTC
+      - cron: "0 10 */3 * *"  # Every 3 days at 10 AM
 
 jobs:
   record:
