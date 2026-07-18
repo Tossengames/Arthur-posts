@@ -17,7 +17,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /var/cache/apt/archives
-          key: apt-ubuntu22-asmr-yt-v2
+          key: apt-ubuntu22-asmr-yt-v3
 
       - name: Install dependencies
         run: |
@@ -31,7 +31,7 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.wdm
-          key: pip-wdm-asmr-yt-v2
+          key: pip-wdm-asmr-yt-v3
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -39,7 +39,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install Python deps
-        run: pip install selenium webdriver-manager google-auth google-auth-oauthlib google-api-python-client
+        run: pip install selenium webdriver-manager google-auth google-auth-oauthlib google-api-python-client requests
 
       - name: Set timestamp
         run: echo "TS=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
@@ -54,18 +54,88 @@ jobs:
       - name: Record and Upload to YouTube
         run: |
           python3 << 'PYEOF'
-          import os, time, subprocess, random, base64
+          import os, time, subprocess, random, base64, json, requests
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
           from selenium.webdriver.chrome.service import Service
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.support.ui import WebDriverWait
+          from selenium.webdriver.support import expected_conditions as EC
           from webdriver_manager.chrome import ChromeDriverManager
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
           from google.oauth2.credentials import Credentials
 
-          ts        = os.environ.get("TS", "test")
+          ts = os.environ.get("TS", "test")
+          pixabay_key = os.environ.get("PIXABAY_KEY")
+          
+          # ─── DOWNLOAD BACKGROUND FOOTAGE FROM PIXABAY ───
+          def get_pixabay_video():
+              used_videos_file = "used_pixabay_videos.json"
+              if os.path.exists(used_videos_file):
+                  with open(used_videos_file, 'r') as f:
+                      used_ids = json.load(f)
+              else:
+                  used_ids = []
+              
+              search_terms = ["rain forest nature", "waterfall nature", "river nature", "ocean waves", "forest landscape", "mountains nature", "clouds time lapse", "sunset nature"]
+              random.shuffle(search_terms)
+              
+              for term in search_terms[:3]:
+                  url = f"https://pixabay.com/api/videos/?key={pixabay_key}&q={term}&per_page=50&video_type=film"
+                  try:
+                      response = requests.get(url, timeout=30)
+                      data = response.json()
+                  except:
+                      continue
+                  
+                  if 'hits' not in data:
+                      continue
+                  
+                  hits = data['hits']
+                  random.shuffle(hits)
+                  
+                  for video in hits:
+                      video_id = video['id']
+                      if video_id in used_ids:
+                          continue
+                      
+                      if 'audio' not in video or not video.get('audio'):
+                          continue
+                      
+                      video_url = None
+                      for quality in ['large', 'medium', 'small']:
+                          if quality in video['videos']:
+                              video_url = video['videos'][quality]['url']
+                              break
+                      
+                      if video_url:
+                          video_file = f"/tmp/background_{ts}.mp4"
+                          print(f"Downloading background: {video_url}")
+                          try:
+                              r = requests.get(video_url, stream=True, timeout=60)
+                              with open(video_file, 'wb') as f:
+                                  for chunk in r.iter_content(chunk_size=8192):
+                                      f.write(chunk)
+                              
+                              used_ids.append(video_id)
+                              with open(used_videos_file, 'w') as f:
+                                  json.dump(used_ids, f)
+                              
+                              print(f"Downloaded: {video_file}")
+                              return video_file, video.get('audio', False)
+                          except:
+                              continue
+              
+              print("No video found, using generated background")
+              return None, False
+          
+          background_file, has_audio = get_pixabay_video()
+          
+          # ─── SETUP SELENIUM ────────────────────────────────
           webm_file = f"/tmp/asmr_{ts}.webm"
-          mp4_file  = f"/tmp/asmr_{ts}.mp4"
+          mp4_file = f"/tmp/asmr_{ts}.mp4"
+          final_output = f"/tmp/final_{ts}.mp4"
           html_path = os.path.abspath("asmry.html")
 
           opts = Options()
@@ -85,126 +155,205 @@ jobs:
           opts.add_argument("--use-fake-ui-for-media-stream")
           opts.add_argument("--use-fake-device-for-media-stream")
           opts.add_argument("--allow-file-access-from-files")
+          opts.add_argument("--remote-debugging-port=9222")
           opts.add_experimental_option("excludeSwitches", ["enable-automation"])
           opts.add_experimental_option("useAutomationExtension", False)
 
           print("Starting Chrome 1920x1080...")
+          service = Service(ChromeDriverManager().install())
+          service.start()
+          
           driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()), options=opts
+              service=service, options=opts
           )
           driver.set_window_size(1920, 1080)
-          driver.set_script_timeout(300)  # Increased timeout for longer recording
+          driver.set_script_timeout(600)  # 10 minutes timeout
+          driver.implicitly_wait(10)
 
           driver.get(f"file://{html_path}")
-          time.sleep(2)
+          time.sleep(3)
           driver.execute_script("if(typeof AC!=='undefined'&&AC)AC.resume().catch(()=>{});")
-          time.sleep(1)
+          time.sleep(2)
 
-          # MODIFIED: Start recording with scene looping to get 3 minutes
-          # This creates a longer session by modifying the HTML's session length
+          # ─── MODIFY HTML: REMOVE BACKGROUND + DOUBLE BALL SIZE ───
           driver.execute_script("""
-            // Override the session to run for 3 minutes (180 seconds)
-            // The original runs 1 scene for 20 seconds
-            // We'll run 9 scenes back-to-back (9 * 20s = 180s = 3 minutes)
-            
-            // Store original scene functions
-            const originalStartSession = window.startSession;
-            const originalTotalF = 20 * 60; // 20 seconds per scene
-            const scenes = [scene1, scene2, scene3, scene4, scene5, scene6];
-            let currentSceneIndex = 0;
-            let totalDuration = 180; // 3 minutes in seconds
-            let elapsedTime = 0;
-            
-            // Override the startSession function
-            window.startSession = function() {
-              if (window._recordingDone) return;
-              
-              // Pick a random scene
-              const SceneFn = scenes[Math.floor(Math.random() * scenes.length)];
-              const session = SceneFn();
-              let sceneStartTime = Date.now();
-              let sceneElapsed = 0;
-              
-              function runScene() {
-                if (window._recordingDone) return;
-                
-                // Run one frame
-                session.run();
-                sceneElapsed = (Date.now() - sceneStartTime) / 1000;
-                elapsedTime = (Date.now() - sessionStartTime) / 1000;
-                
-                if (sceneElapsed < 20) {
-                  // Continue current scene
-                  requestAnimationFrame(runScene);
-                } else if (elapsedTime < totalDuration) {
-                  // Start new scene
-                  const newSceneFn = scenes[Math.floor(Math.random() * scenes.length)];
-                  const newSession = newSceneFn();
-                  // Replace session with new one
-                  Object.assign(session, newSession);
-                  sceneStartTime = Date.now();
-                  requestAnimationFrame(runScene);
-                } else {
-                  // Done - stop recording
-                  window.stopRecording();
-                  window._recordingDone = true;
-                }
-              }
-              
-              const sessionStartTime = Date.now();
-              runScene();
+            // MODIFICATION 1: Remove solid backgrounds (use clearRect instead of fillRect)
+            // Override the drawUI function to not draw background
+            const originalDrawUI = window.drawUI;
+            window.drawUI = function(l1, l2, wl, dark) {
+              // Do nothing - removes text overlays too
             };
             
-            // Start the session
-            window.startSession();
+            // MODIFICATION 2: Double ball sizes globally
+            const originalMkBall = window.mkBall;
+            window.mkBall = function() {
+              const ball = originalMkBall();
+              ball.base = ball.base * 2;
+              ball.minR = ball.minR * 2;
+              ball.maxR = ball.maxR * 2;
+              return ball;
+            };
+            
+            // For Light Ball scene (Scene 5)
+            const originalMkLightPat = window.mkLightPat;
+            window.mkLightPat = function() {
+              const pat = originalMkLightPat();
+              const origGetTarget = pat.getTarget;
+              pat.getTarget = function(cx, cy) {
+                const result = origGetTarget(cx, cy);
+                result.lerp = Math.min(0.95, result.lerp * 2);
+                return result;
+              };
+              return pat;
+            };
+            
+            console.log("✅ HTML modifications applied");
           """)
 
-          print("Recording started (3 minutes with scene looping)...")
+          # ─── RECORD TRANSPARENT CANVAS ──────────────────────
+          # Start recording
+          driver.execute_script("""
+            window.startRecording(180);
+            console.log("Recording started...");
+          """)
+          print("Recording started (3 minutes)...")
 
-          # Wait for 3 minutes + buffer (190 seconds)
-          for _ in range(380):  # 190 seconds * 2 checks per second
-            if driver.execute_script("return window._recordingDone;"):
-              break
-            time.sleep(0.5)
+          # Wait for recording to complete (with progress updates)
+          for i in range(380):  # 190 seconds
+              if driver.execute_script("return window._recordingDone;"):
+                  print(f"Recording complete at {i*0.5:.1f} seconds")
+                  break
+              if i % 20 == 0:  # Every 10 seconds
+                  print(f"Recording in progress... {i*0.5:.1f}s")
+              time.sleep(0.5)
           else:
-            # Force stop if not done
-            driver.execute_script("""
-              window.stopRecording();
-              window._recordingDone = true;
-              window.forceFinalize();
-            """)
-            time.sleep(2)
+              print("Recording timeout, forcing stop...")
+              driver.execute_script("""
+                  window.stopRecording();
+                  window._recordingDone = true;
+                  window.forceFinalize();
+              """)
+              time.sleep(3)
 
+          # Check if recording completed
           if not driver.execute_script("return window._recordingDone;"):
-            driver.quit()
-            raise RuntimeError("Recording failed")
+              driver.quit()
+              raise RuntimeError("Recording failed to complete")
 
+          # Get video data with longer timeout
+          print("Retrieving video data...")
           b64 = driver.execute_async_script("""
             var done = arguments[0];
-            window.getRecordingBase64().then(done).catch(function(){ done(null); });
+            var attempts = 0;
+            var maxAttempts = 60;
+            
+            function checkRecording() {
+              if (window._recordingDone && window._rb) {
+                var reader = new FileReader();
+                reader.onload = function() {
+                  done(reader.result.split(',')[1]);
+                };
+                reader.onerror = function() {
+                  done(null);
+                };
+                reader.readAsDataURL(window._rb);
+              } else if (attempts < maxAttempts) {
+                attempts++;
+                setTimeout(checkRecording, 500);
+              } else {
+                done(null);
+              }
+            }
+            checkRecording();
           """)
+          
           driver.quit()
+          service.stop()
 
           if not b64:
-            raise RuntimeError("No video data")
+              raise RuntimeError("No video data received")
 
           with open(webm_file, 'wb') as f:
-            f.write(base64.b64decode(b64))
+              f.write(base64.b64decode(b64))
+          
+          print(f"Video data saved: {os.path.getsize(webm_file)/1024/1024:.1f} MB")
+
+          # ─── ENCODE TRANSPARENT VIDEO ───────────────────────
+          # First check if webm is valid
+          if os.path.getsize(webm_file) < 10000:
+              raise RuntimeError("Video file too small - likely corrupt")
 
           subprocess.run([
-            "ffmpeg", "-y", "-i", webm_file,
-            "-c:v", "libx264", "-preset", "slow", "-crf", "16",
-            "-pix_fmt", "yuv420p", "-vf", "scale=1920:1080:flags=lanczos",
-            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-            "-movflags", "+faststart", mp4_file
-          ], check=True)
+              "ffmpeg", "-y", "-i", webm_file,
+              "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+              "-pix_fmt", "yuva420p",
+              "-vf", "scale=1920:1080:flags=lanczos",
+              "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+              "-movflags", "+faststart", mp4_file
+          ], check=True, timeout=300)
           os.remove(webm_file)
-          print(f"mp4 ready: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
+          print(f"Canvas MP4 ready: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
 
+          # ─── OVERLAY ON BACKGROUND ──────────────────────────
+          if background_file and os.path.exists(background_file) and os.path.getsize(background_file) > 10000:
+              print("Layering on background footage...")
+              
+              try:
+                  if has_audio:
+                      subprocess.run([
+                          "ffmpeg", "-y",
+                          "-i", background_file,
+                          "-i", mp4_file,
+                          "-filter_complex", 
+                          "[1:v]format=rgba,colorchannelmixer=aa=0.9[overlay];[0:v][overlay]overlay",
+                          "-c:v", "libx264",
+                          "-crf", "18",
+                          "-preset", "slow",
+                          "-filter_complex", 
+                          "[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2[aout]",
+                          "-map", "0:v:0",
+                          "-map", "[aout]",
+                          "-c:a", "aac",
+                          "-b:a", "192k",
+                          "-shortest",
+                          final_output
+                      ], check=True, timeout=300)
+                  else:
+                      subprocess.run([
+                          "ffmpeg", "-y",
+                          "-i", background_file,
+                          "-i", mp4_file,
+                          "-filter_complex", 
+                          "[1:v]format=rgba,colorchannelmixer=aa=0.9[overlay];[0:v][overlay]overlay",
+                          "-c:v", "libx264",
+                          "-crf", "18",
+                          "-preset", "slow",
+                          "-map", "0:v:0",
+                          "-map", "1:a:0",
+                          "-c:a", "aac",
+                          "-b:a", "192k",
+                          "-shortest",
+                          final_output
+                      ], check=True, timeout=300)
+                  
+                  print(f"Final video ready: {os.path.getsize(final_output)/1024/1024:.1f} MB")
+                  os.remove(background_file)
+              except:
+                  print("Background overlay failed, using canvas only")
+                  final_output = mp4_file
+          else:
+              print("No background found, using canvas only")
+              final_output = mp4_file
+
+          # Clean up mp4 if final is different
+          if final_output != mp4_file and os.path.exists(mp4_file):
+              os.remove(mp4_file)
+
+          # ─── UPLOAD TO YOUTUBE ────────────────────────────
           videos = [
-            {
-              "title": "EMDR Rapid Eye Movement Therapy ⚡ (Fast Bilateral Stimulation)",
-              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+              {
+                  "title": "EMDR Rapid Eye Movement Therapy ⚡ (Fast Bilateral Stimulation)",
+                  "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
 
           🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
           🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
@@ -221,10 +370,10 @@ jobs:
           👇 SUBSCRIBE for daily EMDR therapy sessions
 
           #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
-            },
-            {
-              "title": "Stop Overthinking Instantly 🧠 (Rapid EMDR Eye Tracking)",
-              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+              },
+              {
+                  "title": "Stop Overthinking Instantly 🧠 (Rapid EMDR Eye Tracking)",
+                  "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
 
           🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
           🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
@@ -241,10 +390,10 @@ jobs:
           👇 SUBSCRIBE for daily EMDR therapy sessions
 
           #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
-            },
-            {
-              "title": "EMDR Therapy for Anxiety Relief 🌿 (Intense Eye Movement Session)",
-              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+              },
+              {
+                  "title": "EMDR Therapy for Anxiety Relief 🌿 (Intense Eye Movement Session)",
+                  "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
 
           🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
           🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
@@ -261,10 +410,10 @@ jobs:
           👇 SUBSCRIBE for daily EMDR therapy sessions
 
           #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
-            },
-            {
-              "title": "Bilateral Brain Stimulation 🧠 (Follow the Fast Light)",
-              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+              },
+              {
+                  "title": "Bilateral Brain Stimulation 🧠 (Follow the Fast Light)",
+                  "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
 
           🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
           🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
@@ -281,10 +430,10 @@ jobs:
           👇 SUBSCRIBE for daily EMDR therapy sessions
 
           #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
-            },
-            {
-              "title": "Fast EMDR Session 🔥 (Bilateral Stimulation for Stress Relief)",
-              "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
+              },
+              {
+                  "title": "Fast EMDR Session 🔥 (Bilateral Stimulation for Stress Relief)",
+                  "description": """Follow the fast-moving light with your eyes 👁️ to activate your brain's natural stress relief response
 
           🔹 This technique is inspired by EMDR Therapy (Eye Movement Desensitization and Reprocessing) - used by therapists worldwide to help people process anxiety, trauma, overthinking, and stress
           🔹 The rapid bilateral eye movement activates both hemispheres of your brain, promoting deep relaxation and mental clarity
@@ -301,50 +450,51 @@ jobs:
           👇 SUBSCRIBE for daily EMDR therapy sessions
 
           #EMDR #BilateralStimulation #EyeMovementTherapy #AnxietyRelief #TraumaHealing #RapidEMDR #BrainHemispheres #StressRelief #ASMR #MentalHealth #NervousSystemReset #PanicAttackRelief #BilateralBeats #Overthinking #CalmMind #HealingFrequency #BrainwaveEntrainment #EMDRTherapy #BilateralMusic #Mindfulness #Meditation #TraumaProcessing #PTSDRecovery #MentalWellness #Relaxation"""
-            }
+              }
           ]
 
           video = random.choice(videos)
 
           print("Uploading to YouTube...")
           creds = Credentials(
-            token=os.environ.get("YT_ACCESS_TOKEN"),
-            refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=os.environ.get("YT_CLIENT_ID"),
-            client_secret=os.environ.get("YT_CLIENT_SECRET"),
+              token=os.environ.get("YT_ACCESS_TOKEN"),
+              refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
+              token_uri="https://oauth2.googleapis.com/token",
+              client_id=os.environ.get("YT_CLIENT_ID"),
+              client_secret=os.environ.get("YT_CLIENT_SECRET"),
           )
           youtube = build("youtube", "v3", credentials=creds)
           request = youtube.videos().insert(
-            part="snippet,status",
-            body={
-              "snippet": {
-                "title": video["title"],
-                "description": video["description"],
-                "tags": ["emdr therapy", "bilateral stimulation", "eye movement therapy", "anxiety relief", "trauma healing", "rapid emdr", "stress relief", "asmr", "mental health", "nervous system", "panic attack relief", "brain hemispheres", "overthinking", "calm mind", "healing frequency", "brainwave entrainment", "fast emdr", "bilateral eye movement"],
-                "categoryId": "22",
-                "defaultLanguage": "en"
+              part="snippet,status",
+              body={
+                  "snippet": {
+                      "title": video["title"],
+                      "description": video["description"],
+                      "tags": ["emdr therapy", "bilateral stimulation", "eye movement therapy", "anxiety relief", "trauma healing", "rapid emdr", "stress relief", "asmr", "mental health", "nervous system", "panic attack relief", "brain hemispheres", "overthinking", "calm mind", "healing frequency", "brainwave entrainment", "fast emdr", "bilateral eye movement"],
+                      "categoryId": "22",
+                      "defaultLanguage": "en"
+                  },
+                  "status": {
+                      "privacyStatus": "public",
+                      "madeForKids": False,
+                      "selfDeclaredMadeForKids": False
+                  }
               },
-              "status": {
-                "privacyStatus": "public",
-                "madeForKids": False,
-                "selfDeclaredMadeForKids": False
-              }
-            },
-            media_body=MediaFileUpload(mp4_file, mimetype="video/mp4", resumable=True)
+              media_body=MediaFileUpload(final_output, mimetype="video/mp4", resumable=True)
           )
           response = None
           while response is None:
-            status, response = request.next_chunk()
-            if status:
-              print(f"Upload {int(status.progress()*100)}%")
+              status, response = request.next_chunk()
+              if status:
+                  print(f"Upload {int(status.progress()*100)}%")
 
           print(f"Done! Video ID: {response['id']}")
-          os.remove(mp4_file)
+          os.remove(final_output)
           PYEOF
         env:
           TS:               ${{ env.TS }}
           DISPLAY:          ":99"
+          PIXABAY_KEY:      ${{ secrets.PIXABAY_KEY }}
           YT_ACCESS_TOKEN:  ${{ secrets.YT_ACCESS_TOKEN }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           YT_CLIENT_ID:     ${{ secrets.YT_CLIENT_ID }}
