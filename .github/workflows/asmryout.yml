@@ -13,102 +13,121 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache apt
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt/archives
-          key: apt-ubuntu22-asmr-v7
-
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y \
             xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/pip
-            ~/.wdm
-          key: pip-wdm-asmr-v7
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
+          echo "✅ Dependencies installed"
 
       - name: Install Python deps
-        run: pip install selenium webdriver-manager requests google-auth google-auth-oauthlib google-api-python-client
+        run: |
+          pip install selenium webdriver-manager requests google-auth google-auth-oauthlib google-api-python-client
+          echo "✅ Python deps installed"
 
       - name: Set timestamp
         run: echo "TS=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
 
+      - name: Verify asmr.html exists
+        run: |
+          ls -la asmr.html || echo "❌ asmr.html NOT FOUND in repo root"
+          echo "✅ File check done"
+
       - name: Start virtual display and audio
         run: |
           Xvfb :99 -screen 0 1920x1080x24 -ac &
+          sleep 2
           pulseaudio --start --exit-idle-time=-1 &
+          sleep 2
           echo "DISPLAY=:99" >> $GITHUB_ENV
-          sleep 3
+          echo "✅ Display and audio started"
 
       - name: Download Pixabay nature footage
         run: |
           python3 << 'PYEOF'
-          import requests, os, random, subprocess
+          import requests, os, random, subprocess, sys
 
           key = os.environ.get("PIXABAY_KEY")
+          if not key:
+            print("❌ PIXABAY_KEY secret is missing!")
+            sys.exit(1)
+
           queries = ["rain nature","forest rain","river flowing","ocean waves","mountain landscape","waterfall nature","green forest","calm lake"]
           query = random.choice(queries)
-          print(f"Searching Pixabay for: {query}")
+          print(f"🔍 Searching Pixabay for: {query}")
 
-          resp = requests.get("https://pixabay.com/api/videos/", params={
-            "key": key,
-            "q": query,
-            "video_type": "film",
-            "per_page": 20,
-            "safesearch": "true",
-            "order": "popular"
-          })
-          data = resp.json()
+          try:
+            resp = requests.get("https://pixabay.com/api/videos/", params={
+              "key": key,
+              "q": query,
+              "video_type": "film",
+              "per_page": 20,
+              "safesearch": "true",
+              "order": "popular"
+            }, timeout=30)
+            print(f"Pixabay status: {resp.status_code}")
+            data = resp.json()
+          except Exception as e:
+            print(f"❌ Pixabay request failed: {e}")
+            sys.exit(1)
+
           hits = data.get("hits", [])
+          print(f"Found {len(hits)} results")
           if not hits:
-            raise RuntimeError("No Pixabay results found")
+            print("❌ No results from Pixabay")
+            sys.exit(1)
 
-          # Filter: prefer short clips under 3 min, pick random from top 10
-          hits = [h for h in hits if h.get("duration", 999) < 180][:10]
-          if not hits:
-            hits = data.get("hits", [])[:5]
-
+          # Prefer short clips, fallback to any
+          short = [h for h in hits if h.get("duration", 999) < 180]
+          hits = short[:10] if short else hits[:5]
           hit = random.choice(hits)
-          # Pick medium quality to keep file small
-          videos = hit.get("videos", {})
-          url = (videos.get("medium") or videos.get("small") or videos.get("large") or {}).get("url")
-          if not url:
-            raise RuntimeError("No video URL found")
 
-          print(f"Downloading: {url}")
-          r = requests.get(url, stream=True)
+          videos = hit.get("videos", {})
+          url = None
+          for quality in ["medium","small","large","tiny"]:
+            url = (videos.get(quality) or {}).get("url")
+            if url:
+              print(f"Using quality: {quality}")
+              break
+
+          if not url:
+            print("❌ No video URL in response")
+            sys.exit(1)
+
+          print(f"⬇️  Downloading: {url}")
+          r = requests.get(url, stream=True, timeout=60)
           with open("/tmp/nature_raw.mp4", "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
               f.write(chunk)
+          raw_size = os.path.getsize("/tmp/nature_raw.mp4")
+          print(f"Downloaded: {raw_size/1024/1024:.1f} MB")
+
+          if raw_size < 1000:
+            print("❌ Downloaded file too small — download failed")
+            sys.exit(1)
 
           duration = hit.get("duration", 120)
-          start = min(30, duration // 4)
-          print(f"Duration: {duration}s  Starting at: {start}s")
+          start = min(30, max(0, duration // 4))
+          print(f"Duration: {duration}s  Start offset: {start}s")
 
-          # Trim from 30s, take 2 min, blur + zoom slightly
-          subprocess.run([
+          print("🎬 Processing nature footage...")
+          result = subprocess.run([
             "ffmpeg", "-y",
             "-ss", str(start),
             "-i", "/tmp/nature_raw.mp4",
-            "-t", "120",
-            "-vf", "scale=1920:1080:flags=lanczos,zoompan=z='1.08':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080,gblur=sigma=3",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+            "-t", "125",
+            "-vf", "scale=1920:1080:flags=lanczos,gblur=sigma=3",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "24",
             "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
             "/tmp/nature_bg.mp4"
-          ], check=True)
+          ], capture_output=True, text=True)
+
+          if result.returncode != 0:
+            print(f"❌ ffmpeg failed:\n{result.stderr[-2000:]}")
+            sys.exit(1)
+
           os.remove("/tmp/nature_raw.mp4")
-          print(f"Nature bg ready: {os.path.getsize('/tmp/nature_bg.mp4')/1024/1024:.1f} MB")
+          print(f"✅ Nature bg ready: {os.path.getsize('/tmp/nature_bg.mp4')/1024/1024:.1f} MB")
           PYEOF
         env:
           PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
@@ -116,13 +135,18 @@ jobs:
       - name: Record ASMR canvas
         run: |
           python3 << 'PYEOF'
-          import os, time, base64
+          import os, time, base64, sys
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
           from selenium.webdriver.chrome.service import Service
           from webdriver_manager.chrome import ChromeDriverManager
 
-          html_path = os.path.abspath("asmry.html")
+          html_path = os.path.abspath("asmr.html")
+          if not os.path.exists(html_path):
+            print(f"❌ asmr.html not found at {html_path}")
+            sys.exit(1)
+          print(f"✅ Found: {html_path}")
+
           webm_file = "/tmp/asmr_canvas.webm"
 
           opts = Options()
@@ -145,22 +169,30 @@ jobs:
           opts.add_experimental_option("excludeSwitches", ["enable-automation"])
           opts.add_experimental_option("useAutomationExtension", False)
 
+          print("🚀 Starting Chrome...")
           driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
           driver.set_window_size(1920, 1080)
           driver.set_script_timeout(180)
 
+          print(f"📄 Loading file://{html_path}")
           driver.get(f"file://{html_path}")
-          time.sleep(2)
+          time.sleep(3)
           driver.execute_script("if(typeof AC!=='undefined'&&AC)AC.resume().catch(()=>{});")
           time.sleep(1)
 
           driver.execute_script("window.startRecording(30);")
-          print("Recording ASMR canvas — 2 minutes...")
+          print("🎬 Recording started — waiting ~125s...")
 
-          for _ in range(300):
-            if driver.execute_script("return window._recordingDone;"): break
+          for i in range(300):
+            done = driver.execute_script("return window._recordingDone;")
+            if done:
+              print(f"✅ Done after {i*0.5:.0f}s")
+              break
+            if i % 20 == 0:
+              print(f"  still recording... {i*0.5:.0f}s elapsed")
             time.sleep(0.5)
           else:
+            print("⏰ Timeout — forcing finalize")
             driver.execute_script("window.stopRecording();")
             time.sleep(2)
             driver.execute_script("window.forceFinalize();")
@@ -168,20 +200,28 @@ jobs:
 
           if not driver.execute_script("return window._recordingDone;"):
             driver.quit()
-            raise RuntimeError("Recording failed")
+            print("❌ Recording failed to finalize")
+            sys.exit(1)
 
+          print("📦 Extracting video data...")
           b64 = driver.execute_async_script("""
             var done = arguments[0];
-            window.getRecordingBase64().then(done).catch(function(){ done(null); });
+            window.getRecordingBase64().then(done).catch(function(e){ console.error(e); done(null); });
           """)
           driver.quit()
+          print("🖥️  Browser closed")
 
           if not b64:
-            raise RuntimeError("No video data")
+            print("❌ No video data returned")
+            sys.exit(1)
 
           with open(webm_file, "wb") as f:
             f.write(base64.b64decode(b64))
-          print(f"Canvas webm: {os.path.getsize(webm_file)/1024/1024:.1f} MB")
+          size = os.path.getsize(webm_file)
+          print(f"✅ Canvas webm: {size/1024/1024:.1f} MB")
+          if size < 10000:
+            print("❌ Webm too small — recording likely empty")
+            sys.exit(1)
           PYEOF
         env:
           DISPLAY: ":99"
@@ -189,19 +229,14 @@ jobs:
       - name: Merge canvas over nature footage
         run: |
           python3 << 'PYEOF'
-          import subprocess, os
+          import subprocess, os, sys
 
-          # Convert canvas webm to mp4 with transparency preserved as png pipe
-          # Then overlay on nature bg with ffmpeg
-          # Mix audio: nature 50% + asmr 50%
-
-          subprocess.run([
+          print("🎬 Merging canvas over nature footage...")
+          result = subprocess.run([
             "ffmpeg", "-y",
-            "-i", "/tmp/nature_bg.mp4",        # input 0: nature background
-            "-i", "/tmp/asmr_canvas.webm",      # input 1: asmr canvas (with audio)
+            "-i", "/tmp/nature_bg.mp4",
+            "-i", "/tmp/asmr_canvas.webm",
             "-filter_complex",
-            # Scale canvas to match, overlay on top of nature
-            # Mix audio: nature at 0.5 vol, asmr at 0.5 vol
             "[0:v]scale=1920:1080[bg];"
             "[1:v]scale=1920:1080[fg];"
             "[bg][fg]overlay=0:0[outv];"
@@ -216,55 +251,48 @@ jobs:
             "-movflags", "+faststart",
             "-t", "120",
             "/tmp/final_asmr.mp4"
-          ], check=True)
+          ], capture_output=True, text=True)
 
-          os.remove("/tmp/nature_bg.mp4")
-          os.remove("/tmp/asmr_canvas.webm")
-          print(f"Final video: {os.path.getsize('/tmp/final_asmr.mp4')/1024/1024:.1f} MB")
+          if result.returncode != 0:
+            print(f"❌ Merge failed:\n{result.stderr[-3000:]}")
+            sys.exit(1)
+
+          for f in ["/tmp/nature_bg.mp4", "/tmp/asmr_canvas.webm"]:
+            try: os.remove(f)
+            except: pass
+
+          size = os.path.getsize("/tmp/final_asmr.mp4")
+          print(f"✅ Final video: {size/1024/1024:.1f} MB")
+          if size < 100000:
+            print("❌ Final video too small")
+            sys.exit(1)
           PYEOF
 
       - name: Upload to YouTube
         run: |
           python3 << 'PYEOF'
-          import os, random
+          import os, random, sys
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
           from google.oauth2.credentials import Credentials
 
           mp4_file = "/tmp/final_asmr.mp4"
+          if not os.path.exists(mp4_file):
+            print("❌ Final video not found")
+            sys.exit(1)
 
           videos = [
-            {
-              "title": "EMDR Eye Movement Therapy for Anxiety Relief | Binaural Beats",
-              "description": "follow the moving circle with your eyes to activate your brain's natural stress relief response 👁\n\nthis technique is inspired by emdr therapy — used by therapists to help people process anxiety, overthinking, and stress\n\nbinaural beats playing in background to slow your brainwaves into a calm relaxed state 🎧\n\nuse headphones for best experience\n\n#emdr #anxietyrelief #binaural #brainwaves #stressrelief #asmr #mentalhealth #relax #overthinking #calm"
-            },
-            {
-              "title": "Stop Overthinking in 2 Minutes | Eye Movement + Alpha Waves",
-              "description": "your brain can't overthink and follow a moving object at the same time 👁\n\nfollow the circle with your eyes and feel your thoughts slow down\n\nalpha waves (8-12hz) playing to bring your brain into a relaxed focused state\n\nthis is based on bilateral stimulation — the same principle used in emdr therapy\n\n#overthinking #anxietyrelief #alphawave #binaural #asmr #mentalhealth #stressrelief #calm #relax #brainwaves"
-            },
-            {
-              "title": "Binaural Beats Eye Relaxation | Theta Waves for Deep Calm",
-              "description": "follow the movement with your eyes and let your mind quiet down 🌀\n\ntheta waves (4-8hz) playing to guide your brain into deep relaxation — the same state you're in just before sleep\n\ngreat for anxiety, stress, insomnia, and mental fatigue\n\nheadphones recommended 🎧\n\n#theta #binaural #deeprelaxation #asmr #insomnia #anxietyrelief #mentalhealth #brainwaves #calm #stressrelief"
-            },
-            {
-              "title": "528hz Healing Frequency + Eye Movement for Stress Relief",
-              "description": "follow the light with your eyes while 528hz plays in the background 👁\n\n528hz is known as the dna repair frequency — associated with healing, calm, and reducing cortisol\n\ncombined with smooth eye movement to activate your parasympathetic nervous system\n\n#528hz #healingfrequency #stressrelief #asmr #calm #binaural #mentalhealth #relax #solfeggio #brainwaves"
-            },
-            {
-              "title": "Calm Your Nervous System | Eye Movement + Brainwave Therapy",
-              "description": "when you're overwhelmed — just follow the circle 👁\n\nsmooth eye movement activates your vagus nerve and shifts your nervous system from fight-or-flight into rest-and-digest\n\nbrainwave frequencies playing to speed up the process 🎧\n\nno meditation experience needed — just watch and breathe\n\n#nervoussystem #vagusnerve #anxietyrelief #asmr #stressrelief #brainwaves #mentalhealth #calm #relax #binaural"
-            },
-            {
-              "title": "Schumann Resonance 7.83hz | Ground Your Mind and Body",
-              "description": "7.83hz — the earth's natural frequency 🌍\n\nalso known as the schumann resonance, this frequency is linked to grounding, calm, and mental clarity\n\nfollow the movement with your eyes while it plays in both ears 🎧\n\n#schumannresonance #grounding #earthfrequency #binaural #asmr #mentalhealth #brainwaves #calm #stressrelief #relax"
-            },
-            {
-              "title": "ASMR Eye Tracking for Anxiety | Bilateral Brain Stimulation",
-              "description": "your eyes follow the ball left and right — this bilateral movement activates both sides of your brain 👁\n\nused in emdr therapy to help process trauma, anxiety, and stress\n\nbinaural beats playing to deepen the relaxation effect 🎧\n\n#asmr #bilateral #emdr #anxietyrelief #stressrelief #brainwaves #mentalhealth #calm #binaural #relax"
-            },
+            {"title":"EMDR Eye Movement Therapy for Anxiety Relief | Binaural Beats","description":"follow the moving circle with your eyes to activate your brain's natural stress relief response 👁\n\nthis technique is inspired by emdr therapy — used by therapists to help people process anxiety, overthinking, and stress\n\nbinaural beats playing in background to slow your brainwaves into a calm relaxed state 🎧\n\nuse headphones for best experience\n\n#emdr #anxietyrelief #binaural #brainwaves #stressrelief #asmr #mentalhealth #relax #overthinking #calm"},
+            {"title":"Stop Overthinking in 2 Minutes | Eye Movement + Alpha Waves","description":"your brain can't overthink and follow a moving object at the same time 👁\n\nfollow the circle with your eyes and feel your thoughts slow down\n\nalpha waves (8-12hz) playing to bring your brain into a relaxed focused state\n\n#overthinking #anxietyrelief #alphawave #binaural #asmr #mentalhealth #stressrelief #calm #relax #brainwaves"},
+            {"title":"Binaural Beats Eye Relaxation | Theta Waves for Deep Calm","description":"follow the movement with your eyes and let your mind quiet down 🌀\n\ntheta waves (4-8hz) playing to guide your brain into deep relaxation\n\ngreat for anxiety, stress, insomnia, and mental fatigue\n\n#theta #binaural #deeprelaxation #asmr #insomnia #anxietyrelief #mentalhealth #brainwaves #calm #stressrelief"},
+            {"title":"528hz Healing Frequency + Eye Movement for Stress Relief","description":"follow the light with your eyes while 528hz plays in the background 👁\n\n528hz is known as the dna repair frequency — associated with healing, calm, and reducing cortisol\n\n#528hz #healingfrequency #stressrelief #asmr #calm #binaural #mentalhealth #relax #solfeggio #brainwaves"},
+            {"title":"Calm Your Nervous System | Eye Movement + Brainwave Therapy","description":"when you're overwhelmed — just follow the circle 👁\n\nsmooth eye movement activates your vagus nerve and shifts your nervous system from fight-or-flight into rest-and-digest\n\n#nervoussystem #vagusnerve #anxietyrelief #asmr #stressrelief #brainwaves #mentalhealth #calm #relax #binaural"},
+            {"title":"Schumann Resonance 7.83hz | Ground Your Mind and Body","description":"7.83hz — the earth's natural frequency 🌍\n\nfollow the movement with your eyes while it plays in both ears 🎧\n\n#schumannresonance #grounding #earthfrequency #binaural #asmr #mentalhealth #brainwaves #calm #stressrelief #relax"},
+            {"title":"ASMR Eye Tracking for Anxiety | Bilateral Brain Stimulation","description":"your eyes follow the ball left and right — this bilateral movement activates both sides of your brain 👁\n\nbinaural beats playing to deepen the relaxation effect 🎧\n\n#asmr #bilateral #emdr #anxietyrelief #stressrelief #brainwaves #mentalhealth #calm #binaural #relax"},
           ]
 
           video = random.choice(videos)
+          print(f"📹 Title: {video['title']}")
 
           creds = Credentials(
             token=os.environ.get("YT_ACCESS_TOKEN"),
@@ -296,9 +324,9 @@ jobs:
           while response is None:
             status, response = request.next_chunk()
             if status:
-              print(f"Upload {int(status.progress()*100)}%")
+              print(f"⬆️  Upload {int(status.progress()*100)}%")
 
-          print(f"Done! Video ID: {response['id']}")
+          print(f"✅ Done! Video ID: {response['id']}")
           os.remove(mp4_file)
           PYEOF
         env:
