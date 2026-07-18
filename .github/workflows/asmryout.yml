@@ -17,7 +17,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y \
-            xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio
+            xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio \
+            x11-utils x11-xserver-utils mesa-utils
           echo "✅ Dependencies installed"
 
       - name: Install Python deps
@@ -35,10 +36,18 @@ jobs:
 
       - name: Start virtual display and audio
         run: |
-          Xvfb :99 -screen 0 1920x1080x24 -ac &
+          # Kill any existing Xvfb
+          pkill Xvfb || true
+          pkill pulseaudio || true
+          
+          # Start Xvfb with proper configuration
+          Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +extension RANDR &
+          sleep 3
+          
+          # Start pulseaudio
+          pulseaudio --start --exit-idle-time=-1 || true
           sleep 2
-          pulseaudio --start --exit-idle-time=-1 &
-          sleep 2
+          
           echo "DISPLAY=:99" >> $GITHUB_ENV
           echo "✅ Display and audio started"
 
@@ -166,6 +175,8 @@ jobs:
           opts.add_argument("--use-fake-ui-for-media-stream")
           opts.add_argument("--use-fake-device-for-media-stream")
           opts.add_argument("--allow-file-access-from-files")
+          opts.add_argument("--disable-web-security")
+          opts.add_argument("--disable-features=IsolateOrigins,site-per-process")
           opts.add_experimental_option("excludeSwitches", ["enable-automation"])
           opts.add_experimental_option("useAutomationExtension", False)
 
@@ -176,43 +187,64 @@ jobs:
 
           print(f"📄 Loading file://{html_path}")
           driver.get(f"file://{html_path}")
-          time.sleep(3)
-          driver.execute_script("if(typeof AC!=='undefined'&&AC)AC.resume().catch(()=>{});")
-          time.sleep(1)
+          time.sleep(5)
+          
+          # Check if audio context is working
+          print("🔊 Checking audio...")
+          audio_ok = driver.execute_script("""
+            try {
+              var ac = new (window.AudioContext || window.webkitAudioContext)();
+              ac.resume();
+              return ac.state === 'running';
+            } catch(e) {
+              return false;
+            }
+          """)
+          print(f"Audio state: {audio_ok}")
 
+          print("🎬 Starting recording...")
           driver.execute_script("window.startRecording(30);")
-          print("🎬 Recording started — waiting ~125s...")
+          time.sleep(2)
 
-          for i in range(300):
+          print("⏳ Recording for 120 seconds...")
+          for i in range(240):  # 120 seconds at 0.5s intervals
             done = driver.execute_script("return window._recordingDone;")
             if done:
-              print(f"✅ Done after {i*0.5:.0f}s")
+              print(f"✅ Recording complete after {i*0.5:.0f}s")
               break
             if i % 20 == 0:
-              print(f"  still recording... {i*0.5:.0f}s elapsed")
+              print(f"  Still recording... {i*0.5:.0f}s elapsed")
             time.sleep(0.5)
           else:
             print("⏰ Timeout — forcing finalize")
             driver.execute_script("window.stopRecording();")
-            time.sleep(2)
+            time.sleep(3)
             driver.execute_script("window.forceFinalize();")
             time.sleep(2)
 
+          # Verify recording is done
           if not driver.execute_script("return window._recordingDone;"):
-            driver.quit()
             print("❌ Recording failed to finalize")
+            driver.quit()
             sys.exit(1)
 
           print("📦 Extracting video data...")
           b64 = driver.execute_async_script("""
             var done = arguments[0];
-            window.getRecordingBase64().then(done).catch(function(e){ console.error(e); done(null); });
+            if (window.getRecordingBase64) {
+              window.getRecordingBase64().then(done).catch(function(e){ 
+                console.error(e); 
+                done(null); 
+              });
+            } else {
+              done(null);
+            }
           """)
           driver.quit()
           print("🖥️  Browser closed")
 
-          if not b64:
-            print("❌ No video data returned")
+          if not b64 or len(b64) < 1000:
+            print(f"❌ No valid video data returned (length: {len(b64) if b64 else 0})")
             sys.exit(1)
 
           with open(webm_file, "wb") as f:
@@ -231,6 +263,13 @@ jobs:
           python3 << 'PYEOF'
           import subprocess, os, sys
 
+          # Check if files exist
+          for f in ["/tmp/nature_bg.mp4", "/tmp/asmr_canvas.webm"]:
+            if not os.path.exists(f):
+              print(f"❌ Missing file: {f}")
+              sys.exit(1)
+            print(f"✅ {f} exists ({os.path.getsize(f)/1024/1024:.1f} MB)")
+
           print("🎬 Merging canvas over nature footage...")
           result = subprocess.run([
             "ffmpeg", "-y",
@@ -245,7 +284,7 @@ jobs:
             "[a1][a2]amix=inputs=2:duration=first[outa]",
             "-map", "[outv]",
             "-map", "[outa]",
-            "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
             "-movflags", "+faststart",
