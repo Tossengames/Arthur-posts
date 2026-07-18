@@ -17,7 +17,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /var/cache/apt/archives
-          key: apt-ubuntu22-asmr-yt-v5
+          key: apt-ubuntu22-asmr-yt-v6
 
       - name: Install dependencies
         run: |
@@ -31,7 +31,7 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.wdm
-          key: pip-wdm-asmr-yt-v5
+          key: pip-wdm-asmr-yt-v6
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -75,12 +75,12 @@ jobs:
               else:
                   used_ids = []
               
-              # Search terms for nature footage
-              search_terms = ["rain forest nature", "waterfall nature", "river nature", "ocean waves", "forest landscape", "mountains nature", "clouds time lapse", "sunset nature", "nature relaxing", "green nature", "calm nature"]
+              # Broader search terms - no audio requirement
+              search_terms = ["nature", "forest", "rain", "waterfall", "ocean", "mountains", "landscape", "clouds", "sunset", "river", "trees", "green nature"]
               random.shuffle(search_terms)
               
-              for term in search_terms[:3]:
-                  url = f"https://pixabay.com/api/videos/?key={pixabay_key}&q={term}&per_page=50&video_type=film&duration=1,5"
+              for term in search_terms[:5]:
+                  url = f"https://pixabay.com/api/videos/?key={pixabay_key}&q={term}&per_page=50&video_type=film"
                   try:
                       response = requests.get(url, timeout=30)
                       data = response.json()
@@ -98,12 +98,8 @@ jobs:
                       if video_id in used_ids:
                           continue
                       
-                      # Only use videos with audio and under 5 minutes
-                      if not video.get('audio'):
-                          continue
-                      
-                      # Check duration (Pixabay returns duration in seconds)
-                      if video.get('duration', 999) > 300:  # Skip if over 5 minutes
+                      # Skip if duration too short
+                      if video.get('duration', 0) < 5:
                           continue
                       
                       video_url = None
@@ -174,7 +170,20 @@ jobs:
           driver.implicitly_wait(10)
 
           driver.get(f"file://{html_path}")
-          time.sleep(3)
+          print("Waiting for HTML to load...")
+          time.sleep(5)  # Wait for HTML to fully load
+          
+          # Verify function exists
+          if not driver.execute_script("return typeof window.startRecording === 'function';"):
+              # Try to reload if function missing
+              print("startRecording not loaded, reloading...")
+              driver.get(f"file://{html_path}")
+              time.sleep(5)
+              if not driver.execute_script("return typeof window.startRecording === 'function';"):
+                  driver.quit()
+                  service.stop()
+                  raise RuntimeError("startRecording function not loaded - HTML may have errors")
+          
           driver.execute_script("if(typeof AC!=='undefined'&&AC)AC.resume().catch(()=>{});")
           time.sleep(2)
 
@@ -260,45 +269,34 @@ jobs:
               print("Layering on background footage...")
               
               try:
-                  if has_audio:
-                      subprocess.run([
-                          "ffmpeg", "-y",
-                          "-i", background_file,
-                          "-i", mp4_file,
-                          "-filter_complex", 
-                          "[1:v]format=rgba,colorchannelmixer=aa=0.9[overlay];[0:v][overlay]overlay",
-                          "-c:v", "libx264",
-                          "-crf", "18",
-                          "-preset", "slow",
-                          "-filter_complex", 
-                          "[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2[aout]",
-                          "-map", "0:v:0",
-                          "-map", "[aout]",
-                          "-c:a", "aac",
-                          "-b:a", "192k",
-                          "-shortest",
-                          final_output
-                      ], check=True, timeout=300)
-                  else:
-                      subprocess.run([
-                          "ffmpeg", "-y",
-                          "-i", background_file,
-                          "-i", mp4_file,
-                          "-filter_complex", 
-                          "[1:v]format=rgba,colorchannelmixer=aa=0.9[overlay];[0:v][overlay]overlay",
-                          "-c:v", "libx264",
-                          "-crf", "18",
-                          "-preset", "slow",
-                          "-map", "0:v:0",
-                          "-map", "1:a:0",
-                          "-c:a", "aac",
-                          "-b:a", "192k",
-                          "-shortest",
-                          final_output
-                      ], check=True, timeout=300)
+                  # Extract audio from canvas
+                  canvas_audio = f"/tmp/canvas_audio_{ts}.aac"
+                  subprocess.run([
+                      "ffmpeg", "-y", "-i", mp4_file, "-acodec", "copy", canvas_audio
+                  ], check=True, timeout=60)
+                  
+                  # Overlay with blur and zoom
+                  subprocess.run([
+                      "ffmpeg", "-y",
+                      "-i", background_file,
+                      "-i", mp4_file,
+                      "-i", canvas_audio,
+                      "-filter_complex", 
+                      "[0:v]gblur=sigma=10,scale=1920:1080:flags=lanczos,eq=brightness=0.7:contrast=1.1:sat=0.5[bg];[1:v]format=rgba,colorchannelmixer=aa=0.9[overlay];[bg][overlay]overlay",
+                      "-map", "0:v:0",
+                      "-map", "2:a:0",
+                      "-c:v", "libx264",
+                      "-crf", "18",
+                      "-preset", "slow",
+                      "-c:a", "aac",
+                      "-b:a", "192k",
+                      "-shortest",
+                      final_output
+                  ], check=True, timeout=300)
                   
                   print(f"Final video ready: {os.path.getsize(final_output)/1024/1024:.1f} MB")
                   os.remove(background_file)
+                  os.remove(canvas_audio)
               except Exception as e:
                   print(f"Background overlay failed: {e}, using canvas only")
                   final_output = mp4_file
