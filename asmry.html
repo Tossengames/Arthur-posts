@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>EMDR Self-Admin</title>
+<title>EMDR</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{width:100vw;height:100vh;overflow:hidden;background:#0a0a12;}
+body{width:100vw;height:100vh;overflow:hidden;background:#000;}
 canvas{position:fixed;inset:0;width:100%;height:100%;}
 </style>
 </head>
@@ -25,14 +25,12 @@ function pick(arr){return arr[Math.floor(Math.random()*arr.length)];}
 // ─── AUDIO ───────────────────────────────────────────
 const AC=new(window.AudioContext||window.webkitAudioContext)();
 AC.resume().catch(()=>{});
-['touchstart','click'].forEach(e=>document.addEventListener(e,()=>{if(AC.state==='suspended')AC.resume();},{once:true}));
 const MG=AC.createGain();MG.gain.value=0.85;MG.connect(AC.destination);
 const RD=AC.createMediaStreamDestination();MG.connect(RD);
 
 let _wN=null,_wN2=null,_wG=null,_wP=null;
 function startWhoosh(vol){
-  try{if(_wN)_wN.stop();}catch(e){}
-  try{if(_wN2)_wN2.stop();}catch(e){}
+  try{if(_wN)_wN.stop();}catch(e){}try{if(_wN2)_wN2.stop();}catch(e){}
   try{
     const sr=AC.sampleRate,len=sr*4;
     const mkN=(freq,q,g)=>{
@@ -48,17 +46,15 @@ function startWhoosh(vol){
     _wP=AC.createStereoPanner?AC.createStereoPanner():null;
     if(_wP){h.gain.connect(_wP);l.gain.connect(_wP);_wP.connect(MG);}
     else{h.gain.connect(MG);l.gain.connect(MG);}
-    h.src.start();l.src.start();
-    _wN=h.src;_wN2=l.src;
+    h.src.start();l.src.start();_wN=h.src;_wN2=l.src;
   }catch(e){}
 }
-function setWhoosh(xFrac,spd,baseVol){
+function setWhoosh(xFrac,spd,bv){
   if(!_wG||!AC)return;
   if(_wP)_wP.pan.setTargetAtTime(Math.max(-1,Math.min(1,xFrac*2-1)),AC.currentTime,0.04);
-  _wG.gain.setTargetAtTime(Math.max((baseVol||0.5)*0.4,Math.min((baseVol||0.85)*1.6,(baseVol||0.85)*0.4+spd*0.05)),AC.currentTime,0.04);
+  _wG.gain.setTargetAtTime(Math.max((bv||0.5)*0.4,Math.min((bv||0.85)*1.6,(bv||0.85)*0.4+spd*0.05)),AC.currentTime,0.04);
 }
 function stopWhoosh(){try{if(_wN)_wN.stop();}catch(e){}try{if(_wN2)_wN2.stop();}catch(e){}_wN=null;_wN2=null;}
-
 let _bL=null,_bR=null,_pads=[];
 function startBinaural(base,hz,vol){
   stopBinaural();
@@ -75,7 +71,6 @@ function startPad(freqs,vol){
   (freqs||[]).forEach(f=>{try{const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.value=f;const t=AC.currentTime;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol||0.05,t+2);o.connect(g);g.connect(MG);o.start();_pads.push(o,g);}catch(e){}});
 }
 function stopPad(){_pads.forEach(n=>{try{n.stop&&n.stop();}catch(e){}});_pads=[];}
-
 function playScratch(freq,vol,pan){
   try{
     const sr=AC.sampleRate,len=Math.floor(sr*0.07),buf=AC.createBuffer(1,len,sr),d=buf.getChannelData(0);
@@ -127,6 +122,19 @@ window.stopRecording=function(){try{if(_mr&&_mr.state!=='inactive')_mr.stop();}c
 window.forceFinalize=function(){try{if(_rc.length>0&&!window._recordingDone){_rb=new Blob(_rc,{type:'video/webm'});window._recordingDone=true;}}catch(e){}};
 window.getRecordingBase64=function(){return new Promise((res,rej)=>{const chk=()=>{if(!_rb){setTimeout(chk,100);return;}const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(_rb);};chk();});};
 
+// ─── BG STYLES ───────────────────────────────────────
+const BG_STYLES=[
+  ()=>{ctx.fillStyle='#050510';ctx.fillRect(0,0,W,H);},
+  ()=>{ctx.fillStyle='#0a0005';ctx.fillRect(0,0,W,H);},
+  ()=>{ctx.fillStyle='#020a04';ctx.fillRect(0,0,W,H);},
+  ()=>{ctx.fillStyle='#080008';ctx.fillRect(0,0,W,H);},
+  ()=>{ctx.fillStyle='#0a0800';ctx.fillRect(0,0,W,H);},
+  ()=>{const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#080015');g.addColorStop(1,'#000808');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);},
+  ()=>{const g=ctx.createLinearGradient(0,0,W,H);g.addColorStop(0,'#100005');g.addColorStop(1,'#000510');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);},
+  ()=>{ctx.fillStyle='#0d0d0d';ctx.fillRect(0,0,W,H);},
+];
+let bgFn=BG_STYLES[0];
+
 // ─── DRAW HELPERS ────────────────────────────────────
 function drawBall(bx,by,r,h,s,l,gh,gs,gl){
   if(r<1)return;
@@ -148,10 +156,11 @@ function drawTrail(trail,r,h,s,l){
     ctx.beginPath();ctx.moveTo(pp.x,pp.y);ctx.lineTo(p.x,p.y);ctx.stroke();
   }
 }
+// Normal sizes reverted: 0.038-0.080 of min(W,H)
 function mkBall(){
   const h=rndInt(0,359),s=rndInt(55,95),l=rndInt(45,72);
   const gh=(h+40)%360,gs=s,gl=Math.min(85,l+18),th=(h+20)%360;
-  const base=Math.min(W,H)*rnd(0.076,0.160);
+  const base=Math.min(W,H)*rnd(0.038,0.080);
   return{h,s,l,gh,gs,gl,th,ts:s,tl:l,base,
     pulsing:Math.random()<0.5,minR:base*rnd(0.50,0.78),maxR:base*rnd(1.15,1.60),pulseSpd:rnd(0.04,0.16)};
 }
@@ -163,7 +172,7 @@ const WAVES=[
   {name:'Alpha 8Hz',help:'Stress relief',base:210,hz:8,pad:[132,198,264]},
   {name:'432 Hz',help:'Natural harmony',base:432,hz:0,pad:[216,324,432]},
   {name:'528 Hz',help:'Healing tone',base:528,hz:0,pad:[264,396,528]},
-  {name:'Schumann',help:'Earth resonance',base:185,hz:7.83,pad:[111,166,222]},
+  {name:'Schumann 7.83Hz',help:'Earth resonance',base:185,hz:7.83,pad:[111,166,222]},
   {name:'Theta 4Hz',help:'Sleep onset',base:160,hz:4,pad:[96,144,192]},
   {name:'Delta 2Hz',help:'Deep healing',base:150,hz:2,pad:[90,135,180]},
 ];
@@ -171,28 +180,26 @@ const WAVES=[
 // ─── PATTERNS ────────────────────────────────────────
 function mkPat(){
   const type=rndInt(0,6);
-  if(type===0){const cx=rnd(0.25,0.75),cy=rnd(0.25,0.75),rx=rnd(0.14,0.38),ry=rnd(0.12,0.32);const dir=Math.random()<0.5?1:-1,spd=rnd(0.025,0.070);let t=rnd(0,Math.PI*2);return{label:'Circle',ls:rnd(0.10,0.22),getTarget(){t+=spd*dir;return{x:cx+Math.cos(t)*rx,y:cy+Math.sin(t)*ry};}};};
-  if(type===1){const cy=rnd(0.25,0.75),yw=rnd(0.02,0.10),spd=rnd(0.055,0.130);let t=0;return{label:'Side to Side',ls:rnd(0.15,0.30),getTarget(){t+=spd;return{x:0.5+Math.sin(t)*0.44,y:cy+Math.sin(t*2.1)*yw};}};};
-  if(type===2){const cx=rnd(0.25,0.75),xw=rnd(0.02,0.09),spd=rnd(0.055,0.130);let t=0;return{label:'Up Down',ls:rnd(0.15,0.30),getTarget(){t+=spd;return{x:cx+Math.sin(t*1.7)*xw,y:0.5+Math.sin(t)*0.42};}};};
-  if(type===3){const aUp=Math.random()<0.5,gR=Math.random()<0.5,sy=rnd(0.35,0.65),ey=rnd(0.35,0.65),pY=aUp?rnd(0.06,0.22):rnd(0.78,0.94);let t=0;const spd=rnd(0.015,0.045);return{label:'Arch',ls:rnd(0.08,0.20),getTarget(){t=(t+spd)%1;const u=t,sx=gR?0.04:0.96,ex=gR?0.96:0.04,mx=(sx+ex)/2;return{x:(1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex,y:(1-u)*(1-u)*sy+2*(1-u)*u*pY+u*u*ey};}};};
-  if(type===4){const bCX=rnd(0.30,0.70),bCY=rnd(0.30,0.70),bRX=rnd(0.18,0.35),bRY=rnd(0.14,0.28);const bS=rnd(0.012,0.028)*(Math.random()<0.5?1:-1),sR=rnd(0.05,0.14),sS=rnd(0.045,0.130)*(Math.random()<0.5?1:-1);let bT=rnd(0,Math.PI*2),sT=rnd(0,Math.PI*2);return{label:'Orbital',ls:rnd(0.10,0.22),getTarget(){bT+=bS;sT+=sS;return{x:Math.max(0.02,Math.min(0.98,bCX+Math.cos(bT)*bRX+Math.cos(sT)*sR)),y:Math.max(0.02,Math.min(0.98,bCY+Math.sin(bT)*bRY+Math.sin(sT)*sR))};}};};
-  if(type===5){let tx=rnd(0.1,0.9),ty=rnd(0.1,0.9),timer=0,iv=rndInt(3,10);return{label:'Aggressive',ls:rnd(0.28,0.48),getTarget(){timer++;if(timer>=iv){timer=0;iv=rndInt(3,10);tx=rnd(0.05,0.95);ty=rnd(0.05,0.95);}return{x:tx,y:ty};}};};
+  if(type===0){const cx=rnd(0.25,0.75),cy=rnd(0.25,0.75),rx=rnd(0.14,0.38),ry=rnd(0.12,0.32);const dir=Math.random()<0.5?1:-1,spd=rnd(0.025,0.070);let t=rnd(0,Math.PI*2);return{ls:rnd(0.10,0.22),getTarget(){t+=spd*dir;return{x:cx+Math.cos(t)*rx,y:cy+Math.sin(t)*ry};}};};
+  if(type===1){const cy=rnd(0.25,0.75),yw=rnd(0.02,0.10),spd=rnd(0.055,0.130);let t=0;return{ls:rnd(0.15,0.30),getTarget(){t+=spd;return{x:0.5+Math.sin(t)*0.44,y:cy+Math.sin(t*2.1)*yw};}};};
+  if(type===2){const cx=rnd(0.25,0.75),xw=rnd(0.02,0.09),spd=rnd(0.055,0.130);let t=0;return{ls:rnd(0.15,0.30),getTarget(){t+=spd;return{x:cx+Math.sin(t*1.7)*xw,y:0.5+Math.sin(t)*0.42};}};};
+  if(type===3){const aUp=Math.random()<0.5,gR=Math.random()<0.5,sy=rnd(0.35,0.65),ey=rnd(0.35,0.65),pY=aUp?rnd(0.06,0.22):rnd(0.78,0.94);let t=0;const spd=rnd(0.015,0.045);return{ls:rnd(0.08,0.20),getTarget(){t=(t+spd)%1;const u=t,sx=gR?0.04:0.96,ex=gR?0.96:0.04,mx=(sx+ex)/2;return{x:(1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex,y:(1-u)*(1-u)*sy+2*(1-u)*u*pY+u*u*ey};}};};
+  if(type===4){const bCX=rnd(0.30,0.70),bCY=rnd(0.30,0.70),bRX=rnd(0.18,0.35),bRY=rnd(0.14,0.28);const bS=rnd(0.012,0.028)*(Math.random()<0.5?1:-1),sR=rnd(0.05,0.14),sS=rnd(0.045,0.130)*(Math.random()<0.5?1:-1);let bT=rnd(0,Math.PI*2),sT=rnd(0,Math.PI*2);return{ls:rnd(0.10,0.22),getTarget(){bT+=bS;sT+=sS;return{x:Math.max(0.02,Math.min(0.98,bCX+Math.cos(bT)*bRX+Math.cos(sT)*sR)),y:Math.max(0.02,Math.min(0.98,bCY+Math.sin(bT)*bRY+Math.sin(sT)*sR))};}};};
+  if(type===5){let tx=rnd(0.1,0.9),ty=rnd(0.1,0.9),timer=0,iv=rndInt(3,10);return{ls:rnd(0.28,0.48),getTarget(){timer++;if(timer>=iv){timer=0;iv=rndInt(3,10);tx=rnd(0.05,0.95);ty=rnd(0.05,0.95);}return{x:tx,y:ty};}};};
   let t=rnd(0,Math.PI*2);const spd=rnd(0.04,0.10);
-  return{label:'Figure8',ls:rnd(0.12,0.25),getTarget(){t+=spd;return{x:0.5+Math.sin(t)*0.42,y:0.5+Math.sin(t*2)*0.22};}};
+  return{ls:rnd(0.12,0.25),getTarget(){t+=spd;return{x:0.5+Math.sin(t)*0.42,y:0.5+Math.sin(t*2)*0.22};}};
 }
-
 function mkHalfPat(side){
   const xl=side==='left'?0.01:0.51,xh=side==='left'?0.49:0.99,xm=(xl+xh)/2;
   const cl=x=>Math.max(xl,Math.min(xh,x));
   const type=rndInt(0,4);
-  if(type===0){const cy=rnd(0.25,0.75),yw=rnd(0.01,0.06),spd=rnd(0.09,0.22);let t=0;return{label:'Side Sweep',ls:rnd(0.28,0.48),getTarget(){t+=spd;return{x:cl(xm+Math.sin(t)*(xh-xm)*0.88),y:cy+Math.sin(t*2)*yw};}};};
-  if(type===1){const cx=cl(rnd(xl+0.04,xh-0.04)),xw=rnd(0.01,0.04),spd=rnd(0.08,0.20);let t=0;return{label:'Up Down',ls:rnd(0.28,0.48),getTarget(){t+=spd;return{x:cl(cx+Math.sin(t*1.5)*xw),y:0.5+Math.sin(t)*0.42};}};};
-  if(type===2){const cx=xm,cy=rnd(0.30,0.70),rx=Math.min((xh-xm)*0.82,0.17),ry=rnd(0.12,0.28);const dir=Math.random()<0.5?1:-1,spd=rnd(0.06,0.14);let t=rnd(0,Math.PI*2);return{label:'Circle',ls:rnd(0.25,0.42),getTarget(){t+=spd*dir;return{x:cl(cx+Math.cos(t)*rx),y:cy+Math.sin(t)*ry};}};};
-  if(type===3){let tx=xm,ty=0.5,timer=0,iv=rndInt(4,14);return{label:'Chaos',ls:rnd(0.28,0.50),getTarget(){timer++;if(timer>=iv){timer=0;iv=rndInt(3,12);tx=cl(rnd(xl+0.02,xh-0.02));ty=rnd(0.05,0.95);}return{x:tx,y:ty};}};};
+  if(type===0){const cy=rnd(0.25,0.75),yw=rnd(0.01,0.06),spd=rnd(0.09,0.22);let t=0;return{ls:rnd(0.28,0.48),getTarget(){t+=spd;return{x:cl(xm+Math.sin(t)*(xh-xm)*0.88),y:cy+Math.sin(t*2)*yw};}};};
+  if(type===1){const cx=cl(rnd(xl+0.04,xh-0.04)),xw=rnd(0.01,0.04),spd=rnd(0.08,0.20);let t=0;return{ls:rnd(0.28,0.48),getTarget(){t+=spd;return{x:cl(cx+Math.sin(t*1.5)*xw),y:0.5+Math.sin(t)*0.42};}};};
+  if(type===2){const cx=xm,cy=rnd(0.30,0.70),rx=Math.min((xh-xm)*0.82,0.17),ry=rnd(0.12,0.28);const dir=Math.random()<0.5?1:-1,spd=rnd(0.06,0.14);let t=rnd(0,Math.PI*2);return{ls:rnd(0.25,0.42),getTarget(){t+=spd*dir;return{x:cl(cx+Math.cos(t)*rx),y:cy+Math.sin(t)*ry};}};};
+  if(type===3){let tx=xm,ty=0.5,timer=0,iv=rndInt(4,14);return{ls:rnd(0.28,0.50),getTarget(){timer++;if(timer>=iv){timer=0;iv=rndInt(3,12);tx=cl(rnd(xl+0.02,xh-0.02));ty=rnd(0.05,0.95);}return{x:tx,y:ty};}};};
   const aUp=Math.random()<0.5,pY=aUp?rnd(0.06,0.22):rnd(0.78,0.94);let t=0;const spd=rnd(0.025,0.060);
-  return{label:'Arch',ls:rnd(0.22,0.40),getTarget(){t=(t+spd)%1;const u=t,sx=xl+0.03,ex=xh-0.03,mx=(sx+ex)/2;return{x:cl((1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex),y:0.5+Math.sin(u*Math.PI*2)*(aUp?-0.32:0.32)};}};
+  return{ls:rnd(0.22,0.40),getTarget(){t=(t+spd)%1;const u=t,sx=xl+0.03,ex=xh-0.03,mx=(sx+ex)/2;return{x:cl((1-u)*(1-u)*sx+2*(1-u)*u*mx+u*u*ex),y:0.5+Math.sin(u*Math.PI*2)*(aUp?-0.32:0.32)};}};
 }
-
 function mkLightPat(){
   const bl=(cx,cy,base)=>{const d=Math.hypot(cx-0.5,cy-0.5);return Math.max(0.05,Math.min(0.95,base*(1.0+(0.70-d)*2.2)));};
   const type=rndInt(0,4);
@@ -204,7 +211,6 @@ function mkLightPat(){
   let tx=0.5,ty=0.5,timer=0,iv=rndInt(6,22);const base=rnd(0.12,0.22);
   return{getTarget(cx,cy){timer++;if(timer>=iv){timer=0;iv=rndInt(5,20);const w=pick(wps)();tx=w.x;ty=w.y;}return{x:tx,y:ty,lerp:bl(cx,cy,base)};}};
 }
-
 function mkFlashPat(){
   const type=rndInt(0,3);
   if(type===0){const spd=rnd(0.04,0.10);let t=rnd(0,Math.PI*2);return{fn(){t+=spd;return{x:0.5+Math.sin(t)*0.44,y:0.50};}};}
@@ -215,152 +221,152 @@ function mkFlashPat(){
   return{fn(){timer++;if(timer>=iv){timer=0;iv=rndInt(12,40);const w=pick(wps)();tx=w.x;ty=w.y;}return{x:tx,y:ty};}};
 }
 
-// ─── UI ──────────────────────────────────────────────
-function drawUI(l1,l2,wl){
-  const tc='rgba(255,255,255,0.95)';
-  const pc='rgba(0,0,0,0.62)';
-  const sh='rgba(0,0,0,1)';
-  ctx.save();
-  ctx.fillStyle=pc;ctx.beginPath();ctx.roundRect(W*0.12,H*0.022,W*0.76,H*0.108,H*0.036);ctx.fill();
-  ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.font=`bold ${Math.floor(H*0.030)}px -apple-system,Arial,sans-serif`;
-  ctx.fillStyle=tc;ctx.shadowColor=sh;ctx.shadowBlur=8;ctx.fillText(l1,CX,H*0.047);
-  ctx.font=`${Math.floor(H*0.024)}px -apple-system,Arial,sans-serif`;ctx.fillText(l2,CX,H*0.082);
+// ─── OVERLAY TEXT ────────────────────────────────────
+// Phase 1: disclaimer (0-3s)
+// Phase 2: instructions (3-6s)
+// Phase 3: scene + wave bar only
+const TOTAL_F=20*60; // 20s at 60fps
+const DISCLAIMER_F=3*60;
+const INSTRUCT_F=3*60;
+
+function drawDisclaimer(alpha){
+  ctx.save();ctx.globalAlpha=alpha;
+  // Dark pill top
+  const pill='rgba(0,0,0,0.80)',txt='rgba(255,230,0,0.98)',sh='rgba(0,0,0,1)';
+  ctx.fillStyle=pill;ctx.beginPath();ctx.roundRect(W*0.05,H*0.035,W*0.90,H*0.13,H*0.025);ctx.fill();
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor=sh;ctx.shadowBlur=6;
+  ctx.font=`bold ${Math.floor(H*0.022)}px -apple-system,Arial,sans-serif`;
+  ctx.fillStyle='rgba(255,80,80,0.98)';ctx.fillText('⚠️ Warning',CX,H*0.058);
+  ctx.font=`${Math.floor(H*0.016)}px -apple-system,Arial,sans-serif`;
+  ctx.fillStyle=txt;
+  ctx.fillText('Contains flashing lights & fast movement',CX,H*0.080);
+  ctx.fillText('Stop if you feel discomfort',CX,H*0.098);
   ctx.restore();
-  if(wl){
-    ctx.save();ctx.fillStyle=pc;ctx.beginPath();ctx.roundRect(W*0.08,H*0.898,W*0.84,H*0.072,H*0.036);ctx.fill();
-    ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`bold ${Math.floor(H*0.022)}px -apple-system,Arial,sans-serif`;
-    ctx.fillStyle='rgba(220,210,255,0.98)';ctx.shadowColor=sh;ctx.shadowBlur=8;ctx.fillText(wl,CX,H*0.934);ctx.restore();
-  }
 }
 
-// ─── TEXT OVERLAY ────────────────────────────────────
-function drawTextOverlay(totalFrames) {
+function drawInstructions(alpha,waveName,waveHelp){
+  ctx.save();ctx.globalAlpha=alpha;
+  const pill='rgba(0,0,0,0.78)',tc='rgba(255,255,255,0.96)',sh='rgba(0,0,0,1)';
+  // Top instruction pill
+  ctx.fillStyle=pill;ctx.beginPath();ctx.roundRect(W*0.05,H*0.035,W*0.90,H*0.16,H*0.025);ctx.fill();
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor=sh;ctx.shadowBlur=6;
+  ctx.font=`bold ${Math.floor(H*0.020)}px -apple-system,Arial,sans-serif`;
+  ctx.fillStyle='rgba(120,220,255,0.98)';ctx.fillText('🎧 Use headphones',CX,H*0.055);
+  ctx.font=`${Math.floor(H*0.018)}px -apple-system,Arial,sans-serif`;
+  ctx.fillStyle=tc;
+  ctx.fillText('Follow the moving ball with your eyes',CX,H*0.075);
+  ctx.fillText('Keep your head still · breathe slowly',CX,H*0.093);
+  ctx.fillText('This is self-guided bilateral stimulation',CX,H*0.111);
+  // Wave pill bottom
+  ctx.fillStyle=pill;ctx.beginPath();ctx.roundRect(W*0.05,H*0.885,W*0.90,H*0.060,H*0.020);ctx.fill();
+  ctx.font=`bold ${Math.floor(H*0.016)}px -apple-system,Arial,sans-serif`;
+  ctx.fillStyle='rgba(200,180,255,0.98)';
+  ctx.fillText(`${waveName}  ·  ${waveHelp}`,CX,H*0.915);
+  ctx.restore();
+}
+
+function drawMainUI(waveName,waveHelp,line1,line2){
+  const pill='rgba(0,0,0,0.65)',tc='rgba(255,255,255,0.96)',sh='rgba(0,0,0,1)';
   ctx.save();
-  ctx.textAlign='center';
-  ctx.textBaseline='middle';
-  ctx.shadowColor='rgba(0,0,0,0.9)';
-  ctx.shadowBlur=12;
-  
-  // Start text: first 2 seconds
-  if(totalFrames < 120) {
-    ctx.font='bold 22px -apple-system,Arial,sans-serif';
-    ctx.fillStyle='rgba(255,200,200,0.95)';
-    ctx.fillText('⚠️ FLASHING LIGHTS', CX, H*0.10);
-    ctx.font='16px -apple-system,Arial,sans-serif';
-    ctx.fillStyle='rgba(255,255,255,0.8)';
-    ctx.fillText('Not for epilepsy | 🎧 Use headphones', CX, H*0.16);
-  }
-  // Middle text: during video
-  else if(totalFrames >= 120 && totalFrames < 1380) { // 2s to 23s
-    ctx.font='18px -apple-system,Arial,sans-serif';
-    ctx.fillStyle='rgba(255,255,255,0.5)';
-    ctx.shadowBlur=8;
-    ctx.fillText('👁 Follow with eyes  |  🎧 Headphones on', CX, H*0.93);
-  }
-  // End text: last 2 seconds
-  else if(totalFrames >= 1380) {
-    const alpha = Math.min(1, (totalFrames - 1380) / 30);
-    ctx.globalAlpha = alpha;
-    ctx.font='bold 26px -apple-system,Arial,sans-serif';
-    ctx.fillStyle='rgba(255,255,255,0.95)';
-    ctx.fillText('👍 Subscribe & Like', CX, H*0.45);
-    ctx.font='18px -apple-system,Arial,sans-serif';
-    ctx.fillStyle='rgba(255,255,255,0.6)';
-    ctx.fillText('More EMDR sessions weekly', CX, H*0.52);
-    ctx.globalAlpha = 1;
-  }
+  // Top
+  ctx.fillStyle=pill;ctx.beginPath();ctx.roundRect(W*0.05,H*0.018,W*0.90,H*0.080,H*0.022);ctx.fill();
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor=sh;ctx.shadowBlur=8;
+  ctx.font=`bold ${Math.floor(H*0.022)}px -apple-system,Arial,sans-serif`;
+  ctx.fillStyle=tc;ctx.fillText(line1,CX,H*0.040);
+  ctx.font=`${Math.floor(H*0.017)}px -apple-system,Arial,sans-serif`;ctx.fillText(line2,CX,H*0.062);
+  // Bottom wave
+  ctx.fillStyle=pill;ctx.beginPath();ctx.roundRect(W*0.05,H*0.888,W*0.90,H*0.055,H*0.018);ctx.fill();
+  ctx.font=`bold ${Math.floor(H*0.015)}px -apple-system,Arial,sans-serif`;
+  ctx.fillStyle='rgba(200,180,255,0.98)';ctx.fillText(`${waveName}  ·  ${waveHelp}`,CX,H*0.915);
   ctx.restore();
 }
 
 // ─── SCENE FACTORIES ─────────────────────────────────
 function scene1(){
   const wave=pick(WAVES),b=mkBall(),pat=mkPat();
+  bgFn=pick(BG_STYLES);
   let tf=0,trail=[],cx=0.5,cy=0.5,pcx=0.5,pcy=0.5;
   startWhoosh(0.9);startBinaural(wave.base,wave.hz,0.20);startPad(wave.pad,0.050);
-  return{wave,run(){
+  return{wave,run(TF){
     tf++;const tgt=pat.getTarget();pcx=cx;pcy=cy;
     cx+=(tgt.x-cx)*pat.ls;cy+=(tgt.y-cy)*pat.ls;
-    const spd=Math.hypot((cx-pcx)*W,(cy-pcy)*H);setWhoosh(cx,spd,0.9);
+    setWhoosh(cx,Math.hypot((cx-pcx)*W,(cy-pcy)*H),0.9);
     trail.push({x:cx*W,y:cy*H});if(trail.length>42)trail.shift();
-    ctx.clearRect(0,0,W,H);
+    bgFn();
     const r=getBR(b,tf);drawTrail(trail,r,b.th,b.ts,b.tl);drawBall(cx*W,cy*H,r,b.h,b.s,b.l,b.gh,b.gs,b.gl);
-    drawUI('👁  Follow the circle','with your eyes to relax',`${wave.name}  ·  ${wave.help}`);
+    if(TF<=DISCLAIMER_F){drawDisclaimer(Math.min(1,TF/20));}
+    else if(TF<=DISCLAIMER_F+INSTRUCT_F){const p=(TF-DISCLAIMER_F);const a=Math.min(1,p/20)*Math.min(1,(INSTRUCT_F-p+20)/20);drawInstructions(a,wave.name,wave.help);}
+    else{drawMainUI(wave.name,wave.help,'👁  Follow the circle','with your eyes to relax');}
   }};
 }
-
 function scene2(){
   const wave=pick(WAVES);
-  const b1=mkBall();
-  const ang1=rnd(0.3,1.2),spd1=rnd(10,22);
-  let vx1=Math.cos(ang1)*spd1,vy1=Math.sin(ang1)*spd1;
-  let cx1=W*rnd(0.2,0.8),cy1=H*rnd(0.2,0.8),tf1=0,trail1=[];
-  const pitch1=rnd(200,500),vol1=rnd(0.15,0.35);
-  const b2=mkBall();b2.h=(b1.h+150+rndInt(-30,30)+360)%360;b2.gh=(b2.h+40)%360;b2.th=(b2.h+20)%360;
-  const ang2=rnd(0.3,1.2)+Math.PI*0.5,spd2=rnd(10,22);
-  let vx2=Math.cos(ang2)*spd2,vy2=Math.sin(ang2)*spd2;
-  let cx2=W*rnd(0.2,0.8),cy2=H*rnd(0.2,0.8),trail2=[];
-  const pitch2=rnd(300,700),vol2=rnd(0.15,0.35);
-  let tf=0;
+  bgFn=pick(BG_STYLES);
+  const b1=mkBall(),b2=mkBall();b2.h=(b1.h+150+rndInt(-30,30)+360)%360;b2.gh=(b2.h+40)%360;b2.th=(b2.h+20)%360;
+  const spd1=rnd(10,22),ang1=rnd(0.3,1.2);let vx1=Math.cos(ang1)*spd1,vy1=Math.sin(ang1)*spd1;
+  const spd2=rnd(10,22),ang2=ang1+Math.PI*0.5;let vx2=Math.cos(ang2)*spd2,vy2=Math.sin(ang2)*spd2;
+  let cx1=W*0.3,cy1=H*0.3,cx2=W*0.7,cy2=H*0.7,tf=0,trail1=[],trail2=[];
+  const p1=rnd(200,500),v1=rnd(0.15,0.30),p2=rnd(300,700),v2=rnd(0.15,0.30);
   startWhoosh(0.6);startBinaural(wave.base,wave.hz,0.18);startPad(wave.pad,0.040);
-  return{wave,run(){
+  return{wave,run(TF){
     tf++;
     const r1=getBR(b1,tf),r2=getBR(b2,tf);
     cx1+=vx1;cy1+=vy1;
-    if(cx1-r1<0){cx1=r1;vx1=Math.abs(vx1);playPong(pitch1*rnd(0.6,1.8),Math.min(0.6,vol1*rnd(0.5,1.4)),(cx1/W)*2-1);}
-    if(cx1+r1>W){cx1=W-r1;vx1=-Math.abs(vx1);playPong(pitch1*rnd(0.6,1.8),Math.min(0.6,vol1*rnd(0.5,1.4)),(cx1/W)*2-1);}
-    if(cy1-r1<0){cy1=r1;vy1=Math.abs(vy1);playPong(pitch1*rnd(0.6,1.8),Math.min(0.6,vol1*rnd(0.5,1.4)),(cx1/W)*2-1);}
-    if(cy1+r1>H){cy1=H-r1;vy1=-Math.abs(vy1);playPong(pitch1*rnd(0.6,1.8),Math.min(0.6,vol1*rnd(0.5,1.4)),(cx1/W)*2-1);}
-    trail1.push({x:cx1,y:cy1});if(trail1.length>38)trail1.shift();
+    if(cx1-r1<0){cx1=r1;vx1=Math.abs(vx1);playPong(p1*rnd(0.6,1.8),Math.min(0.6,v1*rnd(0.5,1.4)),(cx1/W)*2-1);}
+    if(cx1+r1>W){cx1=W-r1;vx1=-Math.abs(vx1);playPong(p1*rnd(0.6,1.8),Math.min(0.6,v1*rnd(0.5,1.4)),(cx1/W)*2-1);}
+    if(cy1-r1<0){cy1=r1;vy1=Math.abs(vy1);playPong(p1*rnd(0.6,1.8),Math.min(0.6,v1*rnd(0.5,1.4)),(cx1/W)*2-1);}
+    if(cy1+r1>H){cy1=H-r1;vy1=-Math.abs(vy1);playPong(p1*rnd(0.6,1.8),Math.min(0.6,v1*rnd(0.5,1.4)),(cx1/W)*2-1);}
     cx2+=vx2;cy2+=vy2;
-    if(cx2-r2<0){cx2=r2;vx2=Math.abs(vx2);playPong(pitch2*rnd(0.6,1.8),Math.min(0.6,vol2*rnd(0.5,1.4)),(cx2/W)*2-1);}
-    if(cx2+r2>W){cx2=W-r2;vx2=-Math.abs(vx2);playPong(pitch2*rnd(0.6,1.8),Math.min(0.6,vol2*rnd(0.5,1.4)),(cx2/W)*2-1);}
-    if(cy2-r2<0){cy2=r2;vy2=Math.abs(vy2);playPong(pitch2*rnd(0.6,1.8),Math.min(0.6,vol2*rnd(0.5,1.4)),(cx2/W)*2-1);}
-    if(cy2+r2>H){cy2=H-r2;vy2=-Math.abs(vy2);playPong(pitch2*rnd(0.6,1.8),Math.min(0.6,vol2*rnd(0.5,1.4)),(cx2/W)*2-1);}
+    if(cx2-r2<0){cx2=r2;vx2=Math.abs(vx2);playPong(p2*rnd(0.6,1.8),Math.min(0.6,v2*rnd(0.5,1.4)),(cx2/W)*2-1);}
+    if(cx2+r2>W){cx2=W-r2;vx2=-Math.abs(vx2);playPong(p2*rnd(0.6,1.8),Math.min(0.6,v2*rnd(0.5,1.4)),(cx2/W)*2-1);}
+    if(cy2-r2<0){cy2=r2;vy2=Math.abs(vy2);playPong(p2*rnd(0.6,1.8),Math.min(0.6,v2*rnd(0.5,1.4)),(cx2/W)*2-1);}
+    if(cy2+r2>H){cy2=H-r2;vy2=-Math.abs(vy2);playPong(p2*rnd(0.6,1.8),Math.min(0.6,v2*rnd(0.5,1.4)),(cx2/W)*2-1);}
+    trail1.push({x:cx1,y:cy1});if(trail1.length>38)trail1.shift();
     trail2.push({x:cx2,y:cy2});if(trail2.length>38)trail2.shift();
-    const domX=(Math.abs(vx1)>Math.abs(vx2)?cx1:cx2)/W;
-    setWhoosh(domX,Math.max(Math.hypot(vx1,vy1),Math.hypot(vx2,vy2)),0.6);
-    ctx.clearRect(0,0,W,H);
+    setWhoosh(cx1/W,Math.hypot(vx1,vy1),0.6);
+    bgFn();
     drawTrail(trail1,r1,b1.th,b1.ts,b1.tl);drawBall(cx1,cy1,r1,b1.h,b1.s,b1.l,b1.gh,b1.gs,b1.gl);
     drawTrail(trail2,r2,b2.th,b2.ts,b2.tl);drawBall(cx2,cy2,r2,b2.h,b2.s,b2.l,b2.gh,b2.gs,b2.gl);
-    drawUI('👁  Follow the balls','they will bounce off the edges',`${wave.name}  ·  ${wave.help}`);
+    if(TF<=DISCLAIMER_F){drawDisclaimer(Math.min(1,TF/20));}
+    else if(TF<=DISCLAIMER_F+INSTRUCT_F){const p=(TF-DISCLAIMER_F);const a=Math.min(1,p/20)*Math.min(1,(INSTRUCT_F-p+20)/20);drawInstructions(a,wave.name,wave.help);}
+    else{drawMainUI(wave.name,wave.help,'👁  Follow the balls','they bounce off the edges');}
   }};
 }
-
 function scene3(){
   const wave=pick(WAVES);
-  let b=mkBall(),pat=mkPat();
-  let patDur=rndInt(600,1800),patTimer=0;
+  bgFn=pick(BG_STYLES);
+  let b=mkBall(),pat=mkPat(),patDur=rndInt(400,1000),patTimer=0;
   let cx=0.5,cy=0.5,pcx=0.5,pcy=0.5,scCool=0,lastDX=0,tf=0,trail=[];
   startWhoosh(0.85);startBinaural(wave.base,wave.hz,0.18);startPad(wave.pad,0.040);
-  return{wave,run(){
+  return{wave,run(TF){
     tf++;patTimer++;
-    if(patTimer>=patDur){patTimer=0;patDur=rndInt(600,1800);pat=mkPat();if(Math.random()<0.3)b=mkBall();}
+    if(patTimer>=patDur){patTimer=0;patDur=rndInt(400,1000);pat=mkPat();if(Math.random()<0.3)b=mkBall();}
     const tgt=pat.getTarget();pcx=cx;pcy=cy;
     cx+=(tgt.x-cx)*pat.ls;cy+=(tgt.y-cy)*pat.ls;
     const spd=Math.hypot((cx-pcx)*W,(cy-pcy)*H);setWhoosh(cx,spd,0.85);
     const dX=cx>pcx?1:-1;scCool--;
     if(dX!==lastDX&&spd>2.5&&scCool<=0){playScratch(rnd(280,1100),rnd(0.10,0.40));scCool=rndInt(3,10);}
     lastDX=dX;trail.push({x:cx*W,y:cy*H});if(trail.length>38)trail.shift();
-    ctx.clearRect(0,0,W,H);
+    bgFn();
     const r=getBR(b,tf);drawTrail(trail,r,b.th,b.ts,b.tl);drawBall(cx*W,cy*H,r,b.h,b.s,b.l,b.gh,b.gs,b.gl);
-    drawUI('👁  Watch the movement','let your eyes follow',`${wave.name}  ·  ${wave.help}`);
+    if(TF<=DISCLAIMER_F){drawDisclaimer(Math.min(1,TF/20));}
+    else if(TF<=DISCLAIMER_F+INSTRUCT_F){const p=(TF-DISCLAIMER_F);const a=Math.min(1,p/20)*Math.min(1,(INSTRUCT_F-p+20)/20);drawInstructions(a,wave.name,wave.help);}
+    else{drawMainUI(wave.name,wave.help,'👁  Watch the movement','let your eyes follow');}
   }};
 }
-
 function scene4(){
   const wave=pick(WAVES);
+  bgFn=pick(BG_STYLES);
   let bL=mkBall(),bR=mkBall();bR.h=(bL.h+150+rndInt(-30,30)+360)%360;bR.gh=(bR.h+40)%360;bR.th=(bR.h+20)%360;
   let patL=mkHalfPat('left'),patR=mkHalfPat('right');
-  let pdL=rndInt(600,1800),pdR=rndInt(600,1800),ptL=0,ptR=0;
-  let cxL=0.25,cyL=0.5,pcxL=0.25,pcyL=0.5;
-  let cxR=0.75,cyR=0.5,pcxR=0.75,pcyR=0.5;
+  let pdL=rndInt(400,1000),pdR=rndInt(400,1000),ptL=0,ptR=0;
+  let cxL=0.25,cyL=0.5,pcxL=0.25,cxR=0.75,cyR=0.5,pcxR=0.75,pcyL=0.5,pcyR=0.5;
   let dxL=0,dxR=0,scL=0,scR=0,tf=0,trailL=[],trailR=[];
   startWhoosh(0.85);startBinaural(wave.base,wave.hz,0.18);startPad(wave.pad,0.040);
-  return{wave,run(){
+  return{wave,run(TF){
     tf++;ptL++;ptR++;
-    if(ptL>=pdL){ptL=0;pdL=rndInt(600,1800);patL=mkHalfPat('left');if(Math.random()<0.3)bL=mkBall();}
-    if(ptR>=pdR){ptR=0;pdR=rndInt(600,1800);patR=mkHalfPat('right');if(Math.random()<0.3)bR=mkBall();}
+    if(ptL>=pdL){ptL=0;pdL=rndInt(400,1000);patL=mkHalfPat('left');if(Math.random()<0.3)bL=mkBall();}
+    if(ptR>=pdR){ptR=0;pdR=rndInt(400,1000);patR=mkHalfPat('right');if(Math.random()<0.3)bR=mkBall();}
     const tL=patL.getTarget();pcxL=cxL;pcyL=cyL;cxL+=(tL.x-cxL)*patL.ls;cyL+=(tL.y-cyL)*patL.ls;
     const spdL=Math.hypot((cxL-pcxL)*W,(cyL-pcyL)*H);
     const ndxL=cxL>pcxL?1:-1;scL--;if(ndxL!==dxL&&spdL>2.5&&scL<=0){playScratch(rnd(280,1000),rnd(0.10,0.38),-0.85);scL=rndInt(3,10);}dxL=ndxL;
@@ -370,125 +376,99 @@ function scene4(){
     const ndxR=cxR>pcxR?1:-1;scR--;if(ndxR!==dxR&&spdR>2.5&&scR<=0){playScratch(rnd(280,1000),rnd(0.10,0.38),0.85);scR=rndInt(3,10);}dxR=ndxR;
     trailR.push({x:cxR*W,y:cyR*H});if(trailR.length>35)trailR.shift();
     setWhoosh((spdL>spdR?cxL:cxR),Math.max(spdL,spdR),0.85);
-    ctx.clearRect(0,0,W,H);
+    bgFn();
     ctx.save();ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;ctx.setLineDash([6,10]);ctx.beginPath();ctx.moveTo(CX,0);ctx.lineTo(CX,H);ctx.stroke();ctx.setLineDash([]);ctx.restore();
     const rL=getBR(bL,tf),rR=getBR(bR,tf);
     drawTrail(trailL,rL,bL.th,bL.ts,bL.tl);drawBall(cxL*W,cyL*H,rL,bL.h,bL.s,bL.l,bL.gh,bL.gs,bL.gl);
     drawTrail(trailR,rR,bR.th,bR.ts,bR.tl);drawBall(cxR*W,cyR*H,rR,bR.h,bR.s,bR.l,bR.gh,bR.gs,bR.gl);
-    drawUI('👁  Follow each side','left ear left · right ear right',`${wave.name}  ·  ${wave.help}`);
+    if(TF<=DISCLAIMER_F){drawDisclaimer(Math.min(1,TF/20));}
+    else if(TF<=DISCLAIMER_F+INSTRUCT_F){const p=(TF-DISCLAIMER_F);const a=Math.min(1,p/20)*Math.min(1,(INSTRUCT_F-p+20)/20);drawInstructions(a,wave.name,wave.help);}
+    else{drawMainUI(wave.name,wave.help,'👁  Follow each side','left ear left · right ear right');}
   }};
 }
-
 function scene5(){
   const wave=pick(WAVES);
   const bH=rndInt(0,359),bS=rndInt(0,100),bL2=rndInt(72,96);
-  const half=Math.min(W,H)*0.5,base=half*1.0;
+  const half=Math.min(W,H)*0.5,base=half*0.90;
   let minR=base*rnd(0.80,0.92),maxR=base*rnd(1.05,1.18),pulseSpd=rnd(0.015,0.060),pulsePhase=rnd(0,Math.PI*2);
-  let curM=mkLightPat(),mDur=rndInt(600,1800),mTimer=0;
+  let curM=mkLightPat(),mDur=rndInt(400,1000),mTimer=0;
   let cx=0.5,cy=0.5,pcx=0.5,pcy=0.5,scCool=0,lastDX=0,tf=0;
   startWhoosh(1.0);startBinaural(wave.base,wave.hz,0.18);startPad(wave.pad,0.040);
-  return{wave,run(){
-    tf++;mTimer++;if(mTimer>=mDur){mTimer=0;mDur=rndInt(600,1800);curM=mkLightPat();}
+  return{wave,run(TF){
+    tf++;mTimer++;if(mTimer>=mDur){mTimer=0;mDur=rndInt(400,1000);curM=mkLightPat();}
     const tgt=curM.getTarget(cx,cy);pcx=cx;pcy=cy;
     const lspd=tgt.lerp||0.15;cx+=(tgt.x-cx)*lspd;cy+=(tgt.y-cy)*lspd;
     const bx=cx*W,by=cy*H,spd=Math.hypot((cx-pcx)*W,(cy-pcy)*H);
     setWhoosh(cx,spd,1.0);
     const dX=cx>pcx?1:-1;scCool--;if(dX!==lastDX&&spd>1.5&&scCool<=0){playScratch(rnd(250,900),rnd(0.08,0.35));scCool=rndInt(5,18);}lastDX=dX;
     const r=minR+(maxR-minR)*(0.5+Math.sin(tf*pulseSpd+pulsePhase)*0.5);
-    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
     const g=ctx.createRadialGradient(bx,by,0,bx,by,r*1.6);
     g.addColorStop(0.00,'rgba(255,255,255,1.00)');g.addColorStop(0.06,'rgba(255,255,255,0.96)');
     g.addColorStop(0.20,`hsla(${bH},${bS}%,${bL2}%,0.90)`);g.addColorStop(0.50,`hsla(${bH},${bS}%,${Math.max(40,bL2-20)}%,0.50)`);
     g.addColorStop(0.82,`hsla(${bH},${bS}%,${Math.max(20,bL2-40)}%,0.14)`);g.addColorStop(1.00,'transparent');
     ctx.fillStyle=g;ctx.beginPath();ctx.arc(bx,by,r*1.6,0,Math.PI*2);ctx.fill();
-    drawUI('👁  Follow the light','let your eyes drift with it',`${wave.name}  ·  ${wave.help}`);
+    if(TF<=DISCLAIMER_F){drawDisclaimer(Math.min(1,TF/20));}
+    else if(TF<=DISCLAIMER_F+INSTRUCT_F){const p=(TF-DISCLAIMER_F);const a=Math.min(1,p/20)*Math.min(1,(INSTRUCT_F-p+20)/20);drawInstructions(a,wave.name,wave.help);}
+    else{drawMainUI(wave.name,wave.help,'👁  Follow the light','let your eyes drift with it');}
   }};
 }
-
 function scene6(){
   const wave=pick(WAVES);
   const modes=['strobe','single','flicker','slow_pulse','burst'];
-  const flashMode=pick(modes);
-  const fH=rndInt(0,359),fS=rndInt(0,100),fL=rndInt(85,100);
+  const flashMode=pick(modes),fH=rndInt(0,359),fS=rndInt(0,100),fL=rndInt(85,100);
   let brightness=0,lx=0.5,ly=0.5;
-  const motPat=mkFlashPat();
-  const ms={timer:0};
+  const motPat=mkFlashPat(),ms={timer:0};
   if(flashMode==='strobe'){ms.interval=rndInt(4,18);ms.onF=rndInt(1,5);ms.on=false;}
   else if(flashMode==='single'){ms.phase='dark';ms.darkDur=rndInt(20,90);ms.holdDur=rndInt(5,40);ms.fadeDur=rndInt(10,50);}
   else if(flashMode==='flicker'){ms.interval=rndInt(2,8);ms.minB=rnd(0.0,0.3);}
   else if(flashMode==='slow_pulse'){ms.spd=rnd(0.012,0.040);ms.minB=rnd(0.0,0.15);ms.t=0;}
   else{ms.phase='dark';ms.darkDur=rndInt(40,120);ms.burstCount=0;ms.burstMax=rndInt(3,10);ms.burstInterval=rndInt(2,8);}
   startWhoosh(0.0);startBinaural(wave.base,wave.hz,0.18);startPad(wave.pad,0.040);
-  return{wave,run(){
+  return{wave,run(TF){
     ms.timer++;
-    if(flashMode==='strobe'){
-      if(!ms.on&&ms.timer>=ms.interval){ms.timer=0;ms.on=true;playFlash(rnd(0.2,0.6),rnd(500,1500));}
-      else if(ms.on&&ms.timer>=ms.onF){ms.timer=0;ms.on=false;}
-      brightness=ms.on?1.0:0.0;
-    }else if(flashMode==='single'){
-      if(ms.phase==='dark'){brightness=0;if(ms.timer>=ms.darkDur){ms.phase='flash';ms.timer=0;playFlash(rnd(0.3,0.7),rnd(400,1200));}}
-      else if(ms.phase==='flash'){brightness=1.0;if(ms.timer>=3){ms.phase='hold';ms.timer=0;}}
-      else if(ms.phase==='hold'){brightness=1.0;if(ms.timer>=ms.holdDur){ms.phase='fade';ms.timer=0;}}
-      else if(ms.phase==='fade'){brightness=1.0-ms.timer/ms.fadeDur;if(ms.timer>=ms.fadeDur){ms.phase='dark';ms.timer=0;brightness=0;ms.darkDur=rndInt(20,90);}}
-    }else if(flashMode==='flicker'){
-      if(ms.timer>=ms.interval){ms.timer=0;ms.interval=rndInt(1,10);brightness=Math.random()<0.7?rnd(ms.minB,1.0):ms.minB;if(brightness>0.6)playFlash(rnd(0.1,0.35),rnd(600,2000));}
-    }else if(flashMode==='slow_pulse'){
-      ms.t+=ms.spd;brightness=ms.minB+(1-ms.minB)*(0.5+Math.sin(ms.t)*0.5);
-    }else{
-      if(ms.phase==='dark'){brightness=0;if(ms.timer>=ms.darkDur){ms.phase='burst';ms.timer=0;ms.burstCount=0;}}
-      else if(ms.phase==='burst'){if(ms.timer%ms.burstInterval===0){brightness=1.0;playFlash(rnd(0.2,0.6),rnd(400,1400));ms.burstCount++;if(ms.burstCount>=ms.burstMax){ms.phase='dark';ms.timer=0;ms.darkDur=rndInt(40,120);ms.burstMax=rndInt(3,10);brightness=0;}}else brightness=Math.max(0,brightness-0.25);}
-    }
+    if(flashMode==='strobe'){if(!ms.on&&ms.timer>=ms.interval){ms.timer=0;ms.on=true;playFlash(rnd(0.2,0.6),rnd(500,1500));}else if(ms.on&&ms.timer>=ms.onF){ms.timer=0;ms.on=false;}brightness=ms.on?1.0:0.0;}
+    else if(flashMode==='single'){if(ms.phase==='dark'){brightness=0;if(ms.timer>=ms.darkDur){ms.phase='flash';ms.timer=0;playFlash(rnd(0.3,0.7),rnd(400,1200));}}else if(ms.phase==='flash'){brightness=1.0;if(ms.timer>=3){ms.phase='hold';ms.timer=0;}}else if(ms.phase==='hold'){brightness=1.0;if(ms.timer>=ms.holdDur){ms.phase='fade';ms.timer=0;}}else if(ms.phase==='fade'){brightness=1.0-ms.timer/ms.fadeDur;if(ms.timer>=ms.fadeDur){ms.phase='dark';ms.timer=0;brightness=0;ms.darkDur=rndInt(20,90);}}}
+    else if(flashMode==='flicker'){if(ms.timer>=ms.interval){ms.timer=0;ms.interval=rndInt(1,10);brightness=Math.random()<0.7?rnd(ms.minB,1.0):ms.minB;if(brightness>0.6)playFlash(rnd(0.1,0.35),rnd(600,2000));}}
+    else if(flashMode==='slow_pulse'){ms.t+=ms.spd;brightness=ms.minB+(1-ms.minB)*(0.5+Math.sin(ms.t)*0.5);}
+    else{if(ms.phase==='dark'){brightness=0;if(ms.timer>=ms.darkDur){ms.phase='burst';ms.timer=0;ms.burstCount=0;}}else if(ms.phase==='burst'){if(ms.timer%ms.burstInterval===0){brightness=1.0;playFlash(rnd(0.2,0.6),rnd(400,1400));ms.burstCount++;if(ms.burstCount>=ms.burstMax){ms.phase='dark';ms.timer=0;ms.darkDur=rndInt(40,120);ms.burstMax=rndInt(3,10);brightness=0;}}else brightness=Math.max(0,brightness-0.25);}}
     const tgt=motPat.fn();lx+=(tgt.x-lx)*0.12;ly+=(tgt.y-ly)*0.12;
     if(_wG)_wG.gain.setTargetAtTime(brightness*0.9,AC.currentTime,0.04);
     if(_wP)_wP.pan.setTargetAtTime(Math.max(-1,Math.min(1,lx*2-1)),AC.currentTime,0.04);
-    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
     if(brightness>0.001){
       const bx=lx*W,by=ly*H,rv=Math.min(W,H)*0.75;
-      const g=ctx.createRadialGradient(bx,by,0,bx,by,rv);
+      const g2=ctx.createRadialGradient(bx,by,0,bx,by,rv);
       const col=fS===0?'rgba(255,255,255,':`hsla(${fH},${fS}%,${fL}%,`;
-      g.addColorStop(0.00,col+(brightness*1.00)+')');g.addColorStop(0.10,col+(brightness*0.95)+')');
-      g.addColorStop(0.35,col+(brightness*0.65)+')');g.addColorStop(0.60,col+(brightness*0.28)+')');
-      g.addColorStop(0.82,col+(brightness*0.08)+')');g.addColorStop(1.00,col+'0)');
-      ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+      g2.addColorStop(0.00,col+(brightness*1.00)+')');g2.addColorStop(0.10,col+(brightness*0.95)+')');g2.addColorStop(0.35,col+(brightness*0.65)+')');g2.addColorStop(0.60,col+(brightness*0.28)+')');g2.addColorStop(0.82,col+(brightness*0.08)+')');g2.addColorStop(1.00,col+'0)');
+      ctx.fillStyle=g2;ctx.fillRect(0,0,W,H);
       if(brightness>0.5){const hot=ctx.createRadialGradient(bx,by,0,bx,by,Math.min(W,H)*0.22);hot.addColorStop(0,`rgba(255,255,255,${(brightness-0.5)*2*0.88})`);hot.addColorStop(1,'transparent');ctx.fillStyle=hot;ctx.fillRect(0,0,W,H);}
     }
-    drawUI('👁  Watch the light','let your mind relax',`${wave.name}  ·  ${wave.help}`);
+    if(TF<=DISCLAIMER_F){drawDisclaimer(Math.min(1,TF/20));}
+    else if(TF<=DISCLAIMER_F+INSTRUCT_F){const p=(TF-DISCLAIMER_F);const a=Math.min(1,p/20)*Math.min(1,(INSTRUCT_F-p+20)/20);drawInstructions(a,wave.name,wave.help);}
+    else{drawMainUI(wave.name,wave.help,'👁  Watch the light','let your mind relax');}
   }};
 }
 
-// ─── SCENE CHAIN — Single scene, 25 seconds ──────────────────
+// ─── MAIN — 20s single scene ─────────────────────────
 const SCENE_FNS=[scene1,scene2,scene3,scene4,scene5,scene6];
-const TOTAL_F=25*60;    // 25 seconds at 60fps
-const FADE_F=15;        // 0.25s fade at end
-
+const FADE_IN=30,FADE_OUT=45;
 let SESSION=null,TF=0,RAF=null;
 
 function startAll(){
   if(RAF){cancelAnimationFrame(RAF);RAF=null;}
-  TF=0;
-  stopBinaural();stopPad();stopWhoosh();
-  SESSION=pick(SCENE_FNS)(); // Pick ONE random scene
+  stopBinaural();stopPad();stopWhoosh();TF=0;
+  SESSION=pick(SCENE_FNS)();
   loop();
 }
-
 function loop(){
   RAF=requestAnimationFrame(loop);TF++;
-
-  SESSION.run();
-  
-  // Draw text overlay
-  drawTextOverlay(TF);
-
-  // Final fade out (last 0.5s)
-  if(TF>=TOTAL_F-FADE_F*2){
-    const a=(TF-(TOTAL_F-FADE_F*2))/(FADE_F*2);
-    ctx.fillStyle=`rgba(0,0,0,${Math.min(1,a)})`;ctx.fillRect(0,0,W,H);
-  }
-  if(TF>=TOTAL_F){
-    stopBinaural();stopPad();stopWhoosh();
-    window.stopRecording();
-    cancelAnimationFrame(RAF);RAF=null;
-  }
+  SESSION.run(TF);
+  // Fade in
+  if(TF<=FADE_IN){ctx.fillStyle=`rgba(0,0,0,${1-TF/FADE_IN})`;ctx.fillRect(0,0,W,H);}
+  // Fade out
+  if(TF>=TOTAL_F-FADE_OUT){const a=(TF-(TOTAL_F-FADE_OUT))/FADE_OUT;ctx.fillStyle=`rgba(0,0,0,${Math.min(1,a)})`;ctx.fillRect(0,0,W,H);}
+  if(TF>=TOTAL_F){stopBinaural();stopPad();stopWhoosh();window.stopRecording();cancelAnimationFrame(RAF);RAF=null;}
 }
 
 window.addEventListener('DOMContentLoaded',()=>{resize();startAll();});
