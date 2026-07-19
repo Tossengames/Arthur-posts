@@ -1,9 +1,9 @@
-name: 🧠 Post EMDR Shorts
+name: 🧠 Post EMDR Short to YouTube
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 9 * * *"
+    - cron: "0 19 * * 1,3,5"  # Mon Wed Fri 2PM EST
 
 jobs:
   record:
@@ -16,25 +16,26 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y \
-            xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio
-          echo "✅ Dependencies installed"
+          sudo apt-get install -y xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio
+          pip install selenium webdriver-manager google-auth google-auth-oauthlib google-api-python-client
+          echo "✅ Done"
 
-      - name: Install Python deps
-        run: |
-          pip install selenium webdriver-manager requests google-auth google-auth-oauthlib google-api-python-client
-          echo "✅ Python deps installed"
+      - name: Set timestamp
+        run: echo "TS=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
 
-      - name: Start virtual display and audio
+      - name: Verify asmry.html
+        run: ls -la asmry.html && echo "✅ Found"
+
+      - name: Start display and audio
         run: |
-          Xvfb :99 -screen 0 1920x1080x24 -ac &
+          Xvfb :99 -screen 0 1080x1920x24 -ac &
           sleep 2
           pulseaudio --start --exit-idle-time=-1 &
           sleep 2
           echo "DISPLAY=:99" >> $GITHUB_ENV
-          echo "✅ Display and audio started"
+          echo "✅ Display ready"
 
-      - name: Record EMDR canvas
+      - name: Record EMDR Short
         run: |
           python3 << 'PYEOF'
           import os, time, base64, sys
@@ -43,19 +44,19 @@ jobs:
           from selenium.webdriver.chrome.service import Service
           from webdriver_manager.chrome import ChromeDriverManager
 
-          html_path = os.path.abspath("asmr.html")
+          html_path = os.path.abspath("asmry.html")
           if not os.path.exists(html_path):
-            print(f"❌ asmr.html not found at {html_path}")
+            print(f"❌ asmry.html not found at {html_path}")
             sys.exit(1)
-          print(f"✅ Found: {html_path}")
+          print(f"✅ Found {html_path}")
 
-          webm_file = "/tmp/emdr_canvas.webm"
+          webm_file = f"/tmp/emdr_{os.environ.get('TS','test')}.webm"
 
           opts = Options()
           opts.add_argument("--no-sandbox")
           opts.add_argument("--disable-dev-shm-usage")
           opts.add_argument("--disable-gpu")
-          opts.add_argument("--window-size=1920,1080")
+          opts.add_argument("--window-size=1080,1920")
           opts.add_argument("--window-position=0,0")
           opts.add_argument("--force-device-scale-factor=1")
           opts.add_argument("--autoplay-policy=no-user-gesture-required")
@@ -70,31 +71,33 @@ jobs:
           opts.add_argument("--allow-file-access-from-files")
           opts.add_experimental_option("excludeSwitches", ["enable-automation"])
           opts.add_experimental_option("useAutomationExtension", False)
+          opts.add_experimental_option("mobileEmulation", {
+            "deviceMetrics": {"width": 1080, "height": 1920, "pixelRatio": 1.0},
+            "userAgent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
+          })
 
-          print("🚀 Starting Chrome...")
+          print("🚀 Starting Chrome 1080x1920...")
           driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
-          driver.set_window_size(1920, 1080)
-          driver.set_script_timeout(180)
+          driver.set_window_size(1080, 1920)
+          driver.set_script_timeout(90)
 
-          print(f"📄 Loading file://{html_path}")
+          print(f"📄 Loading {html_path}")
           driver.get(f"file://{html_path}")
           time.sleep(3)
           driver.execute_script("if(typeof AC!=='undefined'&&AC)AC.resume().catch(()=>{});")
           time.sleep(1)
 
           driver.execute_script("window.startRecording(30);")
-          print("🎬 Recording started — waiting ~28s...")
+          print("🎬 Recording — waiting ~22s...")
 
           for i in range(60):
             done = driver.execute_script("return window._recordingDone;")
             if done:
-              print(f"✅ Done after {i*0.5:.0f}s")
+              print(f"✅ Done at {i*0.5:.0f}s")
               break
-            if i % 10 == 0:
-              print(f"  still recording... {i*0.5:.0f}s elapsed")
             time.sleep(0.5)
           else:
-            print("⏰ Timeout — forcing finalize")
+            print("⏰ Timeout — forcing stop")
             driver.execute_script("window.stopRecording();")
             time.sleep(2)
             driver.execute_script("window.forceFinalize();")
@@ -102,80 +105,56 @@ jobs:
 
           if not driver.execute_script("return window._recordingDone;"):
             driver.quit()
-            print("❌ Recording failed to finalize")
+            print("❌ Recording failed")
             sys.exit(1)
 
-          print("📦 Extracting video data...")
+          print("📦 Extracting...")
           b64 = driver.execute_async_script("""
             var done = arguments[0];
             window.getRecordingBase64().then(done).catch(function(e){ console.error(e); done(null); });
           """)
           driver.quit()
-          print("🖥️  Browser closed")
 
           if not b64:
-            print("❌ No video data returned")
+            print("❌ No video data")
             sys.exit(1)
 
           with open(webm_file, "wb") as f:
             f.write(base64.b64decode(b64))
           size = os.path.getsize(webm_file)
-          print(f"✅ Canvas webm: {size/1024/1024:.1f} MB")
+          print(f"✅ Webm: {size/1024/1024:.1f} MB")
           if size < 10000:
-            print("❌ Webm too small — recording likely empty")
+            print("❌ Too small")
             sys.exit(1)
-          PYEOF
-        env:
-          DISPLAY: ":99"
 
-      - name: Convert to YouTube Shorts (9:16)
-        run: |
-          python3 << 'PYEOF'
-          import subprocess, os, sys
-
-          print("📱 Converting to 9:16 portrait for YouTube Shorts...")
-          
-          # Get video dimensions
-          probe = subprocess.run([
-            "ffprobe", "-v", "error", "-show_entries", 
-            "stream=width,height", "-of", "csv=p=0",
-            "/tmp/emdr_canvas.webm"
-          ], capture_output=True, text=True)
-          
-          dims = probe.stdout.strip().split(',')
-          w, h = int(dims[0]), int(dims[1])
-          print(f"Original: {w}x{h}")
-          
-          # Crop to square using smaller dimension
-          crop_size = min(w, h)
-          crop_x = (w - crop_size) // 2
-          crop_y = (h - crop_size) // 2
-          
+          mp4_file = webm_file.replace(".webm", ".mp4")
+          import subprocess
           result = subprocess.run([
-            "ffmpeg", "-y",
-            "-i", "/tmp/emdr_canvas.webm",
-            "-vf", f"crop={crop_size}:{crop_size}:{crop_x}:{crop_y},scale=1080:1920:flags=lanczos",
-            "-c:v", "libx264", "-preset", "slow", "-crf", "18",
+            "ffmpeg", "-y", "-i", webm_file,
+            "-c:v", "libx264", "-preset", "slow", "-crf", "16",
             "-pix_fmt", "yuv420p",
+            "-vf", "scale=1080:1920:flags=lanczos",
             "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
             "-movflags", "+faststart",
-            "-t", "28",
-            "/tmp/final_emdr.mp4"
+            mp4_file
           ], capture_output=True, text=True)
 
           if result.returncode != 0:
-            print(f"❌ Conversion failed:\n{result.stderr[-2000:]}")
+            print(f"❌ ffmpeg error:\n{result.stderr[-2000:]}")
             sys.exit(1)
 
-          os.remove("/tmp/emdr_canvas.webm")
-          size = os.path.getsize("/tmp/final_emdr.mp4")
-          print(f"✅ Final Shorts: {size/1024/1024:.1f} MB")
-          if size < 100000:
-            print("❌ Video too small")
-            sys.exit(1)
+          os.remove(webm_file)
+          print(f"✅ mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
+
+          # Save path for next step
+          with open("/tmp/mp4_path.txt", "w") as f:
+            f.write(mp4_file)
           PYEOF
+        env:
+          DISPLAY: ":99"
+          TS: ${{ env.TS }}
 
-      - name: Upload to YouTube
+      - name: Upload to YouTube as Short
         run: |
           python3 << 'PYEOF'
           import os, random, sys
@@ -183,35 +162,141 @@ jobs:
           from googleapiclient.http import MediaFileUpload
           from google.oauth2.credentials import Credentials
 
-          mp4_file = "/tmp/final_emdr.mp4"
+          with open("/tmp/mp4_path.txt") as f:
+            mp4_file = f.read().strip()
+
           if not os.path.exists(mp4_file):
-            print("❌ Final video not found")
+            print("❌ mp4 not found")
             sys.exit(1)
 
-          shorts = [
+          videos = [
             {
-              "title": "EMDR Self-Admin for Anxiety | Follow the Light",
-              "description": "Self-administer EMDR in 25 seconds 👁\n\nFollow the movement with your eyes while bilateral brainwave sounds play.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Use headphones for best results\n\n#EMDR #AnxietyRelief #BilateralStimulation #Brainwaves #MentalHealth #StressRelief #TraumaHealing #EMDRtherapy #Calm #Overthinking"
+              "title": "EMDR Bilateral Stimulation for Anxiety Relief | Alpha 10Hz #shorts",
+              "description": """Self-guided EMDR bilateral stimulation session.
+
+Follow the moving stimulus with your eyes while keeping your head still. This activates bilateral brain processing — the same mechanism used in EMDR therapy for anxiety, stress, and overthinking.
+
+🎧 Use headphones for full binaural beat effect
+👁 Keep your head still and follow with your eyes only
+🌬 Breathe slowly and naturally
+
+What's playing:
+• Alpha 10Hz binaural beats — promotes relaxed alertness
+• Bilateral eye movement — activates both brain hemispheres
+• Whoosh tones panned left/right to match movement
+
+Benefits studied in EMDR research:
+✓ Reduces anxiety and intrusive thoughts
+✓ Helps process emotional stress
+✓ Calms the nervous system
+
+⚠️ DISCLAIMER: This is not a substitute for professional therapy. If you have PTSD or severe trauma, please work with a licensed EMDR therapist. Contains flashing lights and fast movement — stop if you feel discomfort. Not suitable for photosensitive epilepsy.
+
+#emdr #bilateralstimulation #anxietyrelief #brainwaves #alphawave #binaural #stressrelief #mentalhealth #selftherapy #shorts"""
             },
             {
-              "title": "Stop Overthinking in 25 Seconds | EMDR Eye Movement",
-              "description": "Your brain can't overthink and follow movement at the same time 👁\n\nEMDR self-administration with bilateral brainwave stimulation.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Use headphones\n\n#EMDR #Overthinking #AnxietyRelief #Brainwaves #MentalHealth #StressRelief #Calm #Focus #Bilateral"
+              "title": "Stop Overthinking Now | EMDR Eye Movement + Theta Waves #shorts",
+              "description": """Self-guided bilateral eye movement session for overthinking and mental stress.
+
+Your brain cannot simultaneously follow a moving object and ruminate — this is the basis of EMDR bilateral stimulation therapy.
+
+🎧 Headphones required for binaural effect
+👁 Follow the ball with your eyes only
+🌬 Breathe and let thoughts pass without engaging them
+
+What's playing:
+• Theta 6Hz binaural beats — deep relaxation and emotional processing
+• Bilateral visual stimulation — both hemispheres working together
+• Spatial audio panned to match movement direction
+
+Research-supported benefits:
+✓ Interrupts overthinking loops
+✓ Reduces cortisol and stress response
+✓ Promotes emotional regulation
+
+⚠️ DISCLAIMER: Educational and wellness content only. Not a replacement for licensed therapy. Contains flashing lights and rapid movement. Stop immediately if you feel unwell. Not suitable for photosensitive epilepsy.
+
+#overthinking #emdr #thetawaves #binaural #anxietyrelief #stressrelief #mentalhealth #bilateralstimulation #shorts"""
             },
             {
-              "title": "EMDR Bilateral Stimulation | 25 Second Brain Reset",
-              "description": "Reset your nervous system in 25 seconds 🧠\n\nFollow the movement with your eyes for bilateral brain stimulation.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Headphones recommended\n\n#EMDR #BilateralStimulation #NervousSystem #BrainReset #AnxietyRelief #MentalHealth #StressRelief #Calm #Trauma #Healing"
+              "title": "528Hz Healing Frequency + EMDR Bilateral Stimulation #shorts",
+              "description": """Self-guided EMDR session with 528Hz solfeggio frequency.
+
+528Hz — known as the 'miracle tone' — combined with bilateral eye movement stimulation for deep stress relief and nervous system regulation.
+
+🎧 Use headphones for full stereo effect
+👁 Follow the light or ball with your eyes only
+🌬 Slow your breathing and relax your jaw
+
+What's playing:
+• 528Hz — associated with cellular healing and calm
+• Bilateral visual tracking — activates natural stress processing
+• Spatial whoosh audio panned with movement
+
+⚠️ DISCLAIMER: This content is for wellness and relaxation only. It is not medical treatment or professional therapy. Contains flashing lights and fast visual movement. Do not use while driving or operating machinery. Stop if you feel dizzy or uncomfortable. Not suitable for photosensitive epilepsy.
+
+#528hz #healingfrequency #emdr #bilateralstimulation #stressrelief #binaural #mentalhealth #solfeggio #shorts"""
             },
             {
-              "title": "Heal Your Brain in 25 Seconds | EMDR Self-Admin",
-              "description": "Simple EMDR technique you can do anywhere 👁\n\nFollow the light with your eyes while brainwave frequencies play.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Use headphones\n\n#EMDR #BrainHealing #AnxietyRelief #MentalHealth #StressRelief #Bilateral #TraumaHealing #Calm #Focus #Brainwaves"
+              "title": "Calm Your Nervous System in 20 Seconds | EMDR + Binaural Beats #shorts",
+              "description": """Quick self-guided bilateral stimulation to activate your parasympathetic nervous system.
+
+Smooth bilateral eye movement combined with binaural beats shifts your brain from fight-or-flight into rest-and-digest within seconds.
+
+🎧 Headphones for best binaural experience
+👁 Eyes follow the movement — head stays still
+🌬 Exhale slowly with each pass
+
+What's playing:
+• Binaural beats calibrated for relaxation
+• Bilateral visual stimulation (EMDR-inspired)
+• Panned audio for full left-right brain activation
+
+⚠️ DISCLAIMER: Wellness content only — not professional mental health treatment. Contains flashing lights and rapid movement. Not suitable for photosensitive epilepsy. Consult a therapist for trauma treatment.
+
+#nervoussystem #emdr #binaural #anxietyrelief #stressrelief #vagusnerve #bilateralstimulation #mentalhealth #shorts"""
             },
             {
-              "title": "EMDR Therapy at Home | 25 Second Anxiety Relief",
-              "description": "Do EMDR therapy on yourself in 25 seconds 👁\n\nBilateral eye movement + brainwave stimulation for instant calm.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Headphones on\n\n#EMDR #EMDRtherapy #AnxietyRelief #MentalHealth #StressRelief #Bilateral #Brainwaves #Calm #TraumaHealing #SelfCare"
-            }
+              "title": "Schumann Resonance 7.83Hz | Grounding EMDR Session #shorts",
+              "description": """Self-guided grounding session using Schumann resonance and bilateral stimulation.
+
+7.83Hz — Earth's natural electromagnetic frequency — combined with EMDR-inspired bilateral eye tracking for deep grounding and anxiety relief.
+
+🎧 Headphones required
+👁 Follow with your eyes only
+🌬 Feel your feet on the ground as you watch
+
+What's playing:
+• Schumann resonance 7.83Hz binaural beats
+• Bilateral visual movement — left and right brain activation
+• Spatial audio matching movement direction
+
+⚠️ DISCLAIMER: Wellness and relaxation content only. Not a medical device or therapy. Contains flashing lights and visual movement. Stop if you experience discomfort. Not suitable for photosensitive epilepsy.
+
+#schumannresonance #grounding #emdr #bilateralstimulation #binaural #anxietyrelief #mentalhealth #earthfrequency #shorts"""
+            },
+            {
+              "title": "Self EMDR Session for Anxiety | Alpha Waves 8Hz #shorts",
+              "description": """20-second self-administered EMDR bilateral stimulation session.
+
+EMDR (Eye Movement Desensitization and Reprocessing) uses bilateral eye movement to help the brain process stress and anxiety. This is an accessible self-guided version for everyday stress relief.
+
+🎧 Use headphones — binaural beats need stereo
+👁 Follow the moving ball with your eyes
+🌬 Let your body soften as you follow
+
+What's playing:
+• Alpha 8Hz binaural beats — calm focused state
+• Bilateral visual tracking stimulus
+• Whoosh tones panned left-right with the movement
+
+⚠️ DISCLAIMER: This is self-guided wellness content inspired by EMDR principles. It is NOT a replacement for professional EMDR therapy, especially for PTSD or trauma. Contains flashing lights and fast movement. Not for photosensitive epilepsy. Stop if you feel unwell.
+
+#emdr #selftherapy #alphawave #binaural #anxietyrelief #bilateralstimulation #stressrelief #mentalhealth #shorts"""
+            },
           ]
 
-          video = random.choice(shorts)
+          video = random.choice(videos)
           print(f"📹 Title: {video['title']}")
 
           creds = Credentials(
@@ -222,14 +307,21 @@ jobs:
             client_secret=os.environ.get("YT_CLIENT_SECRET"),
           )
           youtube = build("youtube", "v3", credentials=creds)
+
           request = youtube.videos().insert(
             part="snippet,status",
             body={
               "snippet": {
                 "title": video["title"],
                 "description": video["description"],
-                "tags": ["EMDR","Anxiety Relief","Bilateral Stimulation","Brainwaves","Mental Health","Stress Relief","Trauma Healing","EMDR Therapy","Calm","Overthinking","Brain Reset","Nervous System"],
-                "categoryId": "22",
+                "tags": [
+                  "emdr","emdr therapy","bilateral stimulation","binaural beats",
+                  "anxiety relief","stress relief","alpha waves","theta waves",
+                  "528hz","schumann resonance","mental health","overthinking",
+                  "nervous system","self therapy","eye movement therapy",
+                  "brain waves","relaxation","meditation","shorts"
+                ],
+                "categoryId": "26",  # How-to & Style — fits wellness content
                 "defaultLanguage": "en"
               },
               "status": {
@@ -240,13 +332,15 @@ jobs:
             },
             media_body=MediaFileUpload(mp4_file, mimetype="video/mp4", resumable=True)
           )
+
           response = None
           while response is None:
             status, response = request.next_chunk()
             if status:
-              print(f"⬆️  Upload {int(status.progress()*100)}%")
+              print(f"⬆️  {int(status.progress()*100)}%")
 
-          print(f"✅ Done! Video ID: {response['id']}")
+          video_id = response.get("id","")
+          print(f"✅ Uploaded! https://youtube.com/shorts/{video_id}")
           os.remove(mp4_file)
           PYEOF
         env:
