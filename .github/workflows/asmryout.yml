@@ -169,121 +169,175 @@ jobs:
             print("❌ mp4 not found")
             sys.exit(1)
 
-          videos = [
-            {
-              "title": "Bilateral Stimulation | Alpha Waves for Deep Relaxation 🧠 #Shorts",
-              "description": """⚠️ DISCLAIMER: For relaxation and entertainment only. Do not use if you have epilepsy, prone to seizures, or sensitive to flashing lights. Not medical advice. Stop if discomfort. Do not drive or operate machinery.
-
-        🎧 USE HEADPHONES for left-right audio effect.
-
-        🧠 What is this?
-        Bilateral stimulation + brainwave entrainment. Sound alternates left-right while you follow the moving visual. Alpha waves (8-12 Hz) promote deep relaxation and calm the nervous system.
-
-        Benefits:
-        ✓ Reduces anxiety and stress
-        ✓ Calms the nervous system
-        ✓ Promotes emotional regulation
-        ✓ Helps with relaxation
-
-        How to use:
-        1. Put on headphones 🎧
-        2. Follow the moving ball with your eyes
-        3. Breathe slowly and relax
-
-        #bilateralstimulation #alphawaves #brainflossing #binauralbeats #brainwaveentrainment #relaxation #anxietyrelief #stressrelief #mentalhealth #nervoussystem #shorts"""
-            },
-            {
-              "title": "Brain Flossing | Fast Bilateral Beats for Focus 🎧 #Shorts",
-              "description": """⚠️ DISCLAIMER: For relaxation and entertainment only. Do not use if you have epilepsy, prone to seizures, or sensitive to flashing lights. Not medical advice. Stop if discomfort. Do not drive or operate machinery.
-
-        🎧 USE HEADPHONES for left-right audio effect.
-
-        🧠 What is this?
-        Bilateral stimulation + brainwave entrainment. Beta waves (13-30 Hz) promote focus, concentration, and alertness.
-
-        Benefits:
-        ✓ Improves focus and concentration
-        ✓ Enhances mental clarity
-        ✓ Reduces brain fog
-        ✓ Sharpens alertness
-
-        How to use:
-        1. Put on headphones 🎧
-        2. Follow the moving ball with your eyes
-        3. Stay focused on the movement
-
-        #bilateralstimulation #betawaves #brainflossing #binauralbeats #brainwaveentrainment #focus #concentration #mentalclarity #productivity #shorts"""
-            },
-            {
-              "title": "Bilateral Beats + Fast Visual Sync | Theta Waves for Anxiety Relief #Shorts",
-              "description": """⚠️ DISCLAIMER: For relaxation and entertainment only. Do not use if you have epilepsy, prone to seizures, or sensitive to flashing lights. Not medical advice. Stop if discomfort. Do not drive or operate machinery.
-
-        🎧 USE HEADPHONES for left-right audio effect.
-
-        🧠 What is this?
-        Bilateral stimulation + brainwave entrainment. Theta waves (4-8 Hz) promote deep relaxation, meditation, and anxiety relief.
-
-        Benefits:
-        ✓ Reduces anxiety and stress
-        ✓ Promotes deep relaxation
-        ✓ Supports meditation
-        ✓ Enhances emotional regulation
-
-        How to use:
-        1. Put on headphones 🎧
-        2. Follow the moving ball with your eyes
-        3. Let thoughts pass without engaging
-
-        #bilateralstimulation #thetawaves #brainflossing #binauralbeats #brainwaveentrainment #anxietyrelief #stressrelief #meditation #mentalhealth #shorts"""
-            },
-            {
-              "title": "Brain Massage in 60s | Bilateral Stimulation + Delta Waves for Sleep #Shorts",
-              "description": """⚠️ DISCLAIMER: For relaxation and entertainment only. Do not use if you have epilepsy, prone to seizures, or sensitive to flashing lights. Not medical advice. Stop if discomfort. Do not drive or operate machinery.
-
-        🎧 USE HEADPHONES for left-right audio effect.
-
-        🧠 What is this?
-        Bilateral stimulation + brainwave entrainment. Delta waves (0.5-4 Hz) promote deep sleep and healing rest.
-
-        Benefits:
-        ✓ Promotes deep sleep
-        ✓ Enhances healing and recovery
-        ✓ Reduces insomnia
-        ✓ Supports nervous system regulation
-
-        How to use:
-        1. Put on headphones 🎧
-        2. Follow the moving ball with your eyes
-        3. Relax and let go
-
-        #bilateralstimulation #deltawaves #brainflossing #binauralbeats #brainwaveentrainment #sleep #insomnia #deeprelaxation #healing #shorts"""
-            },
-            {
-              "title": "Sync Your Brain Fast | Bilateral Stimulation + Gamma Waves for Focus #Shorts",
-              "description": """⚠️ DISCLAIMER: For relaxation and entertainment only. Do not use if you have epilepsy, prone to seizures, or sensitive to flashing lights. Not medical advice. Stop if discomfort. Do not drive or operate machinery.
-
-        🎧 USE HEADPHONES for left-right audio effect.
-
-        🧠 What is this?
-        Bilateral stimulation + brainwave entrainment. Gamma waves (30-100 Hz) promote peak performance, cognitive enhancement, and focus.
-
-        Benefits:
-        ✓ Enhances cognitive performance
-        ✓ Improves focus and concentration
-        ✓ Boosts memory and learning
-        ✓ Promotes peak mental state
-
-        How to use:
-        1. Put on headphones 🎧
-        2. Follow the moving ball with your eyes
-        3. Stay engaged and alert
-
-        #bilateralstimulation #gammawaves #brainflossing #binauralbeats #brainwaveentrainment #focus #cognitiveenhancement #peakperformance #mentalhealth #shorts"""
-            }
+          # ===== SEO OPTIMIZED TITLES =====
+          # Short, punchy, keyword-rich (under 60 chars)
+          titles = [
+            "EMDR Bilateral Stimulation for Anxiety Relief #shorts",
+            "Stop Overthinking with EMDR Therapy #shorts",
+            "Calm Your Nervous System with EMDR #shorts",
+            "Self EMDR Session for Stress Relief #shorts",
+            "EMDR Anxiety Relief in 20 Seconds #shorts",
+            "Quick EMDR for Stress and Anxiety #shorts",
+            "EMDR Bilateral Stimulation - Calm Your Mind #shorts",
+            "Anxiety Relief with EMDR Eye Movement #shorts"
           ]
 
-          video = random.choice(videos)
-          print(f"📹 Title: {video['title']}")
+          # ===== SEO OPTIMIZED DESCRIPTIONS =====
+          # Detailed, keyword-rich, consistent structure
+          descriptions = [
+            """Self-guided EMDR bilateral stimulation for anxiety and stress relief. Follow the moving stimulus with your eyes to activate natural brain processing.
+
+          How EMDR works:
+          • Bilateral eye movement activates both brain hemispheres
+          • Visual tracking promotes nervous system regulation
+          • Natural stress processing mechanism
+
+          Benefits of this EMDR session:
+          ✓ Reduces anxiety and overthinking
+          ✓ Calms the nervous system
+          ✓ Promotes emotional regulation
+          ✓ Interrupts stress patterns
+
+          🎧 Use headphones for full stereo effect
+          👁 Keep head still, follow with eyes only
+          🌬 Breathe slowly and naturally
+
+          EMDR therapy is scientifically proven for anxiety, stress, and trauma processing. This self-guided version is for daily wellness and relaxation.
+
+          ⚠️ DISCLAIMER: This is not a substitute for professional therapy. Contains flashing lights. Stop if uncomfortable. Not for photosensitive epilepsy.
+
+          #emdr #bilateralstimulation #anxietyrelief #stressrelief #mentalhealth #emdrtherapy #shorts""",
+
+            """Stop overthinking with EMDR bilateral stimulation. Your brain cannot ruminate while tracking a moving object - this interrupts anxiety patterns instantly.
+
+          This self-guided EMDR session uses bilateral eye movement to:
+          • Activate both brain hemispheres
+          • Process emotional stress
+          • Calm the nervous system
+          • Interrupt overthinking loops
+
+          What makes this EMDR session effective:
+          ✓ Natural bilateral stimulation
+          ✓ Visual tracking for brain activation
+          ✓ Stress reduction mechanism
+
+          🎧 Use headphones for full stereo effect
+          👁 Follow the moving stimulus with your eyes
+          🌬 Let thoughts pass without engaging
+
+          EMDR (Eye Movement Desensitization and Reprocessing) is a proven therapeutic technique for anxiety, PTSD, and emotional regulation.
+
+          ⚠️ DISCLAIMER: Wellness content only. Not professional therapy. Contains flashing lights. Not for photosensitive epilepsy.
+
+          #overthinking #emdr #bilateralstimulation #anxietyrelief #stressrelief #mentalhealth #shorts""",
+
+            """Calm your nervous system with EMDR bilateral stimulation in just seconds. This self-guided session activates your parasympathetic nervous system for deep relaxation.
+
+          How EMDR stimulation works:
+          • Bilateral eye movement activates both hemispheres
+          • Natural stress processing mechanism
+          • Promotes vagal tone and relaxation
+
+          Benefits of this EMDR session:
+          ✓ Activates relaxation response
+          ✓ Reduces stress hormones
+          ✓ Promotes emotional balance
+          ✓ Supports nervous system health
+
+          🎧 Use headphones for full experience
+          👁 Follow the movement with your eyes
+          🌬 Exhale slowly and relax
+
+          EMDR therapy is clinically proven for trauma, anxiety, and stress relief. This self-guided version is for wellness and relaxation.
+
+          ⚠️ DISCLAIMER: Wellness content only. Not medical treatment. Contains flashing lights. Not for photosensitive epilepsy.
+
+          #nervoussystem #emdr #bilateralstimulation #anxietyrelief #stressrelief #vagusnerve #mentalhealth #shorts""",
+
+            """Self-administered EMDR session for everyday stress relief and emotional balance. Use this bilateral stimulation technique whenever you need to calm your mind.
+
+          This EMDR-inspired session provides:
+          • Bilateral brain stimulation
+          • Natural stress relief
+          • Emotional regulation
+          • Nervous system calming
+
+          Why EMDR bilateral stimulation works:
+          ✓ Activates natural processing
+          ✓ Interrupts stress patterns
+          ✓ Promotes relaxation
+          ✓ Supports mental wellness
+
+          🎧 Use headphones for full stereo effect
+          👁 Follow the moving stimulus with your eyes
+          🌬 Breathe slowly and relax
+
+          EMDR is a proven therapeutic approach for anxiety, PTSD, and emotional regulation. This self-guided version is for daily wellness.
+
+          ⚠️ DISCLAIMER: Self-guided wellness content. Not professional therapy. Contains flashing lights. Not for photosensitive epilepsy.
+
+          #emdr #selftherapy #anxietyrelief #stressrelief #bilateralstimulation #mentalhealth #shorts""",
+
+            """Quick EMDR bilateral stimulation for instant anxiety relief. This 20-second session helps calm your mind and reduce stress.
+
+          EMDR stimulation benefits:
+          • Bilateral eye movement
+          • Natural stress processing
+          • Nervous system regulation
+
+          🎧 Use headphones
+          👁 Follow with your eyes
+
+          ⚠️ DISCLAIMER: Not professional therapy. Contains flashing lights.
+
+          #emdr #anxietyrelief #stressrelief #bilateralstimulation #shorts""",
+
+            """EMDR self-therapy session for stress and anxiety relief. Bilateral stimulation activates your brain's natural calming mechanism.
+
+          This EMDR session helps:
+          ✓ Reduce anxiety
+          ✓ Calm overthinking
+          ✓ Regulate emotions
+
+          🎧 Use headphones
+          👁 Follow the movement
+
+          ⚠️ DISCLAIMER: Wellness content only. Not for photosensitive epilepsy.
+
+          #emdr #bilateralstimulation #anxietyrelief #mentalhealth #shorts""",
+
+            """Calm your mind with EMDR bilateral stimulation. This proven technique activates both brain hemispheres for natural anxiety relief.
+
+          EMDR benefits:
+          • Stress reduction
+          • Emotional regulation
+          • Nervous system calm
+
+          ⚠️ DISCLAIMER: Not professional therapy. Contains flashing lights.
+
+          #emdr #bilateralstimulation #anxietyrelief #stressrelief #shorts""",
+
+            """EMDR anxiety relief using bilateral eye movement. Follow the stimulus to activate your brain's natural calming response.
+
+          This EMDR session promotes:
+          ✓ Relaxation
+          ✓ Stress relief
+          ✓ Mental clarity
+
+          🎧 Use headphones for best results
+
+          ⚠️ DISCLAIMER: Wellness content only.
+
+          #emdr #anxietyrelief #bilateralstimulation #stressrelief #shorts"""
+          ]
+
+          # ===== COMBINE TITLES AND DESCRIPTIONS =====
+          # Randomly select a title and description independently
+          title = random.choice(titles)
+          description = random.choice(descriptions)
+          
+          print(f"📹 Title: {title}")
+          print(f"📝 Description length: {len(description)} chars")
 
           creds = Credentials(
             token=os.environ.get("YT_ACCESS_TOKEN"),
@@ -298,16 +352,13 @@ jobs:
             part="snippet,status",
             body={
               "snippet": {
-                "title": video["title"],
-                "description": video["description"],
+                "title": title,
+                "description": description,
                 "tags": [
-                  "bilateral stimulation","bilateralstimulation","brain flossing","brainflossing",
-                  "binaural beats","binauralbeats","brainwave entrainment","brainwaveentrainment",
-                  "alpha waves","alphawaves","beta waves","betawaves","gamma waves","gammawaves",
-                  "theta waves","thetawaves","delta waves","deltawaves",
-                  "anxiety relief","stress relief","relaxation","focus","concentration",
-                  "sleep","meditation","mental health","nervous system","nervoussystem",
-                  "emdr","self therapy","shorts"
+                  "emdr","emdr therapy","bilateral stimulation","bilateralstimulation",
+                  "anxiety relief","stress relief","mental health","overthinking",
+                  "nervous system","self therapy","eye movement therapy",
+                  "relaxation","emdr treatment","shorts"
                 ],
                 "categoryId": "26",
                 "defaultLanguage": "en"
