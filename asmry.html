@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>ASMR</title>
+<title>EMDR Self-Admin</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{width:100vw;height:100vh;overflow:hidden;background:transparent;}
+body{width:100vw;height:100vh;overflow:hidden;background:#0a0a12;}
 canvas{position:fixed;inset:0;width:100%;height:100%;}
 </style>
 </head>
@@ -151,7 +151,6 @@ function drawTrail(trail,r,h,s,l){
 function mkBall(){
   const h=rndInt(0,359),s=rndInt(55,95),l=rndInt(45,72);
   const gh=(h+40)%360,gs=s,gl=Math.min(85,l+18),th=(h+20)%360;
-  // DOUBLED base size: was 0.038-0.080, now 0.076-0.160
   const base=Math.min(W,H)*rnd(0.076,0.160);
   return{h,s,l,gh,gs,gl,th,ts:s,tl:l,base,
     pulsing:Math.random()<0.5,minR:base*rnd(0.50,0.78),maxR:base*rnd(1.15,1.60),pulseSpd:rnd(0.04,0.16)};
@@ -218,7 +217,6 @@ function mkFlashPat(){
 
 // ─── UI ──────────────────────────────────────────────
 function drawUI(l1,l2,wl){
-  // Always dark pill since bg is now video footage
   const tc='rgba(255,255,255,0.95)';
   const pc='rgba(0,0,0,0.62)';
   const sh='rgba(0,0,0,1)';
@@ -236,9 +234,46 @@ function drawUI(l1,l2,wl){
   }
 }
 
-// ─── SCENE FACTORIES ─────────────────────────────────
-// Each returns a {run()} object. Background is TRANSPARENT (no fillRect).
+// ─── TEXT OVERLAY ────────────────────────────────────
+function drawTextOverlay(totalFrames) {
+  ctx.save();
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  ctx.shadowColor='rgba(0,0,0,0.9)';
+  ctx.shadowBlur=12;
+  
+  // Start text: first 2 seconds
+  if(totalFrames < 120) {
+    ctx.font='bold 22px -apple-system,Arial,sans-serif';
+    ctx.fillStyle='rgba(255,200,200,0.95)';
+    ctx.fillText('⚠️ FLASHING LIGHTS', CX, H*0.10);
+    ctx.font='16px -apple-system,Arial,sans-serif';
+    ctx.fillStyle='rgba(255,255,255,0.8)';
+    ctx.fillText('Not for epilepsy | 🎧 Use headphones', CX, H*0.16);
+  }
+  // Middle text: during video
+  else if(totalFrames >= 120 && totalFrames < 1380) { // 2s to 23s
+    ctx.font='18px -apple-system,Arial,sans-serif';
+    ctx.fillStyle='rgba(255,255,255,0.5)';
+    ctx.shadowBlur=8;
+    ctx.fillText('👁 Follow with eyes  |  🎧 Headphones on', CX, H*0.93);
+  }
+  // End text: last 2 seconds
+  else if(totalFrames >= 1380) {
+    const alpha = Math.min(1, (totalFrames - 1380) / 30);
+    ctx.globalAlpha = alpha;
+    ctx.font='bold 26px -apple-system,Arial,sans-serif';
+    ctx.fillStyle='rgba(255,255,255,0.95)';
+    ctx.fillText('👍 Subscribe & Like', CX, H*0.45);
+    ctx.font='18px -apple-system,Arial,sans-serif';
+    ctx.fillStyle='rgba(255,255,255,0.6)';
+    ctx.fillText('More EMDR sessions weekly', CX, H*0.52);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
 
+// ─── SCENE FACTORIES ─────────────────────────────────
 function scene1(){
   const wave=pick(WAVES),b=mkBall(),pat=mkPat();
   let tf=0,trail=[],cx=0.5,cy=0.5,pcx=0.5,pcy=0.5;
@@ -248,7 +283,7 @@ function scene1(){
     cx+=(tgt.x-cx)*pat.ls;cy+=(tgt.y-cy)*pat.ls;
     const spd=Math.hypot((cx-pcx)*W,(cy-pcy)*H);setWhoosh(cx,spd,0.9);
     trail.push({x:cx*W,y:cy*H});if(trail.length>42)trail.shift();
-    ctx.clearRect(0,0,W,H); // transparent bg
+    ctx.clearRect(0,0,W,H);
     const r=getBR(b,tf);drawTrail(trail,r,b.th,b.ts,b.tl);drawBall(cx*W,cy*H,r,b.h,b.s,b.l,b.gh,b.gs,b.gl);
     drawUI('👁  Follow the circle','with your eyes to relax',`${wave.name}  ·  ${wave.help}`);
   }};
@@ -256,15 +291,13 @@ function scene1(){
 
 function scene2(){
   const wave=pick(WAVES);
-  // Ball 1
   const b1=mkBall();
-  const ang1=rnd(0.3,1.2),spd1=rnd(10,22); // DOUBLED speed
+  const ang1=rnd(0.3,1.2),spd1=rnd(10,22);
   let vx1=Math.cos(ang1)*spd1,vy1=Math.sin(ang1)*spd1;
   let cx1=W*rnd(0.2,0.8),cy1=H*rnd(0.2,0.8),tf1=0,trail1=[];
   const pitch1=rnd(200,500),vol1=rnd(0.15,0.35);
-  // Ball 2 — contrasting color
   const b2=mkBall();b2.h=(b1.h+150+rndInt(-30,30)+360)%360;b2.gh=(b2.h+40)%360;b2.th=(b2.h+20)%360;
-  const ang2=rnd(0.3,1.2)+Math.PI*0.5,spd2=rnd(10,22); // DOUBLED speed
+  const ang2=rnd(0.3,1.2)+Math.PI*0.5,spd2=rnd(10,22);
   let vx2=Math.cos(ang2)*spd2,vy2=Math.sin(ang2)*spd2;
   let cx2=W*rnd(0.2,0.8),cy2=H*rnd(0.2,0.8),trail2=[];
   const pitch2=rnd(300,700),vol2=rnd(0.15,0.35);
@@ -273,14 +306,12 @@ function scene2(){
   return{wave,run(){
     tf++;
     const r1=getBR(b1,tf),r2=getBR(b2,tf);
-    // Ball 1 bounce
     cx1+=vx1;cy1+=vy1;
     if(cx1-r1<0){cx1=r1;vx1=Math.abs(vx1);playPong(pitch1*rnd(0.6,1.8),Math.min(0.6,vol1*rnd(0.5,1.4)),(cx1/W)*2-1);}
     if(cx1+r1>W){cx1=W-r1;vx1=-Math.abs(vx1);playPong(pitch1*rnd(0.6,1.8),Math.min(0.6,vol1*rnd(0.5,1.4)),(cx1/W)*2-1);}
     if(cy1-r1<0){cy1=r1;vy1=Math.abs(vy1);playPong(pitch1*rnd(0.6,1.8),Math.min(0.6,vol1*rnd(0.5,1.4)),(cx1/W)*2-1);}
     if(cy1+r1>H){cy1=H-r1;vy1=-Math.abs(vy1);playPong(pitch1*rnd(0.6,1.8),Math.min(0.6,vol1*rnd(0.5,1.4)),(cx1/W)*2-1);}
     trail1.push({x:cx1,y:cy1});if(trail1.length>38)trail1.shift();
-    // Ball 2 bounce
     cx2+=vx2;cy2+=vy2;
     if(cx2-r2<0){cx2=r2;vx2=Math.abs(vx2);playPong(pitch2*rnd(0.6,1.8),Math.min(0.6,vol2*rnd(0.5,1.4)),(cx2/W)*2-1);}
     if(cx2+r2>W){cx2=W-r2;vx2=-Math.abs(vx2);playPong(pitch2*rnd(0.6,1.8),Math.min(0.6,vol2*rnd(0.5,1.4)),(cx2/W)*2-1);}
@@ -351,7 +382,6 @@ function scene4(){
 function scene5(){
   const wave=pick(WAVES);
   const bH=rndInt(0,359),bS=rndInt(0,100),bL2=rndInt(72,96);
-  // DOUBLED light size: was 0.90 of half, now full half (effectively 2x)
   const half=Math.min(W,H)*0.5,base=half*1.0;
   let minR=base*rnd(0.80,0.92),maxR=base*rnd(1.05,1.18),pulseSpd=rnd(0.015,0.060),pulsePhase=rnd(0,Math.PI*2);
   let curM=mkLightPat(),mDur=rndInt(600,1800),mTimer=0;
@@ -426,50 +456,32 @@ function scene6(){
   }};
 }
 
-// ─── SCENE CHAIN — 2 minutes total ───────────────────
+// ─── SCENE CHAIN — Single scene, 25 seconds ──────────────────
 const SCENE_FNS=[scene1,scene2,scene3,scene4,scene5,scene6];
-const TOTAL_F=120*60;    // 2 minutes at 60fps
-const SCENE_F=20*60;     // each scene ~20s
-const FADE_F=30;         // 0.5s fade between scenes
+const TOTAL_F=25*60;    // 25 seconds at 60fps
+const FADE_F=15;        // 0.25s fade at end
 
 let SESSION=null,TF=0,RAF=null;
-let sceneTF=0,fadeAlpha=0,fading=false,fadeDir=0;
-
-function nextScene(){
-  stopBinaural();stopPad();stopWhoosh();
-  SESSION=pick(SCENE_FNS)();
-  sceneTF=0;
-}
 
 function startAll(){
   if(RAF){cancelAnimationFrame(RAF);RAF=null;}
-  TF=0;sceneTF=0;fading=false;fadeAlpha=0;
-  nextScene();
+  TF=0;
+  stopBinaural();stopPad();stopWhoosh();
+  SESSION=pick(SCENE_FNS)(); // Pick ONE random scene
   loop();
 }
 
 function loop(){
-  RAF=requestAnimationFrame(loop);TF++;sceneTF++;
-
-  // Fade out then switch scene
-  if(sceneTF>=SCENE_F-FADE_F&&!fading){fading=true;fadeDir=1;}
-  if(fading){
-    fadeAlpha+=fadeDir*(1/FADE_F);
-    if(fadeAlpha>=1){nextScene();fadeDir=-1;}
-    if(fadeAlpha<=0){fadeAlpha=0;fading=false;}
-  }
+  RAF=requestAnimationFrame(loop);TF++;
 
   SESSION.run();
+  
+  // Draw text overlay
+  drawTextOverlay(TF);
 
-  // Fade overlay
-  if(fadeAlpha>0){
-    ctx.fillStyle=`rgba(0,0,0,${fadeAlpha})`;
-    ctx.fillRect(0,0,W,H);
-  }
-
-  // Final fade out
-  if(TF>=TOTAL_F-FADE_F*3){
-    const a=(TF-(TOTAL_F-FADE_F*3))/(FADE_F*3);
+  // Final fade out (last 0.5s)
+  if(TF>=TOTAL_F-FADE_F*2){
+    const a=(TF-(TOTAL_F-FADE_F*2))/(FADE_F*2);
     ctx.fillStyle=`rgba(0,0,0,${Math.min(1,a)})`;ctx.fillRect(0,0,W,H);
   }
   if(TF>=TOTAL_F){
