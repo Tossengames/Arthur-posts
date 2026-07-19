@@ -1,4 +1,4 @@
-name: 🧠 Post Bilateral Stimulation Short to YouTube
+name: 🧠 Post EMDR Short to YouTube
 
 on:
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
           echo "DISPLAY=:99" >> $GITHUB_ENV
           echo "✅ Display ready"
 
-      - name: Record Bilateral Stimulation Short
+      - name: Record EMDR Short
         run: |
           python3 << 'PYEOF'
           import os, time, base64, sys
@@ -146,6 +146,7 @@ jobs:
           os.remove(webm_file)
           print(f"✅ mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
 
+          # Save path for next step
           with open("/tmp/mp4_path.txt", "w") as f:
             f.write(mp4_file)
           PYEOF
