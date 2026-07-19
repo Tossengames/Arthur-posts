@@ -135,11 +135,26 @@ jobs:
 
           print("📱 Converting to 9:16 portrait for YouTube Shorts...")
           
-          # Crop and scale to 1080x1920
+          # Get video dimensions
+          probe = subprocess.run([
+            "ffprobe", "-v", "error", "-show_entries", 
+            "stream=width,height", "-of", "csv=p=0",
+            "/tmp/emdr_canvas.webm"
+          ], capture_output=True, text=True)
+          
+          dims = probe.stdout.strip().split(',')
+          w, h = int(dims[0]), int(dims[1])
+          print(f"Original: {w}x{h}")
+          
+          # Crop to square using smaller dimension
+          crop_size = min(w, h)
+          crop_x = (w - crop_size) // 2
+          crop_y = (h - crop_size) // 2
+          
           result = subprocess.run([
             "ffmpeg", "-y",
             "-i", "/tmp/emdr_canvas.webm",
-            "-vf", "crop=1080:1080:(iw-1080)/2:(ih-1080)/2,scale=1080:1920",
+            "-vf", f"crop={crop_size}:{crop_size}:{crop_x}:{crop_y},scale=1080:1920:flags=lanczos",
             "-c:v", "libx264", "-preset", "slow", "-crf", "18",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
@@ -154,9 +169,9 @@ jobs:
 
           os.remove("/tmp/emdr_canvas.webm")
           size = os.path.getsize("/tmp/final_emdr.mp4")
-          print(f"✅ Final Shorts video: {size/1024/1024:.1f} MB")
+          print(f"✅ Final Shorts: {size/1024/1024:.1f} MB")
           if size < 100000:
-            print("❌ Final video too small")
+            print("❌ Video too small")
             sys.exit(1)
           PYEOF
 
@@ -189,6 +204,10 @@ jobs:
             {
               "title": "Heal Your Brain in 25 Seconds | EMDR Self-Admin",
               "description": "Simple EMDR technique you can do anywhere 👁\n\nFollow the light with your eyes while brainwave frequencies play.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Use headphones\n\n#EMDR #BrainHealing #AnxietyRelief #MentalHealth #StressRelief #Bilateral #TraumaHealing #Calm #Focus #Brainwaves"
+            },
+            {
+              "title": "EMDR Therapy at Home | 25 Second Anxiety Relief",
+              "description": "Do EMDR therapy on yourself in 25 seconds 👁\n\nBilateral eye movement + brainwave stimulation for instant calm.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Headphones on\n\n#EMDR #EMDRtherapy #AnxietyRelief #MentalHealth #StressRelief #Bilateral #Brainwaves #Calm #TraumaHealing #SelfCare"
             }
           ]
 
