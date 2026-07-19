@@ -1,9 +1,9 @@
 name: 🧠 Post EMDR Short to YouTube
 
-"on":
+on:
   workflow_dispatch:
   schedule:
-    - cron: "0 19 * * *"  # Every day, 2PM EST
+    - cron: "0 19 * * 1,3,5"  # Mon Wed Fri 2PM EST
 
 jobs:
   record:
@@ -174,125 +174,125 @@ jobs:
               "title": "EMDR Bilateral Stimulation for Anxiety Relief | Alpha 10Hz #shorts",
               "description": """Self-guided EMDR bilateral stimulation session.
 
-Follow the moving stimulus with your eyes while keeping your head still. This activates bilateral brain processing — the same mechanism used in EMDR therapy for anxiety, stress, and overthinking.
+          Follow the moving stimulus with your eyes while keeping your head still. This activates bilateral brain processing — the same mechanism used in EMDR therapy for anxiety, stress, and overthinking.
 
-🎧 Use headphones for full binaural beat effect
-👁 Keep your head still and follow with your eyes only
-🌬 Breathe slowly and naturally
+          🎧 Use headphones for full binaural beat effect
+          👁 Keep your head still and follow with your eyes only
+          🌬 Breathe slowly and naturally
 
-What's playing:
-• Alpha 10Hz binaural beats — promotes relaxed alertness
-• Bilateral eye movement — activates both brain hemispheres
-• Whoosh tones panned left/right to match movement
+          What's playing:
+          • Alpha 10Hz binaural beats — promotes relaxed alertness
+          • Bilateral eye movement — activates both brain hemispheres
+          • Whoosh tones panned left/right to match movement
 
-Benefits studied in EMDR research:
-✓ Reduces anxiety and intrusive thoughts
-✓ Helps process emotional stress
-✓ Calms the nervous system
+          Benefits studied in EMDR research:
+          ✓ Reduces anxiety and intrusive thoughts
+          ✓ Helps process emotional stress
+          ✓ Calms the nervous system
 
-⚠️ DISCLAIMER: This is not a substitute for professional therapy. If you have PTSD or severe trauma, please work with a licensed EMDR therapist. Contains flashing lights and fast movement — stop if you feel discomfort. Not suitable for photosensitive epilepsy.
+          ⚠️ DISCLAIMER: This is not a substitute for professional therapy. If you have PTSD or severe trauma, please work with a licensed EMDR therapist. Contains flashing lights and fast movement — stop if you feel discomfort. Not suitable for photosensitive epilepsy.
 
-#emdr #bilateralstimulation #anxietyrelief #brainwaves #alphawave #binaural #stressrelief #mentalhealth #selftherapy #shorts"""
+          #emdr #bilateralstimulation #anxietyrelief #brainwaves #alphawave #binaural #stressrelief #mentalhealth #selftherapy #shorts"""
             },
             {
               "title": "Stop Overthinking Now | EMDR Eye Movement + Theta Waves #shorts",
               "description": """Self-guided bilateral eye movement session for overthinking and mental stress.
 
-Your brain cannot simultaneously follow a moving object and ruminate — this is the basis of EMDR bilateral stimulation therapy.
+          Your brain cannot simultaneously follow a moving object and ruminate — this is the basis of EMDR bilateral stimulation therapy.
 
-🎧 Headphones required for binaural effect
-👁 Follow the ball with your eyes only
-🌬 Breathe and let thoughts pass without engaging them
+          🎧 Headphones required for binaural effect
+          👁 Follow the ball with your eyes only
+          🌬 Breathe and let thoughts pass without engaging them
 
-What's playing:
-• Theta 6Hz binaural beats — deep relaxation and emotional processing
-• Bilateral visual stimulation — both hemispheres working together
-• Spatial audio panned to match movement direction
+          What's playing:
+          • Theta 6Hz binaural beats — deep relaxation and emotional processing
+          • Bilateral visual stimulation — both hemispheres working together
+          • Spatial audio panned to match movement direction
 
-Research-supported benefits:
-✓ Interrupts overthinking loops
-✓ Reduces cortisol and stress response
-✓ Promotes emotional regulation
+          Research-supported benefits:
+          ✓ Interrupts overthinking loops
+          ✓ Reduces cortisol and stress response
+          ✓ Promotes emotional regulation
 
-⚠️ DISCLAIMER: Educational and wellness content only. Not a replacement for licensed therapy. Contains flashing lights and rapid movement. Stop immediately if you feel unwell. Not suitable for photosensitive epilepsy.
+          ⚠️ DISCLAIMER: Educational and wellness content only. Not a replacement for licensed therapy. Contains flashing lights and rapid movement. Stop immediately if you feel unwell. Not suitable for photosensitive epilepsy.
 
-#overthinking #emdr #thetawaves #binaural #anxietyrelief #stressrelief #mentalhealth #bilateralstimulation #shorts"""
+          #overthinking #emdr #thetawaves #binaural #anxietyrelief #stressrelief #mentalhealth #bilateralstimulation #shorts"""
             },
             {
               "title": "528Hz Healing Frequency + EMDR Bilateral Stimulation #shorts",
               "description": """Self-guided EMDR session with 528Hz solfeggio frequency.
 
-528Hz — known as the 'miracle tone' — combined with bilateral eye movement stimulation for deep stress relief and nervous system regulation.
+          528Hz — known as the 'miracle tone' — combined with bilateral eye movement stimulation for deep stress relief and nervous system regulation.
 
-🎧 Use headphones for full stereo effect
-👁 Follow the light or ball with your eyes only
-🌬 Slow your breathing and relax your jaw
+          🎧 Use headphones for full stereo effect
+          👁 Follow the light or ball with your eyes only
+          🌬 Slow your breathing and relax your jaw
 
-What's playing:
-• 528Hz — associated with cellular healing and calm
-• Bilateral visual tracking — activates natural stress processing
-• Spatial whoosh audio panned with movement
+          What's playing:
+          • 528Hz — associated with cellular healing and calm
+          • Bilateral visual tracking — activates natural stress processing
+          • Spatial whoosh audio panned with movement
 
-⚠️ DISCLAIMER: This content is for wellness and relaxation only. It is not medical treatment or professional therapy. Contains flashing lights and fast visual movement. Do not use while driving or operating machinery. Stop if you feel dizzy or uncomfortable. Not suitable for photosensitive epilepsy.
+          ⚠️ DISCLAIMER: This content is for wellness and relaxation only. It is not medical treatment or professional therapy. Contains flashing lights and fast visual movement. Do not use while driving or operating machinery. Stop if you feel dizzy or uncomfortable. Not suitable for photosensitive epilepsy.
 
-#528hz #healingfrequency #emdr #bilateralstimulation #stressrelief #binaural #mentalhealth #solfeggio #shorts"""
+          #528hz #healingfrequency #emdr #bilateralstimulation #stressrelief #binaural #mentalhealth #solfeggio #shorts"""
             },
             {
               "title": "Calm Your Nervous System in 20 Seconds | EMDR + Binaural Beats #shorts",
               "description": """Quick self-guided bilateral stimulation to activate your parasympathetic nervous system.
 
-Smooth bilateral eye movement combined with binaural beats shifts your brain from fight-or-flight into rest-and-digest within seconds.
+          Smooth bilateral eye movement combined with binaural beats shifts your brain from fight-or-flight into rest-and-digest within seconds.
 
-🎧 Headphones for best binaural experience
-👁 Eyes follow the movement — head stays still
-🌬 Exhale slowly with each pass
+          🎧 Headphones for best binaural experience
+          👁 Eyes follow the movement — head stays still
+          🌬 Exhale slowly with each pass
 
-What's playing:
-• Binaural beats calibrated for relaxation
-• Bilateral visual stimulation (EMDR-inspired)
-• Panned audio for full left-right brain activation
+          What's playing:
+          • Binaural beats calibrated for relaxation
+          • Bilateral visual stimulation (EMDR-inspired)
+          • Panned audio for full left-right brain activation
 
-⚠️ DISCLAIMER: Wellness content only — not professional mental health treatment. Contains flashing lights and rapid movement. Not suitable for photosensitive epilepsy. Consult a therapist for trauma treatment.
+          ⚠️ DISCLAIMER: Wellness content only — not professional mental health treatment. Contains flashing lights and rapid movement. Not suitable for photosensitive epilepsy. Consult a therapist for trauma treatment.
 
-#nervoussystem #emdr #binaural #anxietyrelief #stressrelief #vagusnerve #bilateralstimulation #mentalhealth #shorts"""
+          #nervoussystem #emdr #binaural #anxietyrelief #stressrelief #vagusnerve #bilateralstimulation #mentalhealth #shorts"""
             },
             {
               "title": "Schumann Resonance 7.83Hz | Grounding EMDR Session #shorts",
               "description": """Self-guided grounding session using Schumann resonance and bilateral stimulation.
 
-7.83Hz — Earth's natural electromagnetic frequency — combined with EMDR-inspired bilateral eye tracking for deep grounding and anxiety relief.
+          7.83Hz — Earth's natural electromagnetic frequency — combined with EMDR-inspired bilateral eye tracking for deep grounding and anxiety relief.
 
-🎧 Headphones required
-👁 Follow with your eyes only
-🌬 Feel your feet on the ground as you watch
+          🎧 Headphones required
+          👁 Follow with your eyes only
+          🌬 Feel your feet on the ground as you watch
 
-What's playing:
-• Schumann resonance 7.83Hz binaural beats
-• Bilateral visual movement — left and right brain activation
-• Spatial audio matching movement direction
+          What's playing:
+          • Schumann resonance 7.83Hz binaural beats
+          • Bilateral visual movement — left and right brain activation
+          • Spatial audio matching movement direction
 
-⚠️ DISCLAIMER: Wellness and relaxation content only. Not a medical device or therapy. Contains flashing lights and visual movement. Stop if you experience discomfort. Not suitable for photosensitive epilepsy.
+          ⚠️ DISCLAIMER: Wellness and relaxation content only. Not a medical device or therapy. Contains flashing lights and visual movement. Stop if you experience discomfort. Not suitable for photosensitive epilepsy.
 
-#schumannresonance #grounding #emdr #bilateralstimulation #binaural #anxietyrelief #mentalhealth #earthfrequency #shorts"""
+          #schumannresonance #grounding #emdr #bilateralstimulation #binaural #anxietyrelief #mentalhealth #earthfrequency #shorts"""
             },
             {
               "title": "Self EMDR Session for Anxiety | Alpha Waves 8Hz #shorts",
               "description": """20-second self-administered EMDR bilateral stimulation session.
 
-EMDR (Eye Movement Desensitization and Reprocessing) uses bilateral eye movement to help the brain process stress and anxiety. This is an accessible self-guided version for everyday stress relief.
+          EMDR (Eye Movement Desensitization and Reprocessing) uses bilateral eye movement to help the brain process stress and anxiety. This is an accessible self-guided version for everyday stress relief.
 
-🎧 Use headphones — binaural beats need stereo
-👁 Follow the moving ball with your eyes
-🌬 Let your body soften as you follow
+          🎧 Use headphones — binaural beats need stereo
+          👁 Follow the moving ball with your eyes
+          🌬 Let your body soften as you follow
 
-What's playing:
-• Alpha 8Hz binaural beats — calm focused state
-• Bilateral visual tracking stimulus
-• Whoosh tones panned left-right with the movement
+          What's playing:
+          • Alpha 8Hz binaural beats — calm focused state
+          • Bilateral visual tracking stimulus
+          • Whoosh tones panned left-right with the movement
 
-⚠️ DISCLAIMER: This is self-guided wellness content inspired by EMDR principles. It is NOT a replacement for professional EMDR therapy, especially for PTSD or trauma. Contains flashing lights and fast movement. Not for photosensitive epilepsy. Stop if you feel unwell.
+          ⚠️ DISCLAIMER: This is self-guided wellness content inspired by EMDR principles. It is NOT a replacement for professional EMDR therapy, especially for PTSD or trauma. Contains flashing lights and fast movement. Not for photosensitive epilepsy. Stop if you feel unwell.
 
-#emdr #selftherapy #alphawave #binaural #anxietyrelief #bilateralstimulation #stressrelief #mentalhealth #shorts"""
+          #emdr #selftherapy #alphawave #binaural #anxietyrelief #bilateralstimulation #stressrelief #mentalhealth #shorts"""
             },
           ]
 
@@ -344,7 +344,7 @@ What's playing:
           os.remove(mp4_file)
           PYEOF
         env:
-          YT_ACCESS_TOKEN:  ${{ secrets.YT_ACCESS_TOKEN }}
+          YT_ACCESS_TOKEN: ${{ secrets.YT_ACCESS_TOKEN }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-          YT_CLIENT_ID:     ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
