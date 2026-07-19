@@ -1,4 +1,4 @@
-name: 🧠 Post ASMR + Nature to YouTube
+name: 🧠 Post EMDR Shorts
 
 on:
   workflow_dispatch:
@@ -25,14 +25,6 @@ jobs:
           pip install selenium webdriver-manager requests google-auth google-auth-oauthlib google-api-python-client
           echo "✅ Python deps installed"
 
-      - name: Set timestamp
-        run: echo "TS=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
-
-      - name: Verify asmr.html exists
-        run: |
-          ls -la asmr.html || echo "❌ asmr.html NOT FOUND in repo root"
-          echo "✅ File check done"
-
       - name: Start virtual display and audio
         run: |
           Xvfb :99 -screen 0 1920x1080x24 -ac &
@@ -42,100 +34,7 @@ jobs:
           echo "DISPLAY=:99" >> $GITHUB_ENV
           echo "✅ Display and audio started"
 
-      - name: Download Pixabay nature footage
-        run: |
-          python3 << 'PYEOF'
-          import requests, os, random, subprocess, sys
-
-          key = os.environ.get("PIXABAY_KEY")
-          if not key:
-            print("❌ PIXABAY_KEY secret is missing!")
-            sys.exit(1)
-
-          queries = ["rain nature","forest rain","river flowing","ocean waves","mountain landscape","waterfall nature","green forest","calm lake"]
-          query = random.choice(queries)
-          print(f"🔍 Searching Pixabay for: {query}")
-
-          try:
-            resp = requests.get("https://pixabay.com/api/videos/", params={
-              "key": key,
-              "q": query,
-              "video_type": "film",
-              "per_page": 20,
-              "safesearch": "true",
-              "order": "popular"
-            }, timeout=30)
-            print(f"Pixabay status: {resp.status_code}")
-            data = resp.json()
-          except Exception as e:
-            print(f"❌ Pixabay request failed: {e}")
-            sys.exit(1)
-
-          hits = data.get("hits", [])
-          print(f"Found {len(hits)} results")
-          if not hits:
-            print("❌ No results from Pixabay")
-            sys.exit(1)
-
-          # Prefer short clips, fallback to any
-          short = [h for h in hits if h.get("duration", 999) < 180]
-          hits = short[:10] if short else hits[:5]
-          hit = random.choice(hits)
-
-          videos = hit.get("videos", {})
-          url = None
-          for quality in ["medium","small","large","tiny"]:
-            url = (videos.get(quality) or {}).get("url")
-            if url:
-              print(f"Using quality: {quality}")
-              break
-
-          if not url:
-            print("❌ No video URL in response")
-            sys.exit(1)
-
-          print(f"⬇️  Downloading: {url}")
-          r = requests.get(url, stream=True, timeout=60)
-          with open("/tmp/nature_raw.mp4", "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-              f.write(chunk)
-          raw_size = os.path.getsize("/tmp/nature_raw.mp4")
-          print(f"Downloaded: {raw_size/1024/1024:.1f} MB")
-
-          if raw_size < 1000:
-            print("❌ Downloaded file too small — download failed")
-            sys.exit(1)
-
-          duration = hit.get("duration", 120)
-          start = min(30, max(0, duration // 4))
-          print(f"Duration: {duration}s  Start offset: {start}s")
-
-          print("🎬 Processing nature footage...")
-          result = subprocess.run([
-            "ffmpeg", "-y",
-            "-ss", str(start),
-            "-i", "/tmp/nature_raw.mp4",
-            "-t", "125",
-            "-vf", "scale=1920:1080:flags=lanczos,gblur=sigma=3",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "24",
-            "-c:a", "copy",  # Keep original audio if it exists
-            "-map", "0:v",   # Video from input 0
-            "-map", "0:a?",  # Audio from input 0 if it exists (optional)
-            "-map_metadata", "-1",  # Remove metadata
-            "/tmp/nature_bg.mp4"
-          ], capture_output=True, text=True)
-
-          if result.returncode != 0:
-            print(f"❌ ffmpeg failed:\n{result.stderr[-2000:]}")
-            sys.exit(1)
-
-          os.remove("/tmp/nature_raw.mp4")
-          print(f"✅ Nature bg ready: {os.path.getsize('/tmp/nature_bg.mp4')/1024/1024:.1f} MB")
-          PYEOF
-        env:
-          PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
-
-      - name: Record ASMR canvas
+      - name: Record EMDR canvas
         run: |
           python3 << 'PYEOF'
           import os, time, base64, sys
@@ -150,7 +49,7 @@ jobs:
             sys.exit(1)
           print(f"✅ Found: {html_path}")
 
-          webm_file = "/tmp/asmr_canvas.webm"
+          webm_file = "/tmp/emdr_canvas.webm"
 
           opts = Options()
           opts.add_argument("--no-sandbox")
@@ -184,14 +83,14 @@ jobs:
           time.sleep(1)
 
           driver.execute_script("window.startRecording(30);")
-          print("🎬 Recording started — waiting ~125s...")
+          print("🎬 Recording started — waiting ~28s...")
 
-          for i in range(300):
+          for i in range(60):
             done = driver.execute_script("return window._recordingDone;")
             if done:
               print(f"✅ Done after {i*0.5:.0f}s")
               break
-            if i % 20 == 0:
+            if i % 10 == 0:
               print(f"  still recording... {i*0.5:.0f}s elapsed")
             time.sleep(0.5)
           else:
@@ -229,128 +128,36 @@ jobs:
         env:
           DISPLAY: ":99"
 
-      - name: Merge canvas over nature footage
+      - name: Convert to YouTube Shorts (9:16)
         run: |
           python3 << 'PYEOF'
-          import subprocess, os, sys, json
+          import subprocess, os, sys
 
-          def ensure_audio_track(input_file):
-              """Add silent audio if file has no audio track"""
-              try:
-                  # Check if file has audio
-                  result = subprocess.run([
-                      "ffprobe", "-v", "error", "-show_entries", 
-                      "stream=codec_type", "-of", "json",
-                      input_file
-                  ], capture_output=True, text=True, timeout=10)
-                  
-                  data = json.loads(result.stdout)
-                  has_audio = any(s.get("codec_type") == "audio" for s in data.get("streams", []))
-                  
-                  if has_audio:
-                      print("✅ Nature footage has audio track")
-                      return input_file
-                  
-                  print("🔇 No audio track found, adding silent audio...")
-                  output_file = "/tmp/nature_with_audio.mp4"
-                  
-                  result = subprocess.run([
-                      "ffmpeg", "-y",
-                      "-i", input_file,
-                      "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-                      "-c:v", "copy",
-                      "-c:a", "aac", "-b:a", "128k",
-                      "-map", "0:v:0",
-                      "-map", "1:a:0",
-                      "-shortest",
-                      "-map_metadata", "-1",
-                      output_file
-                  ], capture_output=True, text=True, timeout=60)
-                  
-                  if result.returncode != 0:
-                      print(f"⚠️  Failed to add audio: {result.stderr[-200:]}")
-                      print("⚠️  Using original file (merge may fail)")
-                      return input_file
-                  
-                  print(f"✅ Added silent audio: {os.path.getsize(output_file)/1024/1024:.1f} MB")
-                  return output_file
-                  
-              except Exception as e:
-                  print(f"⚠️  Audio check failed: {e}")
-                  return input_file
-
-          print("🎬 Merging canvas over nature footage...")
+          print("📱 Converting to 9:16 portrait for YouTube Shorts...")
           
-          # Ensure nature footage has audio
-          nature_file = ensure_audio_track("/tmp/nature_bg.mp4")
-          
-          # Build filter based on whether nature has audio
-          filter_complex = "[0:v]scale=1920:1080[bg];[1:v]scale=1920:1080[fg];[bg][fg]overlay=0:0[outv]"
-          
-          # Try to include audio if it exists
-          if nature_file == "/tmp/nature_bg.mp4":
-              # Try to use original audio
-              filter_complex += ";[0:a]volume=0.5[a1]"
-          else:
-              # Use the audio we added
-              filter_complex += ";[0:a]volume=0.5[a1]"
-          
-          filter_complex += ";[1:a]volume=0.5[a2];[a1][a2]amix=inputs=2:duration=first[outa]"
-          
-          cmd = [
-              "ffmpeg", "-y",
-              "-i", nature_file,
-              "-i", "/tmp/asmr_canvas.webm",
-              "-filter_complex", filter_complex,
-              "-map", "[outv]",
-              "-map", "[outa]",
-              "-c:v", "libx264", "-preset", "slow", "-crf", "16",
-              "-pix_fmt", "yuv420p",
-              "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-              "-movflags", "+faststart",
-              "-t", "120",
-              "/tmp/final_asmr.mp4"
-          ]
-          
-          print(f"🔧 Running: {' '.join(cmd[:6])}...")
-          result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+          # Crop and scale to 1080x1920
+          result = subprocess.run([
+            "ffmpeg", "-y",
+            "-i", "/tmp/emdr_canvas.webm",
+            "-vf", "crop=1080:1080:(iw-1080)/2:(ih-1080)/2,scale=1080:1920",
+            "-c:v", "libx264", "-preset", "slow", "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+            "-movflags", "+faststart",
+            "-t", "28",
+            "/tmp/final_emdr.mp4"
+          ], capture_output=True, text=True)
 
           if result.returncode != 0:
-              # Try fallback: just overlay video without audio mixing
-              print("⚠️  Audio mix failed, trying video-only overlay...")
-              result = subprocess.run([
-                  "ffmpeg", "-y",
-                  "-i", nature_file,
-                  "-i", "/tmp/asmr_canvas.webm",
-                  "-filter_complex",
-                  "[0:v]scale=1920:1080[bg];[1:v]scale=1920:1080[fg];[bg][fg]overlay=0:0[outv]",
-                  "-map", "[outv]",
-                  "-map", "1:a:0",  # Use canvas audio
-                  "-c:v", "libx264", "-preset", "slow", "-crf", "16",
-                  "-pix_fmt", "yuv420p",
-                  "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-                  "-movflags", "+faststart",
-                  "-t", "120",
-                  "/tmp/final_asmr.mp4"
-              ], capture_output=True, text=True, timeout=180)
+            print(f"❌ Conversion failed:\n{result.stderr[-2000:]}")
+            sys.exit(1)
 
-          if result.returncode != 0:
-              print(f"❌ Merge failed:\n{result.stderr[-3000:]}")
-              sys.exit(1)
-
-          # Cleanup
-          for f in ["/tmp/nature_bg.mp4", "/tmp/asmr_canvas.webm", "/tmp/nature_with_audio.mp4"]:
-              try: 
-                  if os.path.exists(f):
-                      os.remove(f)
-              except:
-                  pass
-
-          size = os.path.getsize("/tmp/final_asmr.mp4")
-          print(f"✅ Final video: {size/1024/1024:.1f} MB")
+          os.remove("/tmp/emdr_canvas.webm")
+          size = os.path.getsize("/tmp/final_emdr.mp4")
+          print(f"✅ Final Shorts video: {size/1024/1024:.1f} MB")
           if size < 100000:
-              print("❌ Final video too small")
-              sys.exit(1)
+            print("❌ Final video too small")
+            sys.exit(1)
           PYEOF
 
       - name: Upload to YouTube
@@ -361,22 +168,31 @@ jobs:
           from googleapiclient.http import MediaFileUpload
           from google.oauth2.credentials import Credentials
 
-          mp4_file = "/tmp/final_asmr.mp4"
+          mp4_file = "/tmp/final_emdr.mp4"
           if not os.path.exists(mp4_file):
             print("❌ Final video not found")
             sys.exit(1)
 
-          videos = [
-            {"title":"EMDR Eye Movement Therapy for Anxiety Relief | Binaural Beats","description":"follow the moving circle with your eyes to activate your brain's natural stress relief response 👁\n\nthis technique is inspired by emdr therapy — used by therapists to help people process anxiety, overthinking, and stress\n\nbinaural beats playing in background to slow your brainwaves into a calm relaxed state 🎧\n\nuse headphones for best experience\n\n#emdr #anxietyrelief #binaural #brainwaves #stressrelief #asmr #mentalhealth #relax #overthinking #calm"},
-            {"title":"Stop Overthinking in 2 Minutes | Eye Movement + Alpha Waves","description":"your brain can't overthink and follow a moving object at the same time 👁\n\nfollow the circle with your eyes and feel your thoughts slow down\n\nalpha waves (8-12hz) playing to bring your brain into a relaxed focused state\n\n#overthinking #anxietyrelief #alphawave #binaural #asmr #mentalhealth #stressrelief #calm #relax #brainwaves"},
-            {"title":"Binaural Beats Eye Relaxation | Theta Waves for Deep Calm","description":"follow the movement with your eyes and let your mind quiet down 🌀\n\ntheta waves (4-8hz) playing to guide your brain into deep relaxation\n\ngreat for anxiety, stress, insomnia, and mental fatigue\n\n#theta #binaural #deeprelaxation #asmr #insomnia #anxietyrelief #mentalhealth #brainwaves #calm #stressrelief"},
-            {"title":"528hz Healing Frequency + Eye Movement for Stress Relief","description":"follow the light with your eyes while 528hz plays in the background 👁\n\n528hz is known as the dna repair frequency — associated with healing, calm, and reducing cortisol\n\n#528hz #healingfrequency #stressrelief #asmr #calm #binaural #mentalhealth #relax #solfeggio #brainwaves"},
-            {"title":"Calm Your Nervous System | Eye Movement + Brainwave Therapy","description":"when you're overwhelmed — just follow the circle 👁\n\nsmooth eye movement activates your vagus nerve and shifts your nervous system from fight-or-flight into rest-and-digest\n\n#nervoussystem #vagusnerve #anxietyrelief #asmr #stressrelief #brainwaves #mentalhealth #calm #relax #binaural"},
-            {"title":"Schumann Resonance 7.83hz | Ground Your Mind and Body","description":"7.83hz — the earth's natural frequency 🌍\n\nfollow the movement with your eyes while it plays in both ears 🎧\n\n#schumannresonance #grounding #earthfrequency #binaural #asmr #mentalhealth #brainwaves #calm #stressrelief #relax"},
-            {"title":"ASMR Eye Tracking for Anxiety | Bilateral Brain Stimulation","description":"your eyes follow the ball left and right — this bilateral movement activates both sides of your brain 👁\n\nbinaural beats playing to deepen the relaxation effect 🎧\n\n#asmr #bilateral #emdr #anxietyrelief #stressrelief #brainwaves #mentalhealth #calm #binaural #relax"},
+          shorts = [
+            {
+              "title": "EMDR Self-Admin for Anxiety | Follow the Light",
+              "description": "Self-administer EMDR in 25 seconds 👁\n\nFollow the movement with your eyes while bilateral brainwave sounds play.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Use headphones for best results\n\n#EMDR #AnxietyRelief #BilateralStimulation #Brainwaves #MentalHealth #StressRelief #TraumaHealing #EMDRtherapy #Calm #Overthinking"
+            },
+            {
+              "title": "Stop Overthinking in 25 Seconds | EMDR Eye Movement",
+              "description": "Your brain can't overthink and follow movement at the same time 👁\n\nEMDR self-administration with bilateral brainwave stimulation.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Use headphones\n\n#EMDR #Overthinking #AnxietyRelief #Brainwaves #MentalHealth #StressRelief #Calm #Focus #Bilateral"
+            },
+            {
+              "title": "EMDR Bilateral Stimulation | 25 Second Brain Reset",
+              "description": "Reset your nervous system in 25 seconds 🧠\n\nFollow the movement with your eyes for bilateral brain stimulation.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Headphones recommended\n\n#EMDR #BilateralStimulation #NervousSystem #BrainReset #AnxietyRelief #MentalHealth #StressRelief #Calm #Trauma #Healing"
+            },
+            {
+              "title": "Heal Your Brain in 25 Seconds | EMDR Self-Admin",
+              "description": "Simple EMDR technique you can do anywhere 👁\n\nFollow the light with your eyes while brainwave frequencies play.\n\n⚠️ DISCLAIMER: Contains flashing lights. Not for epilepsy or light sensitivity.\n\n🎧 Use headphones\n\n#EMDR #BrainHealing #AnxietyRelief #MentalHealth #StressRelief #Bilateral #TraumaHealing #Calm #Focus #Brainwaves"
+            }
           ]
 
-          video = random.choice(videos)
+          video = random.choice(shorts)
           print(f"📹 Title: {video['title']}")
 
           creds = Credentials(
@@ -393,7 +209,7 @@ jobs:
               "snippet": {
                 "title": video["title"],
                 "description": video["description"],
-                "tags": ["emdr","binaural beats","asmr","anxiety relief","stress relief","eye relaxation","brainwaves","alpha waves","theta waves","calm","overthinking","mental health","528hz","schumann resonance","nervous system"],
+                "tags": ["EMDR","Anxiety Relief","Bilateral Stimulation","Brainwaves","Mental Health","Stress Relief","Trauma Healing","EMDR Therapy","Calm","Overthinking","Brain Reset","Nervous System"],
                 "categoryId": "22",
                 "defaultLanguage": "en"
               },
