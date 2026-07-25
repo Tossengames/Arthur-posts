@@ -2,6 +2,20 @@ name: Post NASA/Archive Space Footage to YouTube
 
 on:
   workflow_dispatch:
+    inputs:
+      min_size:
+        description: "Minimum footage size to search for"
+        required: true
+        default: "100"
+        type: choice
+        options:
+          - "100"
+          - "200"
+          - "400"
+          - "500"
+          - "700"
+          - "1000"
+          - "2000"
   schedule:
     - cron: "0 19 * * 1,3,5"  # Mon Wed Fri 2PM EST
 
@@ -34,11 +48,17 @@ jobs:
                   already_posted = set(line.strip() for line in f if line.strip())
           print(f"Already posted: {len(already_posted)} items")
 
-          SIZE_TIERS_MB = [100, 200, 400, 700, 1000, 2000]
+          ALL_TIERS = [100, 200, 400, 500, 700, 1000, 2000]
+          min_size = int(os.environ.get("MIN_SIZE_MB", "100"))
+          # Start search from the chosen tier, expanding upward if nothing found
+          SIZE_TIERS_MB = sorted(set(t for t in ALL_TIERS if t >= min_size))
+          if not SIZE_TIERS_MB:
+              SIZE_TIERS_MB = [2000]
+          print(f"Size tiers to try: {SIZE_TIERS_MB}")
 
           found = None
 
-          def search_nasa(max_mb):
+          def search_nasa(min_mb, max_mb):
               queries = [
                   "earth from space", "nebula", "galaxy", "solar system", "aurora",
                   "international space station", "moon surface", "mars", "saturn rings",
@@ -74,7 +94,7 @@ jobs:
                                   try:
                                       head = requests.head(mp4_url, timeout=10, allow_redirects=True)
                                       size_mb = int(head.headers.get("content-length", 0)) / 1024 / 1024
-                                      if 1 < size_mb <= max_mb:
+                                      if min_mb < size_mb <= max_mb:
                                           return {"url": mp4_url, "title": title, "desc": desc,
                                                   "id": nasa_id, "source": "NASA", "size_mb": size_mb,
                                                   "query": query}
@@ -86,7 +106,7 @@ jobs:
                       continue
               return None
 
-          def search_archive(max_mb):
+          def search_archive(min_mb, max_mb):
               queries = [
                   "space nasa public domain", "earth orbit footage", "nebula timelapse",
                   "aurora borealis", "deep space", "milky way timelapse", "rocket launch nasa",
@@ -125,7 +145,7 @@ jobs:
                               videos = [f for f in files if f.get("name", "").lower().endswith((".mp4", ".mov", ".avi", ".mkv"))]
                               for vf in videos:
                                   size_mb = int(vf.get("size", 0)) / 1024 / 1024
-                                  if 1 < size_mb <= max_mb:
+                                  if min_mb < size_mb <= max_mb:
                                       url = f"https://archive.org/download/{identifier}/{vf['name']}"
                                       return {"url": url, "title": title, "desc": desc,
                                               "id": identifier, "source": "Archive.org", "size_mb": size_mb,
@@ -136,18 +156,18 @@ jobs:
                       continue
               return None
 
-          # Try NASA across ALL size tiers first, then Archive.org across all size tiers
+          # Try NASA across all tiers from min_size upward, then Archive.org
           for max_mb in SIZE_TIERS_MB:
-              print(f"Searching NASA under {max_mb}MB...")
-              found = search_nasa(max_mb)
+              print(f"Searching NASA under {max_mb}MB (min {min_size}MB)...")
+              found = search_nasa(min_size, max_mb)
               if found:
                   print(f"Found: {found['title']} ({found['size_mb']:.1f}MB) from {found['source']}")
                   break
 
           if not found:
               for max_mb in SIZE_TIERS_MB:
-                  print(f"Searching Archive.org under {max_mb}MB...")
-                  found = search_archive(max_mb)
+                  print(f"Searching Archive.org under {max_mb}MB (min {min_size}MB)...")
+                  found = search_archive(min_size, max_mb)
                   if found:
                       print(f"Found: {found['title']} ({found['size_mb']:.1f}MB) from {found['source']}")
                       break
@@ -167,6 +187,8 @@ jobs:
           with open("/tmp/meta.json", "w") as f:
               json.dump({**found, "raw_path": raw_path}, f)
           PYEOF
+        env:
+          MIN_SIZE_MB: ${{ github.event.inputs.min_size || '100' }}
 
       - name: Process footage
         run: |
@@ -205,7 +227,6 @@ jobs:
           else:
               print("No bgmusic found — using original audio only")
 
-          # CTA timestamps: near start, middle, near end
           cta_texts = ["SUBSCRIBE", "LIKE AND SUBSCRIBE", "SUBSCRIBE FOR MORE", "HIT SUBSCRIBE", "FOLLOW FOR MORE"]
           t_start = min(2.0, duration * 0.1)
           t_mid = duration / 2
@@ -234,7 +255,6 @@ jobs:
           vf_chain = f"scale=iw*{zoom}:ih*{zoom},crop=iw/{zoom}:ih/{zoom}," + ",".join(drawtext_filters) + \
                      ",scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
 
-          # Build ping SFX track: short tone at each CTA start time, mixed into audio
           ping_inputs = []
           ping_filter_parts = []
           for i, t in enumerate(cta_times):
@@ -244,9 +264,6 @@ jobs:
           main_inputs = ["-i", raw]
           if music_file:
               main_inputs += ["-stream_loop", "-1", "-i", music_file]
-              audio_idx_offset = 2
-          else:
-              audio_idx_offset = 1
 
           all_inputs = main_inputs + ping_inputs
 
