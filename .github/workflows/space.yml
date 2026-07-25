@@ -1,0 +1,383 @@
+name: 🚀 Post NASA/Archive Space Footage to YouTube
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 19 * * 1,3,5"  # Mon Wed Fri 2PM EST
+
+jobs:
+  post:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          pip install requests google-auth google-auth-oauthlib google-api-python-client
+          echo "✅ Done"
+
+      - name: Find and download footage
+        run: |
+          python3 << 'PYEOF'
+          import requests, os, sys, json, random, subprocess, re
+
+          POSTED_FILE = "posted.txt"
+          already_posted = set()
+          if os.path.exists(POSTED_FILE):
+            with open(POSTED_FILE) as f:
+              already_posted = set(line.strip() for line in f if line.strip())
+          print(f"Already posted: {len(already_posted)} items")
+
+          SIZE_TIERS_MB = [100, 200, 400, 700, 1000, 2000]
+
+          found = None
+
+          # ── NASA Search ───────────────────────────────
+          def search_nasa(max_mb):
+            queries = [
+              "earth from space","nebula","galaxy","solar system","aurora",
+              "international space station","moon surface","mars","saturn rings",
+              "hubble telescope","milky way","spacecraft","rocket launch","spacewalk"
+            ]
+            random.shuffle(queries)
+            for query in queries:
+              try:
+                r = requests.get(
+                  "https://images-api.nasa.gov/search",
+                  params={"q": query, "media_type": "video", "page_size": 20},
+                  timeout=20
+                )
+                if r.status_code != 200:
+                  continue
+                items = r.json().get("collection", {}).get("items", [])
+                random.shuffle(items)
+                for item in items:
+                  nasa_id = item.get("data", [{}])[0].get("nasa_id", "")
+                  title = item.get("data", [{}])[0].get("title", "Unknown")
+                  desc = item.get("data", [{}])[0].get("description", "")
+                  if nasa_id in already_posted:
+                    continue
+                  # Get asset list
+                  try:
+                    ar = requests.get(f"https://images-api.nasa.gov/asset/{nasa_id}", timeout=15)
+                    if ar.status_code != 200:
+                      continue
+                    assets = ar.json().get("collection", {}).get("items", [])
+                    # Find mp4 urls
+                    mp4s = [a["href"] for a in assets if a.get("href","").endswith(".mp4")]
+                    if not mp4s:
+                      continue
+                    # Pick smallest that fits
+                    for mp4_url in sorted(mp4s):
+                      try:
+                        head = requests.head(mp4_url, timeout=10, allow_redirects=True)
+                        size_mb = int(head.headers.get("content-length", 0)) / 1024 / 1024
+                        if 1 < size_mb <= max_mb:
+                          return {"url": mp4_url, "title": title, "desc": desc,
+                                  "id": nasa_id, "source": "NASA", "size_mb": size_mb,
+                                  "query": query}
+                      except:
+                        continue
+                  except:
+                    continue
+              except:
+                continue
+            return None
+
+          # ── Archive.org Search ────────────────────────
+          def search_archive(max_mb):
+            queries = [
+              "space nasa public domain","earth orbit footage","nebula timelapse",
+              "aurora borealis","deep space","milky way timelapse","rocket launch nasa",
+              "international space station footage","planet earth from space"
+            ]
+            random.shuffle(queries)
+            for query in queries:
+              try:
+                r = requests.get(
+                  "https://archive.org/advancedsearch.php",
+                  params={
+                    "q": f"{query} AND mediatype:movies AND licenseurl:(*creativecommons* OR *publicdomain*)",
+                    "fl[]": ["identifier","title","description"],
+                    "rows": 30, "page": 1, "output": "json",
+                    "sort[]": "downloads desc"
+                  },
+                  timeout=20
+                )
+                if r.status_code != 200:
+                  continue
+                docs = r.json().get("response", {}).get("docs", [])
+                random.shuffle(docs)
+                for doc in docs:
+                  identifier = doc.get("identifier","")
+                  if identifier in already_posted:
+                    continue
+                  title = doc.get("title","Unknown")
+                  desc = doc.get("description","")
+                  if isinstance(desc, list):
+                    desc = " ".join(desc)
+                  try:
+                    mr = requests.get(f"https://archive.org/metadata/{identifier}", timeout=15)
+                    if mr.status_code != 200:
+                      continue
+                    files = mr.json().get("files", [])
+                    videos = [f for f in files if f.get("name","").lower().endswith((".mp4",".mov",".avi",".mkv"))]
+                    for vf in videos:
+                      size_mb = int(vf.get("size", 0)) / 1024 / 1024
+                      if 1 < size_mb <= max_mb:
+                        url = f"https://archive.org/download/{identifier}/{vf['name']}"
+                        return {"url": url, "title": title, "desc": desc,
+                                "id": identifier, "source": "Archive.org", "size_mb": size_mb,
+                                "query": query}
+                  except:
+                    continue
+              except:
+                continue
+            return None
+
+          # ── Tiered search ─────────────────────────────
+          for max_mb in SIZE_TIERS_MB:
+            print(f"🔍 Searching under {max_mb}MB...")
+            # Try NASA first then Archive
+            found = search_nasa(max_mb)
+            if not found:
+              found = search_archive(max_mb)
+            if found:
+              print(f"✅ Found: {found['title']} ({found['size_mb']:.1f}MB) from {found['source']}")
+              break
+
+          if not found:
+            print("❌ No footage found in any tier")
+            sys.exit(1)
+
+          # ── Download ──────────────────────────────────
+          print(f"⬇️  Downloading {found['url']}")
+          r = requests.get(found["url"], stream=True, timeout=120)
+          raw_path = "/tmp/raw_footage" + os.path.splitext(found["url"].split("?")[0])[-1]
+          with open(raw_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=65536):
+              f.write(chunk)
+          print(f"✅ Downloaded: {os.path.getsize(raw_path)/1024/1024:.1f}MB")
+
+          # ── Save metadata for next steps ──────────────
+          with open("/tmp/meta.json", "w") as f:
+            json.dump({**found, "raw_path": raw_path}, f)
+          PYEOF
+
+      - name: Process footage
+        run: |
+          python3 << 'PYEOF'
+          import json, subprocess, os, sys, random, glob
+
+          with open("/tmp/meta.json") as f:
+            meta = json.load(f)
+
+          raw = meta["raw_path"]
+          out = "/tmp/processed.mp4"
+
+          # Probe duration
+          probe = subprocess.run([
+            "ffprobe","-v","quiet","-print_format","json","-show_streams", raw
+          ], capture_output=True, text=True)
+          import json as j2
+          info = j2.loads(probe.stdout)
+          duration = 0
+          for s in info.get("streams",[]):
+            try:
+              duration = max(duration, float(s.get("duration",0)))
+            except:
+              pass
+          print(f"📹 Duration: {duration:.1f}s")
+
+          # Random flip choice to differentiate from source
+          flip_filters = [
+            "hflip",           # horizontal flip
+            "vflip",           # vertical flip
+            "hflip,vflip",     # both
+            "transpose=1",     # rotate 90
+          ]
+          flip = random.choice(flip_filters)
+          zoom = round(random.uniform(1.05, 1.15), 2)
+          print(f"🎨 Flip: {flip}  Zoom: {zoom}x")
+
+          # Check bgmusic folder
+          music_file = None
+          music_exts = ["*.mp3","*.mp4","*.m4a","*.wav","*.ogg","*.flac"]
+          music_files = []
+          for ext in music_exts:
+            music_files += glob.glob(f"bgmusic/{ext}")
+          if music_files:
+            music_file = random.choice(music_files)
+            print(f"🎵 Music: {music_file}")
+          else:
+            print("🔇 No bgmusic found — using original audio only")
+
+          # Build ffmpeg command
+          inputs = ["-i", raw]
+          filter_parts = []
+
+          # Video filter: zoom + flip
+          vf = f"scale=iw*{zoom}:ih*{zoom},crop=iw/{zoom}:ih/{zoom},{flip},scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+          filter_parts.append(f"[0:v]{vf}[vout]")
+
+          if music_file:
+            inputs += ["-stream_loop", "-1", "-i", music_file]
+            # Mix original audio at 100% + music at 15% (low bg)
+            filter_parts.append("[0:a]volume=1.0[a1]")
+            filter_parts.append("[1:a]volume=0.15[a2]")
+            filter_parts.append("[a1][a2]amix=inputs=2:duration=first[aout]")
+            maps = ["-map","[vout]","-map","[aout]"]
+          else:
+            maps = ["-map","[vout]","-map","0:a?"]
+
+          filter_complex = ";".join(filter_parts)
+
+          cmd = ["ffmpeg","-y"] + inputs + [
+            "-filter_complex", filter_complex,
+          ] + maps + [
+            "-c:v","libx264","-preset","slow","-crf","18",
+            "-pix_fmt","yuv420p",
+            "-c:a","aac","-b:a","192k","-ar","44100",
+            "-movflags","+faststart",
+            out
+          ]
+
+          print("🎬 Processing...")
+          result = subprocess.run(cmd, capture_output=True, text=True)
+          if result.returncode != 0:
+            print(f"❌ ffmpeg error:\n{result.stderr[-3000:]}")
+            sys.exit(1)
+
+          size = os.path.getsize(out)/1024/1024
+          print(f"✅ Processed: {size:.1f}MB")
+          os.remove(raw)
+          PYEOF
+
+      - name: Upload to YouTube
+        run: |
+          python3 << 'PYEOF'
+          import os, json, sys, re
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+          from google.oauth2.credentials import Credentials
+
+          with open("/tmp/meta.json") as f:
+            meta = json.load(f)
+
+          mp4 = "/tmp/processed.mp4"
+          if not os.path.exists(mp4):
+            print("❌ Processed video not found")
+            sys.exit(1)
+
+          title_base = meta["title"].strip()
+          source = meta["source"]
+          query = meta.get("query","space")
+
+          # Clean title — remove special chars, keep it readable
+          title_base = re.sub(r'[^\w\s\-\(\)\:\,\.\!]', '', title_base)[:60].strip()
+
+          # SEO title with source credit
+          title = f"{title_base} | {source} Public Domain Footage"
+          if len(title) > 100:
+            title = title[:97] + "..."
+
+          # Description with source reference + SEO
+          raw_desc = meta.get("desc","") or ""
+          if isinstance(raw_desc, list):
+            raw_desc = " ".join(raw_desc)
+          raw_desc = raw_desc[:500].strip()
+
+          source_credit = (
+            "📡 NASA Public Domain — nasa.gov" if source == "NASA"
+            else "📼 Archive.org Public Domain — archive.org"
+          )
+
+          description = f"""{title_base}
+
+{raw_desc}
+
+{source_credit}
+Original footage ID: {meta['id']}
+This footage has been transformed (flipped, zoomed, reprocessed) for this upload.
+
+━━━━━━━━━━━━━━━━━━━━
+🌌 About this video:
+Stunning {query} footage captured and released into the public domain. No copyright — free for all humanity to enjoy.
+
+🔔 Subscribe for daily space footage and relaxation content.
+
+━━━━━━━━━━━━━━━━━━━━
+Tags: space, nasa, {query}, earth, universe, cosmos, relaxation, meditation, sleep, ambient, timelapse, astronomy, science, documentary
+━━━━━━━━━━━━━━━━━━━━
+
+#space #nasa #universe #cosmos #{query.replace(' ','').lower()} #earthfromspace #astronomy #relaxation #ambient #sleepmusic #meditation #timelapse #documentary #publicdomain #spacefootage"""
+
+          tags = [
+            "space","nasa","universe","cosmos","earth from space",
+            "astronomy","relaxation","meditation","ambient","sleep music",
+            "timelapse","documentary","public domain","space footage",
+            "nebula","galaxy","milky way","solar system","science",
+            query
+          ]
+          tags = list(dict.fromkeys(tags))[:30]  # dedupe, max 30
+
+          print(f"📹 Title: {title}")
+
+          creds = Credentials(
+            token=os.environ.get("YT_ACCESS_TOKEN"),
+            refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.environ.get("YT_CLIENT_ID"),
+            client_secret=os.environ.get("YT_CLIENT_SECRET"),
+          )
+          youtube = build("youtube", "v3", credentials=creds)
+
+          request = youtube.videos().insert(
+            part="snippet,status",
+            body={
+              "snippet": {
+                "title": title,
+                "description": description,
+                "tags": tags,
+                "categoryId": "28",  # Science & Technology
+                "defaultLanguage": "en"
+              },
+              "status": {
+                "privacyStatus": "public",
+                "madeForKids": False,
+                "selfDeclaredMadeForKids": False
+              }
+            },
+            media_body=MediaFileUpload(mp4, mimetype="video/mp4", resumable=True)
+          )
+
+          response = None
+          while response is None:
+            status, response = request.next_chunk()
+            if status:
+              print(f"⬆️  {int(status.progress()*100)}%")
+
+          video_id = response.get("id","")
+          print(f"✅ https://youtube.com/watch?v={video_id}")
+          os.remove(mp4)
+
+          # Save to posted.txt to avoid reposting
+          with open("posted.txt", "a") as f:
+            f.write(meta["id"] + "\n")
+          PYEOF
+
+      - name: Save posted.txt to repo
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add posted.txt
+          git diff --staged --quiet || git commit -m "track posted footage [skip ci]"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
