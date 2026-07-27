@@ -1,4 +1,4 @@
-name: Post NASA/Archive Space Footage to YouTube
+name: Post Space Footage to YouTube
 
 on:
   workflow_dispatch:
@@ -16,6 +16,10 @@ on:
           - "700"
           - "1000"
           - "2000"
+      search_terms:
+        description: "Custom search terms (comma separated, optional). Leave blank for default rotation."
+        required: false
+        default: ""
   schedule:
     - cron: "0 19 * * 1,3,5"  # Mon Wed Fri 2PM EST
 
@@ -50,22 +54,30 @@ jobs:
 
           ALL_TIERS = [100, 200, 400, 500, 700, 1000, 2000]
           min_size = int(os.environ.get("MIN_SIZE_MB", "100"))
-          # Start search from the chosen tier, expanding upward if nothing found
           SIZE_TIERS_MB = sorted(set(t for t in ALL_TIERS if t >= min_size))
           if not SIZE_TIERS_MB:
               SIZE_TIERS_MB = [2000]
           print(f"Size tiers to try: {SIZE_TIERS_MB}")
 
+          custom_terms_raw = os.environ.get("SEARCH_TERMS", "").strip()
+          custom_terms = [t.strip() for t in custom_terms_raw.split(",") if t.strip()] if custom_terms_raw else []
+          print(f"Custom search terms: {custom_terms if custom_terms else 'none - using default rotation'}")
+
+          # Default rotation biased toward galaxy, planets, and deep space
+          DEFAULT_QUERIES = [
+              "galaxy", "nebula", "milky way", "saturn rings", "jupiter", "mars surface",
+              "planet earth from space", "solar system", "deep space", "hubble telescope",
+              "spiral galaxy", "star cluster", "planetary nebula", "aurora", "moon surface",
+              "international space station", "black hole", "exoplanet", "cosmic",
+              "spacecraft", "rocket launch"
+          ]
+
           found = None
 
-          def search_nasa(min_mb, max_mb):
-              queries = [
-                  "earth from space", "nebula", "galaxy", "solar system", "aurora",
-                  "international space station", "moon surface", "mars", "saturn rings",
-                  "hubble telescope", "milky way", "spacecraft", "rocket launch", "spacewalk"
-              ]
-              random.shuffle(queries)
-              for query in queries:
+          def search_nasa(min_mb, max_mb, queries):
+              qlist = list(queries)
+              random.shuffle(qlist)
+              for query in qlist:
                   try:
                       r = requests.get(
                           "https://images-api.nasa.gov/search",
@@ -106,14 +118,10 @@ jobs:
                       continue
               return None
 
-          def search_archive(min_mb, max_mb):
-              queries = [
-                  "space nasa public domain", "earth orbit footage", "nebula timelapse",
-                  "aurora borealis", "deep space", "milky way timelapse", "rocket launch nasa",
-                  "international space station footage", "planet earth from space"
-              ]
-              random.shuffle(queries)
-              for query in queries:
+          def search_archive(min_mb, max_mb, queries):
+              qlist = list(queries)
+              random.shuffle(qlist)
+              for query in qlist:
                   try:
                       r = requests.get(
                           "https://archive.org/advancedsearch.php",
@@ -156,26 +164,39 @@ jobs:
                       continue
               return None
 
-          # Try NASA across all tiers from min_size upward, then Archive.org
-          for max_mb in SIZE_TIERS_MB:
-              print(f"Searching NASA under {max_mb}MB (min {min_size}MB)...")
-              found = search_nasa(min_size, max_mb)
-              if found:
-                  print(f"Found: {found['title']} ({found['size_mb']:.1f}MB) from {found['source']}")
-                  break
+          # Try custom terms first (if provided) across NASA then Archive, all size tiers
+          if custom_terms:
+              for max_mb in SIZE_TIERS_MB:
+                  print(f"Searching NASA (custom terms) under {max_mb}MB...")
+                  found = search_nasa(min_size, max_mb, custom_terms)
+                  if found:
+                      break
+              if not found:
+                  for max_mb in SIZE_TIERS_MB:
+                      print(f"Searching Archive.org (custom terms) under {max_mb}MB...")
+                      found = search_archive(min_size, max_mb, custom_terms)
+                      if found:
+                          break
 
+          # Fall back to default rotation if custom terms found nothing (or none given)
           if not found:
               for max_mb in SIZE_TIERS_MB:
-                  print(f"Searching Archive.org under {max_mb}MB (min {min_size}MB)...")
-                  found = search_archive(min_size, max_mb)
+                  print(f"Searching NASA (default rotation) under {max_mb}MB...")
+                  found = search_nasa(min_size, max_mb, DEFAULT_QUERIES)
                   if found:
-                      print(f"Found: {found['title']} ({found['size_mb']:.1f}MB) from {found['source']}")
+                      break
+          if not found:
+              for max_mb in SIZE_TIERS_MB:
+                  print(f"Searching Archive.org (default rotation) under {max_mb}MB...")
+                  found = search_archive(min_size, max_mb, DEFAULT_QUERIES)
+                  if found:
                       break
 
           if not found:
               print("No footage found in any tier")
               sys.exit(1)
 
+          print(f"Found: {found['title']} ({found['size_mb']:.1f}MB) from {found['source']}")
           print(f"Downloading {found['url']}")
           r = requests.get(found["url"], stream=True, timeout=120)
           raw_path = "/tmp/raw_footage" + os.path.splitext(found["url"].split("?")[0])[-1]
@@ -189,6 +210,7 @@ jobs:
           PYEOF
         env:
           MIN_SIZE_MB: ${{ github.event.inputs.min_size || '100' }}
+          SEARCH_TERMS: ${{ github.event.inputs.search_terms || '' }}
 
       - name: Process footage
         run: |
@@ -227,7 +249,11 @@ jobs:
           else:
               print("No bgmusic found — using original audio only")
 
-          cta_texts = ["SUBSCRIBE", "LIKE AND SUBSCRIBE", "SUBSCRIBE FOR MORE", "HIT SUBSCRIBE", "FOLLOW FOR MORE"]
+          # CTA setup: SUBSCRIBE = red box, LIKE = blue box, text always white
+          cta_options = [
+              ("SUBSCRIBE", "red"),
+              ("LIKE", "blue"),
+          ]
           t_start = min(2.0, duration * 0.1)
           t_mid = duration / 2
           t_end = max(duration - 4.0, t_mid + 2)
@@ -237,7 +263,7 @@ jobs:
 
           drawtext_filters = []
           for t in cta_times:
-              text = random.choice(cta_texts)
+              text, color = random.choice(cta_options)
               t_in = t
               t_out = t + 2.0
               fade_dur = 0.4
@@ -247,7 +273,7 @@ jobs:
               )
               dt = (
                   f"drawtext=fontfile={font}:text='{text}':fontsize=64:fontcolor=white:"
-                  f"x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.6:boxborderw=20:"
+                  f"x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor={color}@0.75:boxborderw=20:"
                   f"enable='between(t,{t_in},{t_out})':alpha='{alpha_expr}'"
               )
               drawtext_filters.append(dt)
@@ -294,7 +320,7 @@ jobs:
               out
           ]
 
-          print("Processing...")
+          print("Processing long-form video...")
           result = subprocess.run(cmd, capture_output=True, text=True)
           if result.returncode != 0:
               print(f"ffmpeg error:\n{result.stderr[-3000:]}")
@@ -302,6 +328,48 @@ jobs:
 
           size = os.path.getsize(out) / 1024 / 1024
           print(f"Processed: {size:.1f}MB")
+
+          # ==== Build Short: random vertical slice from processed video ====
+          probe2 = subprocess.run([
+              "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", out
+          ], capture_output=True, text=True)
+          info2 = json.loads(probe2.stdout)
+          proc_duration = 0
+          for s in info2.get("streams", []):
+              try:
+                  proc_duration = max(proc_duration, float(s.get("duration", 0)))
+              except Exception:
+                  pass
+
+          short_len = min(45, max(15, proc_duration * 0.3))
+          max_start = max(0, proc_duration - short_len)
+          # bias toward the middle section, not the very start/end
+          mid_window_start = max_start * 0.25
+          mid_window_end = max_start * 0.75
+          if mid_window_end <= mid_window_start:
+              clip_start = max_start / 2
+          else:
+              clip_start = random.uniform(mid_window_start, mid_window_end)
+
+          print(f"Short clip: start={clip_start:.1f}s length={short_len:.1f}s")
+
+          short_out = "/tmp/short.mp4"
+          short_cmd = [
+              "ffmpeg", "-y", "-ss", str(clip_start), "-i", out, "-t", str(short_len),
+              "-vf", "crop=ih*9/16:ih,scale=1080:1920",
+              "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+              "-pix_fmt", "yuv420p",
+              "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+              "-movflags", "+faststart",
+              short_out
+          ]
+          result2 = subprocess.run(short_cmd, capture_output=True, text=True)
+          if result2.returncode != 0:
+              print(f"Short ffmpeg error:\n{result2.stderr[-2000:]}")
+              print("Continuing without Short")
+          else:
+              print(f"Short created: {os.path.getsize(short_out)/1024/1024:.1f}MB")
+
           os.remove(raw)
           PYEOF
 
@@ -325,9 +393,10 @@ jobs:
           source = meta["source"]
           query = meta.get("query", "space")
 
-          title_base = re.sub(r'[^\w\s\-\(\)\:\,\.\!]', '', title_base)[:60].strip()
+          title_base = re.sub(r'[^\w\s\-\(\)\:\,\.\!]', '', title_base)[:80].strip()
 
-          title = f"{title_base} | {source} Public Domain Footage"
+          # Title no longer includes source credit
+          title = title_base
           if len(title) > 100:
               title = title[:97] + "..."
 
@@ -343,28 +412,29 @@ jobs:
 
           hashtag_query = query.replace(" ", "").lower()
 
-          description_lines = [
-              title_base,
-              "",
-              raw_desc,
-              "",
-              source_credit,
-              f"Original footage ID: {meta['id']}",
-              "This footage has been transformed (zoomed, reprocessed) for this upload.",
-              "",
-              "----------------------------------------",
-              "About this video:",
-              f"Stunning {query} footage captured and released into the public domain. No copyright, free for all humanity to enjoy.",
-              "",
-              "Subscribe for daily space footage and relaxation content.",
-              "",
-              "----------------------------------------",
-              f"Tags: space, nasa, {query}, earth, universe, cosmos, relaxation, meditation, sleep, ambient, timelapse, astronomy, science, documentary",
-              "----------------------------------------",
-              "",
-              f"#space #nasa #universe #cosmos #{hashtag_query} #earthfromspace #astronomy #relaxation #ambient #sleepmusic #meditation #timelapse #documentary #publicdomain #spacefootage",
-          ]
-          description = "\n".join(description_lines)
+          def build_description(is_short=False):
+              lines = [
+                  title_base,
+                  "",
+                  raw_desc,
+                  "",
+                  source_credit,
+                  f"Original footage ID: {meta['id']}",
+                  "This footage has been transformed (zoomed, reprocessed) for this upload.",
+                  "",
+                  "----------------------------------------",
+                  "About this video:",
+                  f"Stunning {query} footage captured and released into the public domain.",
+                  "",
+                  "Subscribe for more space footage.",
+                  "",
+                  "----------------------------------------",
+                  f"Tags: space, nasa, {query}, earth, universe, cosmos, relaxation, meditation, sleep, ambient, timelapse, astronomy, science, documentary",
+                  "----------------------------------------",
+                  "",
+                  f"#space #nasa #universe #cosmos #{hashtag_query} #astronomy #relaxation #ambient #timelapse #documentary #publicdomain" + (" #shorts" if is_short else ""),
+              ]
+              return "\n".join(lines)
 
           tags = [
               "space", "nasa", "universe", "cosmos", "earth from space",
@@ -375,8 +445,6 @@ jobs:
           ]
           tags = list(dict.fromkeys(tags))[:30]
 
-          print(f"Title: {title}")
-
           creds = Credentials(
               token=os.environ.get("YT_ACCESS_TOKEN"),
               refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
@@ -386,34 +454,46 @@ jobs:
           )
           youtube = build("youtube", "v3", credentials=creds)
 
-          request = youtube.videos().insert(
-              part="snippet,status",
-              body={
-                  "snippet": {
-                      "title": title,
-                      "description": description,
-                      "tags": tags,
-                      "categoryId": "28",
-                      "defaultLanguage": "en"
+          def upload(filepath, vid_title, vid_desc):
+              request = youtube.videos().insert(
+                  part="snippet,status",
+                  body={
+                      "snippet": {
+                          "title": vid_title,
+                          "description": vid_desc,
+                          "tags": tags,
+                          "categoryId": "28",
+                          "defaultLanguage": "en"
+                      },
+                      "status": {
+                          "privacyStatus": "public",
+                          "madeForKids": False,
+                          "selfDeclaredMadeForKids": False
+                      }
                   },
-                  "status": {
-                      "privacyStatus": "public",
-                      "madeForKids": False,
-                      "selfDeclaredMadeForKids": False
-                  }
-              },
-              media_body=MediaFileUpload(mp4, mimetype="video/mp4", resumable=True)
-          )
+                  media_body=MediaFileUpload(filepath, mimetype="video/mp4", resumable=True)
+              )
+              response = None
+              while response is None:
+                  status, response = request.next_chunk()
+                  if status:
+                      print(f"Upload progress: {int(status.progress()*100)}%")
+              return response.get("id", "")
 
-          response = None
-          while response is None:
-              status, response = request.next_chunk()
-              if status:
-                  print(f"Upload progress: {int(status.progress()*100)}%")
-
-          video_id = response.get("id", "")
+          print(f"Title: {title}")
+          video_id = upload(mp4, title, build_description(is_short=False))
           print(f"https://youtube.com/watch?v={video_id}")
           os.remove(mp4)
+
+          short_path = "/tmp/short.mp4"
+          if os.path.exists(short_path):
+              short_title = title[:90] + " #shorts" if len(title) <= 90 else title[:90] + "#shorts"
+              print(f"Short title: {short_title}")
+              short_id = upload(short_path, short_title, build_description(is_short=True))
+              print(f"https://youtube.com/shorts/{short_id}")
+              os.remove(short_path)
+          else:
+              print("No short to upload")
 
           with open("posted.txt", "a") as f:
               f.write(meta["id"] + "\n")
