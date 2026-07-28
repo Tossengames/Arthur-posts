@@ -183,6 +183,15 @@ jobs:
           if music_files:
               music_file = random.choice(music_files)
 
+          # Detect if raw footage actually has an audio stream
+          audio_probe = subprocess.run(
+              ["ffprobe", "-v", "error", "-select_streams", "a",
+               "-show_entries", "stream=index", "-of", "csv=p=0", raw],
+              capture_output=True, text=True
+          )
+          has_audio = bool(audio_probe.stdout.strip())
+          print(f"Raw footage has audio: {has_audio}")
+
           cta_options = [("SUBSCRIBE", "red"), ("LIKE", "blue")]
 
           probe = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", raw],
@@ -218,25 +227,46 @@ jobs:
           vf_chain = f"scale=iw*{zoom}:ih*{zoom},crop=iw/{zoom}:ih/{zoom}," + ",".join(drawtext_filters) + \
                      ",scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
 
-          ping_inputs, ping_filter_parts = [], []
-          for i, t in enumerate(cta_times):
-              ping_inputs += ["-f", "lavfi", "-i", "sine=frequency=1500:duration=0.3"]
-              ping_filter_parts.append(f"[{i+1}:a]adelay={int(t*1000)}|{int(t*1000)},volume=0.5[ping{i}]")
-
+          # Build input list: raw video, optional music, then ping tones - track exact indices
           main_inputs = ["-i", raw]
+          next_idx = 1
+          music_idx = None
           if music_file:
               main_inputs += ["-stream_loop", "-1", "-i", music_file]
+              music_idx = next_idx
+              next_idx += 1
 
+          ping_inputs = []
+          ping_indices = []
+          for t in cta_times:
+              ping_inputs += ["-f", "lavfi", "-i", "sine=frequency=1500:duration=0.3"]
+              ping_indices.append(next_idx)
+              next_idx += 1
+
+          ping_filter_parts = []
+          for i, (t, idx) in enumerate(zip(cta_times, ping_indices)):
+              ping_filter_parts.append(f"[{idx}:a]adelay={int(t*1000)}|{int(t*1000)},volume=0.5[ping{i}]")
+
+          # Build base audio track: original audio if present, else music if present, else silence
           audio_mix_parts = []
-          if music_file:
-              audio_mix_parts += ["[0:a]volume=1.0[a1]", "[1:a]volume=0.15[a2]"]
-              base_audio, n_base = "[a1][a2]", 2
-          else:
+          base_labels = []
+          if has_audio:
               audio_mix_parts.append("[0:a]volume=1.0[a1]")
-              base_audio, n_base = "[a1]", 1
+              base_labels.append("[a1]")
+              if music_file:
+                  audio_mix_parts.append(f"[{music_idx}:a]volume=0.15[a2]")
+                  base_labels.append("[a2]")
+          else:
+              if music_file:
+                  audio_mix_parts.append(f"[{music_idx}:a]volume=0.5[a2]")
+                  base_labels.append("[a2]")
+              else:
+                  audio_mix_parts.append("anullsrc=channel_layout=stereo:sample_rate=44100[silence]")
+                  base_labels.append("[silence]")
 
           ping_labels = "".join(f"[ping{i}]" for i in range(len(cta_times)))
-          n_total = n_base + len(cta_times)
+          n_total = len(base_labels) + len(cta_times)
+          base_audio = "".join(base_labels)
           audio_mix_parts.append(f"{base_audio}{ping_labels}amix=inputs={n_total}:duration=first[aout]")
 
           filter_complex = f"[0:v]{vf_chain}[vout];" + ";".join(ping_filter_parts) + ";" + ";".join(audio_mix_parts)
@@ -262,19 +292,34 @@ jobs:
               short_len = 25
               max_start = max(0, duration - short_len)
               clip_start = random.uniform(0, max_start) if max_start > 0 else 0
-              short_cmd = [
-                  "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-t", str(short_len),
-                  "-vf", "crop=ih*9/16:ih,scale=1080:1920",
-                  "-c:v", "libx264", "-preset", "fast", "-crf", "20",
-                  "-pix_fmt", "yuv420p",
-                  "-c:a", "aac", "-b:a", "128k",
-                  short_out
-              ]
+
+              short_vf = "crop=ih*9/16:ih,scale=1080:1920"
+              if has_audio:
+                  short_cmd = [
+                      "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-t", str(short_len),
+                      "-vf", short_vf,
+                      "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                      "-pix_fmt", "yuv420p",
+                      "-c:a", "aac", "-b:a", "128k",
+                      short_out
+                  ]
+              else:
+                  short_cmd = [
+                      "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw,
+                      "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+                      "-t", str(short_len),
+                      "-vf", short_vf,
+                      "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                      "-pix_fmt", "yuv420p",
+                      "-c:a", "aac", "-b:a", "128k",
+                      "-shortest",
+                      short_out
+                  ]
               r2 = subprocess.run(short_cmd, capture_output=True, text=True, timeout=180)
               if r2.returncode == 0:
                   print(f"Short created: {os.path.getsize(short_out)/1024/1024:.1f}MB")
               else:
-                  print("Short failed, skipping it")
+                  print(f"Short failed, skipping it: {r2.stderr[-500:]}")
           except Exception as e:
               print(f"Short skipped due to error: {e}")
 
