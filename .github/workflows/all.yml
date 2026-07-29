@@ -97,7 +97,6 @@ jobs:
 
           queries = custom_terms if custom_terms else NICHE_QUERIES.get(niche, NICHE_QUERIES["Space"])
           print(f"Mode: {'custom terms' if custom_terms else 'niche list'} -> {niche if not custom_terms else custom_terms}")
-          print(f"Queries to try: {queries}")
 
           def search_pixabay(min_mb, max_mb, qlist):
               qlist = list(qlist)
@@ -140,7 +139,7 @@ jobs:
 
           if not found:
               if custom_terms:
-                  print("No footage found for custom terms - stopping (no fallback as requested)")
+                  print("No footage found for custom terms - stopping (no fallback)")
               else:
                   print(f"No footage found for niche '{niche}'")
               sys.exit(1)
@@ -183,7 +182,6 @@ jobs:
           if music_files:
               music_file = random.choice(music_files)
 
-          # Detect if raw footage actually has an audio stream
           audio_probe = subprocess.run(
               ["ffprobe", "-v", "error", "-select_streams", "a",
                "-show_entries", "stream=index", "-of", "csv=p=0", raw],
@@ -224,10 +222,11 @@ jobs:
                   f"enable='between(t,{t_in},{t_out})':alpha='{alpha_expr}'"
               )
 
-          vf_chain = f"scale=iw*{zoom}:ih*{zoom},crop=iw/{zoom}:ih/{zoom}," + ",".join(drawtext_filters) + \
+          # Downscale early to cap resolution before heavy filter work - this is the main speed fix
+          vf_chain = "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease," + \
+                     f"scale=iw*{zoom}:ih*{zoom},crop=iw/{zoom}:ih/{zoom}," + ",".join(drawtext_filters) + \
                      ",scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
 
-          # Build input list: raw video, optional music, then ping tones - track exact indices
           main_inputs = ["-i", raw]
           next_idx = 1
           music_idx = None
@@ -247,7 +246,6 @@ jobs:
           for i, (t, idx) in enumerate(zip(cta_times, ping_indices)):
               ping_filter_parts.append(f"[{idx}:a]adelay={int(t*1000)}|{int(t*1000)},volume=0.5[ping{i}]")
 
-          # Build base audio track: original audio if present, else music if present, else silence
           audio_mix_parts = []
           base_labels = []
           if has_audio:
@@ -274,7 +272,7 @@ jobs:
           cmd = ["ffmpeg", "-y"] + main_inputs + ping_inputs + [
               "-filter_complex", filter_complex,
               "-map", "[vout]", "-map", "[aout]",
-              "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+              "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
               "-pix_fmt", "yuv420p",
               "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
               "-movflags", "+faststart",
@@ -286,19 +284,17 @@ jobs:
               sys.exit(1)
           print(f"Processed: {os.path.getsize(out)/1024/1024:.1f}MB")
 
-          # Simple Short: plain 25s clip cut straight from raw footage
           try:
               short_out = "/tmp/short.mp4"
               short_len = 25
               max_start = max(0, duration - short_len)
               clip_start = random.uniform(0, max_start) if max_start > 0 else 0
-
               short_vf = "crop=ih*9/16:ih,scale=1080:1920"
               if has_audio:
                   short_cmd = [
                       "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-t", str(short_len),
                       "-vf", short_vf,
-                      "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
                       "-pix_fmt", "yuv420p",
                       "-c:a", "aac", "-b:a", "128k",
                       short_out
@@ -309,7 +305,7 @@ jobs:
                       "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
                       "-t", str(short_len),
                       "-vf", short_vf,
-                      "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
                       "-pix_fmt", "yuv420p",
                       "-c:a", "aac", "-b:a", "128k",
                       "-shortest",
@@ -319,9 +315,9 @@ jobs:
               if r2.returncode == 0:
                   print(f"Short created: {os.path.getsize(short_out)/1024/1024:.1f}MB")
               else:
-                  print(f"Short failed, skipping it: {r2.stderr[-500:]}")
+                  print(f"Short failed, skipping: {r2.stderr[-500:]}")
           except Exception as e:
-              print(f"Short skipped due to error: {e}")
+              print(f"Short skipped: {e}")
 
           os.remove(raw)
           PYEOF
@@ -356,8 +352,7 @@ jobs:
           def build_description(is_short=False):
               lines = [
                   title_base if title_base else query.title(),
-                  "",
-                  "Pixabay -- pixabay.com",
+                  "", "Pixabay -- pixabay.com",
                   f"Original footage ID: {meta['id']}",
                   "This footage has been transformed (zoomed, reprocessed) for this upload.",
                   "", "----------------------------------------", "About this video:",
