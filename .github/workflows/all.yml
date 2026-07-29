@@ -6,7 +6,7 @@ on:
       niche:
         description: "Pick a niche (used only if custom terms below is empty)"
         required: true
-        default: "Space"
+        default: "Nature"
         type: choice
         options:
           - "City"
@@ -76,7 +76,7 @@ jobs:
               print("PIXABAY_KEY missing")
               sys.exit(1)
 
-          niche = os.environ.get("NICHE", "Space").strip()
+          niche = os.environ.get("NICHE", "Nature").strip()
           custom_raw = os.environ.get("CUSTOM_TERMS", "").strip()
           custom_terms = [t.strip() for t in custom_raw.split(",") if t.strip()] if custom_raw else []
 
@@ -95,7 +95,7 @@ jobs:
                           "forest animals", "ocean animals", "safari animals", "animals nature"],
           }
 
-          queries = custom_terms if custom_terms else NICHE_QUERIES.get(niche, NICHE_QUERIES["Space"])
+          queries = custom_terms if custom_terms else NICHE_QUERIES.get(niche, NICHE_QUERIES["Nature"])
           print(f"Mode: {'custom terms' if custom_terms else 'niche list'} -> {niche if not custom_terms else custom_terms}")
 
           def search_pixabay(min_mb, max_mb, qlist):
@@ -157,7 +157,7 @@ jobs:
           PYEOF
         env:
           MIN_SIZE_MB: ${{ github.event.inputs.min_size || '100' }}
-          NICHE: ${{ github.event.inputs.niche || 'Space' }}
+          NICHE: ${{ github.event.inputs.niche || 'Nature' }}
           CUSTOM_TERMS: ${{ github.event.inputs.custom_terms || '' }}
           PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
 
@@ -165,7 +165,7 @@ jobs:
         timeout-minutes: 15
         run: |
           python3 << 'PYEOF'
-          import json, subprocess, os, sys, time, random
+          import json, subprocess, os, sys, time, random, glob
 
           with open("/tmp/meta.json") as f:
               meta = json.load(f)
@@ -197,13 +197,50 @@ jobs:
           has_audio = bool(audio_probe.stdout.strip())
           print(f"Has audio: {has_audio}")
 
-          if has_audio:
+          music_file = None
+          music_files = []
+          for ext in ["*.mp3", "*.mp4", "*.m4a", "*.wav", "*.ogg", "*.flac"]:
+              music_files += glob.glob(f"bgmusic/{ext}")
+          if music_files:
+              music_file = random.choice(music_files)
+              print(f"Music: {music_file}")
+          else:
+              print("No bgmusic found")
+
+          vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+
+          # Build audio: if original has audio + music -> mix 70/30, if only music -> 100% music, if neither -> silence
+          if has_audio and music_file:
               cmd = [
-                  "ffmpeg", "-y", "-i", raw,
-                  "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+                  "ffmpeg", "-y", "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                  "-vf", vf,
+                  "-filter_complex", "[0:a]volume=0.7[a1];[1:a]volume=0.3[a2];[a1][a2]amix=inputs=2:duration=first[aout]",
+                  "-map", "0:v", "-map", "[aout]",
                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                   "-pix_fmt", "yuv420p",
                   "-c:a", "aac", "-b:a", "192k",
+                  "-movflags", "+faststart",
+                  out
+              ]
+          elif has_audio and not music_file:
+              cmd = [
+                  "ffmpeg", "-y", "-i", raw,
+                  "-vf", vf,
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k",
+                  "-movflags", "+faststart",
+                  out
+              ]
+          elif not has_audio and music_file:
+              cmd = [
+                  "ffmpeg", "-y", "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                  "-vf", vf,
+                  "-map", "0:v", "-map", "1:a",
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k",
+                  "-shortest",
                   "-movflags", "+faststart",
                   out
               ]
@@ -211,7 +248,7 @@ jobs:
               cmd = [
                   "ffmpeg", "-y", "-i", raw,
                   "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-                  "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+                  "-vf", vf,
                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                   "-pix_fmt", "yuv420p",
                   "-c:a", "aac", "-b:a", "192k",
@@ -235,13 +272,37 @@ jobs:
               clip_start = random.uniform(0, max_start) if max_start > 0 else 0
               short_vf = "crop=ih*9/16:ih,scale=1080:1920"
 
-              if has_audio:
+              if has_audio and music_file:
+                  short_cmd = [
+                      "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                      "-t", str(short_len),
+                      "-vf", short_vf,
+                      "-filter_complex", "[0:a]volume=0.7[a1];[1:a]volume=0.3[a2];[a1][a2]amix=inputs=2:duration=first[aout]",
+                      "-map", "0:v", "-map", "[aout]",
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                      "-pix_fmt", "yuv420p",
+                      "-c:a", "aac", "-b:a", "128k",
+                      short_out
+                  ]
+              elif has_audio and not music_file:
                   short_cmd = [
                       "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-t", str(short_len),
                       "-vf", short_vf,
                       "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
                       "-pix_fmt", "yuv420p",
                       "-c:a", "aac", "-b:a", "128k",
+                      short_out
+                  ]
+              elif not has_audio and music_file:
+                  short_cmd = [
+                      "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                      "-t", str(short_len),
+                      "-vf", short_vf,
+                      "-map", "0:v", "-map", "1:a",
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                      "-pix_fmt", "yuv420p",
+                      "-c:a", "aac", "-b:a", "128k",
+                      "-shortest",
                       short_out
                   ]
               else:
@@ -256,6 +317,7 @@ jobs:
                       "-shortest",
                       short_out
                   ]
+
               t0 = time.time()
               r2 = subprocess.run(short_cmd, capture_output=True, text=True, timeout=120)
               print(f"Short encode took {time.time()-t0:.1f}s")
