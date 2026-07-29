@@ -3,8 +3,29 @@ name: Post Japan Footage to YouTube
 on:
   workflow_dispatch:
     inputs:
+      term_choice:
+        description: "Pick a term (ignored if custom text below is filled in)"
+        required: true
+        default: "Random - any Japan term"
+        type: choice
+        options:
+          - "Random - any Japan term"
+          - "Tokyo city"
+          - "Kyoto"
+          - "Osaka"
+          - "Mount Fuji"
+          - "Cherry blossom (sakura)"
+          - "Japan snow / winter"
+          - "Japan night city"
+          - "Japan countryside"
+          - "Japan temple"
+          - "Japan street walk"
+          - "Shibuya"
+          - "Japan train"
+          - "Japan garden"
+          - "Japan autumn"
       custom_terms:
-        description: "Custom search terms (comma separated, optional). If set, only these are searched - no fallback."
+        description: "Write your own search terms (comma separated, optional). Overrides the dropdown."
         required: false
         default: ""
       min_size:
@@ -36,8 +57,8 @@ jobs:
         timeout-minutes: 5
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg fonts-dejavu
-          pip install requests
+          sudo apt-get install -y ffmpeg
+          pip install requests google-auth google-auth-oauthlib google-api-python-client
           echo "Done"
 
       - name: Find and download footage
@@ -64,19 +85,51 @@ jobs:
               print("PIXABAY_KEY missing")
               sys.exit(1)
 
+          term_choice = os.environ.get("TERM_CHOICE", "Random - any Japan term").strip()
           custom_raw = os.environ.get("CUSTOM_TERMS", "").strip()
           custom_terms = [t.strip() for t in custom_raw.split(",") if t.strip()] if custom_raw else []
 
-          JAPAN_QUERIES = [
-              "japan city", "tokyo city", "japan night city", "japan street",
-              "japan nature", "japan temple", "kyoto", "mount fuji",
-              "tokyo night", "japan cherry blossom", "japan countryside",
-              "osaka city", "japan train", "japan garden", "japan aerial",
-              "shibuya", "japan skyline", "japan traditional"
+          # Big rotation pool used for "Random" and as overall fallback pool
+          JAPAN_ALL = [
+              "japan city", "tokyo city", "tokyo night", "tokyo street",
+              "kyoto", "kyoto temple", "osaka city", "osaka night",
+              "mount fuji", "japan cherry blossom", "sakura japan",
+              "japan snow", "japan winter", "japan night city",
+              "japan countryside", "japan rural", "japan temple",
+              "japan shrine", "japan street walk", "shibuya",
+              "shibuya crossing", "japan train", "shinkansen",
+              "japan garden", "japan autumn", "japan fall foliage",
+              "japan traditional", "japan lantern", "japan festival",
+              "japan alley", "japan skyline", "japan aerial",
+              "hokkaido", "okinawa", "nara japan", "japan bamboo forest"
           ]
 
-          queries = custom_terms if custom_terms else JAPAN_QUERIES
-          print(f"Mode: {'custom terms' if custom_terms else 'japan rotation'}")
+          TERM_MAP = {
+              "Tokyo city": ["tokyo city", "tokyo street", "tokyo skyline"],
+              "Kyoto": ["kyoto", "kyoto temple", "kyoto street"],
+              "Osaka": ["osaka city", "osaka night"],
+              "Mount Fuji": ["mount fuji"],
+              "Cherry blossom (sakura)": ["japan cherry blossom", "sakura japan"],
+              "Japan snow / winter": ["japan snow", "japan winter", "hokkaido"],
+              "Japan night city": ["japan night city", "tokyo night", "osaka night"],
+              "Japan countryside": ["japan countryside", "japan rural"],
+              "Japan temple": ["japan temple", "japan shrine", "kyoto temple"],
+              "Japan street walk": ["japan street walk", "japan alley"],
+              "Shibuya": ["shibuya", "shibuya crossing"],
+              "Japan train": ["japan train", "shinkansen"],
+              "Japan garden": ["japan garden", "japan bamboo forest"],
+              "Japan autumn": ["japan autumn", "japan fall foliage"],
+          }
+
+          if custom_terms:
+              queries = custom_terms
+              print(f"Mode: custom terms -> {queries}")
+          elif term_choice == "Random - any Japan term":
+              queries = JAPAN_ALL
+              print("Mode: random from full Japan rotation")
+          else:
+              queries = TERM_MAP.get(term_choice, JAPAN_ALL)
+              print(f"Mode: picked term -> {term_choice} -> {queries}")
 
           def search_pixabay(min_mb, max_mb, qlist):
               qlist = list(qlist)
@@ -134,14 +187,15 @@ jobs:
           PYEOF
         env:
           MIN_SIZE_MB: ${{ github.event.inputs.min_size || '100' }}
+          TERM_CHOICE: ${{ github.event.inputs.term_choice || 'Random - any Japan term' }}
           CUSTOM_TERMS: ${{ github.event.inputs.custom_terms || '' }}
           PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
 
       - name: Process footage
-        timeout-minutes: 20
+        timeout-minutes: 15
         run: |
           python3 << 'PYEOF'
-          import json, subprocess, os, sys, random, glob
+          import json, subprocess, os, sys, time, random, glob
 
           with open("/tmp/meta.json") as f:
               meta = json.load(f)
@@ -149,14 +203,21 @@ jobs:
           raw = meta["raw_path"]
           out = "/tmp/processed.mp4"
 
-          zoom = round(random.uniform(1.05, 1.15), 2)
-
-          music_file = None
-          music_files = []
-          for ext in ["*.mp3", "*.mp4", "*.m4a", "*.wav", "*.ogg", "*.flac"]:
-              music_files += glob.glob(f"bgmusic/{ext}")
-          if music_files:
-              music_file = random.choice(music_files)
+          probe = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", raw],
+                                  capture_output=True, text=True)
+          info = json.loads(probe.stdout)
+          duration = 0
+          width = height = 0
+          for s in info.get("streams", []):
+              if s.get("codec_type") == "video":
+                  width = s.get("width", 0)
+                  height = s.get("height", 0)
+              try:
+                  duration = max(duration, float(s.get("duration", 0)))
+              except Exception:
+                  pass
+          file_size_mb = os.path.getsize(raw) / 1024 / 1024
+          print(f"SOURCE INFO: {width}x{height}, duration={duration:.1f}s, size={file_size_mb:.1f}MB")
 
           audio_probe = subprocess.run(
               ["ffprobe", "-v", "error", "-select_streams", "a",
@@ -164,96 +225,70 @@ jobs:
               capture_output=True, text=True
           )
           has_audio = bool(audio_probe.stdout.strip())
-          print(f"Raw footage has audio: {has_audio}")
+          print(f"Has audio: {has_audio}")
 
-          cta_options = [("SUBSCRIBE", "red"), ("LIKE", "blue")]
-
-          probe = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", raw],
-                                  capture_output=True, text=True)
-          info = json.loads(probe.stdout)
-          duration = 0
-          for s in info.get("streams", []):
-              try:
-                  duration = max(duration, float(s.get("duration", 0)))
-              except Exception:
-                  pass
-
-          t_start = min(2.0, duration * 0.1)
-          t_mid = duration / 2
-          t_end = max(duration - 4.0, t_mid + 2)
-          cta_times = [t_start, t_mid, t_end]
-
-          font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-          drawtext_filters = []
-          for t in cta_times:
-              text, color = random.choice(cta_options)
-              t_in, t_out, fade_dur = t, t + 2.0, 0.4
-              alpha_expr = (
-                  f"if(lt(t,{t_in+fade_dur}),(t-{t_in})/{fade_dur},"
-                  f"if(gt(t,{t_out-fade_dur}),({t_out}-t)/{fade_dur},1))"
-              )
-              drawtext_filters.append(
-                  f"drawtext=fontfile={font}:text='{text}':fontsize=64:fontcolor=white:"
-                  f"x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor={color}@0.75:boxborderw=20:"
-                  f"enable='between(t,{t_in},{t_out})':alpha='{alpha_expr}'"
-              )
-
-          vf_chain = "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease," + \
-                     f"scale=iw*{zoom}:ih*{zoom},crop=iw/{zoom}:ih/{zoom}," + ",".join(drawtext_filters) + \
-                     ",scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
-
-          main_inputs = ["-i", raw]
-          next_idx = 1
-          music_idx = None
-          if music_file:
-              main_inputs += ["-stream_loop", "-1", "-i", music_file]
-              music_idx = next_idx
-              next_idx += 1
-
-          ping_inputs = []
-          ping_indices = []
-          for t in cta_times:
-              ping_inputs += ["-f", "lavfi", "-i", "sine=frequency=1500:duration=0.3"]
-              ping_indices.append(next_idx)
-              next_idx += 1
-
-          ping_filter_parts = []
-          for i, (t, idx) in enumerate(zip(cta_times, ping_indices)):
-              ping_filter_parts.append(f"[{idx}:a]adelay={int(t*1000)}|{int(t*1000)},volume=0.5[ping{i}]")
-
-          audio_mix_parts = []
-          base_labels = []
-          if has_audio:
-              audio_mix_parts.append("[0:a]volume=1.0[a1]")
-              base_labels.append("[a1]")
-              if music_file:
-                  audio_mix_parts.append(f"[{music_idx}:a]volume=0.15[a2]")
-                  base_labels.append("[a2]")
+          music_file = None
+          music_files = []
+          for ext in ["*.mp3", "*.mp4", "*.m4a", "*.wav", "*.ogg", "*.flac"]:
+              music_files += glob.glob(f"bgmusic/{ext}")
+          if music_files:
+              music_file = random.choice(music_files)
+              print(f"Music: {music_file}")
           else:
-              if music_file:
-                  audio_mix_parts.append(f"[{music_idx}:a]volume=0.5[a2]")
-                  base_labels.append("[a2]")
-              else:
-                  audio_mix_parts.append("anullsrc=channel_layout=stereo:sample_rate=44100[silence]")
-                  base_labels.append("[silence]")
+              print("No bgmusic found")
 
-          ping_labels = "".join(f"[ping{i}]" for i in range(len(cta_times)))
-          n_total = len(base_labels) + len(cta_times)
-          base_audio = "".join(base_labels)
-          audio_mix_parts.append(f"{base_audio}{ping_labels}amix=inputs={n_total}:duration=first[aout]")
+          vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
 
-          filter_complex = f"[0:v]{vf_chain}[vout];" + ";".join(ping_filter_parts) + ";" + ";".join(audio_mix_parts)
+          if has_audio and music_file:
+              cmd = [
+                  "ffmpeg", "-y", "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                  "-vf", vf,
+                  "-filter_complex", "[0:a]volume=0.7[a1];[1:a]volume=0.3[a2];[a1][a2]amix=inputs=2:duration=first[aout]",
+                  "-map", "0:v", "-map", "[aout]",
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k",
+                  "-movflags", "+faststart",
+                  out
+              ]
+          elif has_audio and not music_file:
+              cmd = [
+                  "ffmpeg", "-y", "-i", raw,
+                  "-vf", vf,
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k",
+                  "-movflags", "+faststart",
+                  out
+              ]
+          elif not has_audio and music_file:
+              cmd = [
+                  "ffmpeg", "-y", "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                  "-vf", vf,
+                  "-map", "0:v", "-map", "1:a",
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k",
+                  "-shortest",
+                  "-movflags", "+faststart",
+                  out
+              ]
+          else:
+              cmd = [
+                  "ffmpeg", "-y", "-i", raw,
+                  "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+                  "-vf", vf,
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k",
+                  "-shortest",
+                  "-movflags", "+faststart",
+                  out
+              ]
 
-          cmd = ["ffmpeg", "-y"] + main_inputs + ping_inputs + [
-              "-filter_complex", filter_complex,
-              "-map", "[vout]", "-map", "[aout]",
-              "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-              "-pix_fmt", "yuv420p",
-              "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-              "-movflags", "+faststart",
-              out
-          ]
-          result = subprocess.run(cmd, capture_output=True, text=True)
+          t0 = time.time()
+          result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+          print(f"Main encode took {time.time()-t0:.1f}s")
           if result.returncode != 0:
               print(f"ffmpeg error:\n{result.stderr[-3000:]}")
               sys.exit(1)
@@ -265,13 +300,38 @@ jobs:
               max_start = max(0, duration - short_len)
               clip_start = random.uniform(0, max_start) if max_start > 0 else 0
               short_vf = "crop=ih*9/16:ih,scale=1080:1920"
-              if has_audio:
+
+              if has_audio and music_file:
+                  short_cmd = [
+                      "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                      "-t", str(short_len),
+                      "-vf", short_vf,
+                      "-filter_complex", "[0:a]volume=0.7[a1];[1:a]volume=0.3[a2];[a1][a2]amix=inputs=2:duration=first[aout]",
+                      "-map", "0:v", "-map", "[aout]",
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                      "-pix_fmt", "yuv420p",
+                      "-c:a", "aac", "-b:a", "128k",
+                      short_out
+                  ]
+              elif has_audio and not music_file:
                   short_cmd = [
                       "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-t", str(short_len),
                       "-vf", short_vf,
                       "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
                       "-pix_fmt", "yuv420p",
                       "-c:a", "aac", "-b:a", "128k",
+                      short_out
+                  ]
+              elif not has_audio and music_file:
+                  short_cmd = [
+                      "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                      "-t", str(short_len),
+                      "-vf", short_vf,
+                      "-map", "0:v", "-map", "1:a",
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                      "-pix_fmt", "yuv420p",
+                      "-c:a", "aac", "-b:a", "128k",
+                      "-shortest",
                       short_out
                   ]
               else:
@@ -286,7 +346,10 @@ jobs:
                       "-shortest",
                       short_out
                   ]
-              r2 = subprocess.run(short_cmd, capture_output=True, text=True, timeout=180)
+
+              t0 = time.time()
+              r2 = subprocess.run(short_cmd, capture_output=True, text=True, timeout=120)
+              print(f"Short encode took {time.time()-t0:.1f}s")
               if r2.returncode == 0:
                   print(f"Short created: {os.path.getsize(short_out)/1024/1024:.1f}MB")
               else:
@@ -329,7 +392,6 @@ jobs:
                   title_base if title_base else query.title(),
                   "", "Pixabay -- pixabay.com",
                   f"Original footage ID: {meta['id']}",
-                  "This footage has been transformed (zoomed, reprocessed) for this upload.",
                   "", "----------------------------------------", "About this video:",
                   f"{query.title()} footage from Japan.",
                   "", "Subscribe for more.", "",
