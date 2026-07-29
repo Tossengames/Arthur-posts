@@ -49,7 +49,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
-          pip install requests
+          pip install requests google-auth google-auth-oauthlib google-api-python-client
           echo "Done"
 
       - name: Find and download footage
@@ -197,7 +197,6 @@ jobs:
           has_audio = bool(audio_probe.stdout.strip())
           print(f"Has audio: {has_audio}")
 
-          # Simple resize only, no overlays/filters
           if has_audio:
               cmd = [
                   "ffmpeg", "-y", "-i", raw,
@@ -229,7 +228,6 @@ jobs:
               sys.exit(1)
           print(f"Processed: {os.path.getsize(out)/1024/1024:.1f}MB")
 
-          # Simple Short: plain 25s clip cut straight from raw footage, resized vertical
           try:
               short_out = "/tmp/short.mp4"
               short_len = 25
