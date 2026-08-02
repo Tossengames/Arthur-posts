@@ -333,7 +333,7 @@ jobs:
         env:
           TS: ${{ env.TS }}
           DISPLAY: ":99"
-          FORMAT_CHOICE: ${{ github.event.inputs.format_choice || 'Random - any format' }}
+          FORMAT_CHOICE: ${{ github.event.inputs.format_choice != '' && github.event.inputs.format_choice || 'Random - any format' }}
           YT_ACCESS_TOKEN: ${{ secrets.YT_ACCESS_TOKEN }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
