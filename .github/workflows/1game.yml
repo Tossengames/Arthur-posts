@@ -1,0 +1,332 @@
+name: 🎮 Post English Game Short to YouTube
+
+on:
+  workflow_dispatch:
+    inputs:
+      format_choice:
+        description: "Pick a game format (Random picks any)"
+        required: true
+        default: "Random - any format"
+        type: choice
+        options:
+          - "Random - any format"
+          - "word_blast"
+          - "grammar_fix"
+          - "pronunciation"
+          - "slang_match"
+  schedule:
+    - cron: "0 19 * * 1,3,5"
+
+jobs:
+  post:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache apt
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ubuntu22-enggame-v1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio
+
+      - name: Cache pip and ChromeDriver
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.wdm
+          key: pip-wdm-enggame-v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install selenium webdriver-manager google-auth google-auth-oauthlib google-api-python-client
+
+      - name: Set timestamp
+        run: echo "TS=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
+
+      - name: Verify game HTML exists
+        run: |
+          if [ ! -f english_game.html ]; then
+            echo "ERROR: english_game.html not found in repo root."
+            echo "Commit english_game.html to the repo alongside this workflow file."
+            exit 1
+          fi
+          echo "Found english_game.html: $(wc -l < english_game.html) lines"
+
+      - name: Start virtual display and audio
+        run: |
+          Xvfb :99 -screen 0 1080x1920x24 -ac &
+          pulseaudio --start --exit-idle-time=-1 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+          sleep 3
+
+      - name: Record, mix music, and Post to YouTube
+        run: |
+          python3 << 'PYEOF'
+          import os, time, subprocess, random, base64, json, glob
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.chrome.service import Service
+          from webdriver_manager.chrome import ChromeDriverManager
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+          from google.oauth2.credentials import Credentials
+
+          # ── EDIT THIS to change which folder(s) background music is picked from ──
+          MUSIC_FOLDERS = ["bgmusic", "Bgmusic"]
+          MUSIC_EXTENSIONS = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac"]
+
+          ts = os.environ.get("TS", "test")
+          webm_file = f"/tmp/game_{ts}.webm"
+          mp4_file = f"/tmp/game_{ts}.mp4"
+          html_path = os.path.abspath("english_game.html")
+
+          format_choice = os.environ.get("FORMAT_CHOICE", "Random - any format").strip()
+          force_format = None if format_choice == "Random - any format" else format_choice
+
+          opts = Options()
+          opts.add_argument("--no-sandbox")
+          opts.add_argument("--disable-dev-shm-usage")
+          opts.add_argument("--disable-gpu")
+          opts.add_argument("--window-size=1080,1920")
+          opts.add_argument("--window-position=0,0")
+          opts.add_argument("--force-device-scale-factor=1")
+          opts.add_argument("--autoplay-policy=no-user-gesture-required")
+          opts.add_argument("--disable-background-timer-throttling")
+          opts.add_argument("--disable-renderer-backgrounding")
+          opts.add_argument("--disable-backgrounding-occluded-windows")
+          opts.add_argument("--no-first-run")
+          opts.add_argument("--disable-infobars")
+          opts.add_argument("--disable-notifications")
+          opts.add_argument("--use-fake-ui-for-media-stream")
+          opts.add_argument("--use-fake-device-for-media-stream")
+          opts.add_argument("--allow-file-access-from-files")
+          opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+          opts.add_experimental_option("useAutomationExtension", False)
+          opts.add_experimental_option("mobileEmulation", {
+            "deviceMetrics": {"width": 1080, "height": 1920, "pixelRatio": 1.0},
+            "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+          })
+
+          print("Starting Chrome...")
+          driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()), options=opts
+          )
+          driver.set_window_size(1080, 1920)
+          driver.set_script_timeout(120)
+
+          print(f"Loading file://{html_path}")
+          driver.get(f"file://{html_path}")
+
+          print("Waiting for scene to load (3s)...")
+          time.sleep(3)
+
+          print(f"Format choice: {force_format or 'random'}")
+          print("Switching to a fresh scene, then starting recording...")
+          driver.execute_script(f"""
+            document.body.click();
+            if(typeof AC !== 'undefined') AC.resume();
+            window.setFormatAndStart({json.dumps(force_format)});
+            window.startRecordingFreshScene(30);
+          """)
+
+          print("Recording 12 seconds...")
+          time.sleep(12)
+
+          print("Stopping recording...")
+          driver.execute_script("window.stopRecording();")
+          time.sleep(1)
+          driver.execute_script("window.forceFinalize();")
+          time.sleep(1)
+
+          for _ in range(30):
+            done = driver.execute_script("return window._recordingDone;")
+            if done:
+              print("Recording finalised.")
+              break
+            time.sleep(0.4)
+          else:
+            driver.quit()
+            raise RuntimeError("Recording failed to finalise")
+
+          print("Extracting base64...")
+          b64 = driver.execute_async_script("""
+            var done = arguments[0];
+            window.getRecordingBase64().then(done).catch(function(e){ done(null); });
+          """)
+          used_format = driver.execute_script("return window._lastFormat || 'word_blast';")
+          print(f"Format used: {used_format}")
+          driver.quit()
+          print("Browser closed.")
+
+          if not b64:
+            raise RuntimeError("Failed to get base64 data")
+
+          with open(webm_file, 'wb') as f:
+            f.write(base64.b64decode(b64))
+          print(f"WebM: {os.path.getsize(webm_file)/1024/1024:.1f} MB")
+
+          print("Converting to MP4...")
+          result = subprocess.run([
+            "ffmpeg", "-y", "-i", webm_file,
+            "-c:v", "libx264", "-preset", "veryslow", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-vf", "scale=1080:1920:flags=lanczos",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+            "-movflags", "+faststart", mp4_file
+          ], capture_output=True, text=True)
+
+          if not os.path.exists(mp4_file) or os.path.getsize(mp4_file) < 10000:
+            print("ffmpeg stderr:", result.stderr[-2000:])
+            raise RuntimeError("mp4 conversion failed")
+
+          os.remove(webm_file)
+          print(f"mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
+
+          # ── Pick background music, checking each candidate folder name in order ──
+          def pick_music_file(folders):
+            for folder in folders:
+              if not os.path.isdir(folder):
+                continue
+              candidates = []
+              for ext in MUSIC_EXTENSIONS:
+                candidates.extend(glob.glob(os.path.join(folder, f"*.{ext}")))
+              if candidates:
+                print(f"Using music folder '{folder}'.")
+                return random.choice(candidates)
+            print(f"No music folder found among {folders} — skipping background music.")
+            return None
+
+          music_file = pick_music_file(MUSIC_FOLDERS)
+
+          if music_file:
+            print(f"Selected music: {music_file}")
+            mixed_file = f"/tmp/game_{ts}_mixed.mp4"
+
+            probe = subprocess.run(
+              ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music_file],
+              capture_output=True, text=True
+            )
+            try:
+              mdur = float(probe.stdout.strip())
+            except Exception:
+              mdur = 0
+
+            # get actual video duration so the music clip length matches exactly
+            vprobe = subprocess.run(
+              ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp4_file],
+              capture_output=True, text=True
+            )
+            try:
+              vdur = float(vprobe.stdout.strip())
+            except Exception:
+              vdur = 12.0
+
+            mstart = 0
+            if mdur > vdur + 5:
+              mstart = random.uniform(0, max(0, mdur - vdur - 2))
+
+            fade_out_start = max(0, vdur - 1.5)
+
+            mix = subprocess.run([
+              "ffmpeg", "-y",
+              "-i", mp4_file,
+              "-ss", str(mstart), "-t", str(vdur), "-i", music_file,
+              "-filter_complex",
+              f"[1:a]volume=0.35,afade=t=in:st=0:d=0.8,afade=t=out:st={fade_out_start}:d=1.5[music];"
+              "[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+              "-map", "0:v", "-map", "[aout]",
+              "-c:v", "copy", "-c:a", "aac", "-b:a", "256k",
+              "-movflags", "+faststart",
+              mixed_file
+            ], capture_output=True, text=True)
+
+            if os.path.exists(mixed_file) and os.path.getsize(mixed_file) > 10000:
+              os.remove(mp4_file)
+              mp4_file = mixed_file
+              print("Background music mixed in.")
+            else:
+              print("Music mix failed, posting without it:", mix.stderr[-1500:])
+          else:
+            print("Posting without background music.")
+
+          FORMAT_LABELS = {
+            "word_blast": "Word Blast",
+            "grammar_fix": "Grammar Fix",
+            "pronunciation": "Pronunciation Challenge",
+            "slang_match": "Slang Match",
+          }
+          TITLES = {
+            "word_blast": ["Guess the word! 🎮 #shorts", "Do you know this word? 🧠 #shorts", "Vocabulary Challenge 💥 #shorts"],
+            "grammar_fix": ["Stop saying this wrong! ❌ #shorts", "Common grammar mistake 📝 #shorts", "Fix your English 🇬🇧 #shorts"],
+            "pronunciation": ["You're saying this wrong 🗣️ #shorts", "Pronunciation Challenge 🎮 #shorts", "Silent letters explained 🤫 #shorts"],
+            "slang_match": ["English slang explained 🍬 #shorts", "What does this mean? 🤔 #shorts", "Slang Challenge 🎯 #shorts"],
+          }
+          label = FORMAT_LABELS.get(used_format, "English Practice")
+          title = random.choice(TITLES.get(used_format, [f"{label} #shorts"]))
+          description = "\n".join([
+            f"A fun bite-sized {label} game 🎮",
+            "Follow for daily English learning challenges!",
+            "",
+            "#englishlearning #learnenglish #shorts #languagelearning #vocabulary #grammar",
+          ])
+          tags = ["english learning", "learn english", "vocabulary", "grammar",
+                  "language learning", "shorts", used_format]
+
+          yt_token = os.environ.get("YT_ACCESS_TOKEN")
+          yt_refresh = os.environ.get("YT_REFRESH_TOKEN")
+          yt_client_id = os.environ.get("YT_CLIENT_ID")
+          yt_client_secret = os.environ.get("YT_CLIENT_SECRET")
+          if not all([yt_refresh, yt_client_id, yt_client_secret]):
+            raise RuntimeError("YouTube secrets missing — check repo Settings > Secrets and variables > Actions")
+
+          creds = Credentials(
+            token=yt_token,
+            refresh_token=yt_refresh,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=yt_client_id,
+            client_secret=yt_client_secret,
+          )
+          youtube = build("youtube", "v3", credentials=creds)
+
+          print("Uploading to YouTube...")
+          request = youtube.videos().insert(
+            part="snippet,status",
+            body={
+              "snippet": {"title": title, "description": description, "tags": tags,
+                          "categoryId": "27", "defaultLanguage": "en"},
+              "status": {"privacyStatus": "public", "madeForKids": False, "selfDeclaredMadeForKids": False}
+            },
+            media_body=MediaFileUpload(mp4_file, mimetype="video/mp4", resumable=True)
+          )
+          response = None
+          while response is None:
+            status, response = request.next_chunk()
+            if status:
+              print(f"Upload progress: {int(status.progress()*100)}%")
+
+          video_id = response.get("id", "")
+          print(f"Posted! https://youtube.com/shorts/{video_id}")
+
+          os.remove(mp4_file)
+          print("Done!")
+          PYEOF
+        env:
+          TS: ${{ env.TS }}
+          DISPLAY: ":99"
+          FORMAT_CHOICE: ${{ github.event.inputs.format_choice || 'Random - any format' }}
+          YT_ACCESS_TOKEN: ${{ secrets.YT_ACCESS_TOKEN }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
