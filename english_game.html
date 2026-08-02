@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<title>English Game Shorts</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Baloo 2',sans-serif;}
+html,body{width:100%;height:100%;overflow:hidden;background:#7c5cff;}
+#bgCanvas{position:fixed;inset:0;width:100%;height:100%;z-index:0;}
+#ui{position:fixed;inset:0;z-index:10;}
+
+.gEl{
+  position:absolute;
+  opacity:0;
+  transform:scale(0.4);
+  transition:opacity .35s cubic-bezier(.34,1.56,.64,1), transform .45s cubic-bezier(.34,1.56,.64,1);
+}
+.gEl.in{opacity:1;transform:scale(1);}
+.gEl.wobble.in{animation:wobble .5s ease-out;}
+@keyframes wobble{
+  0%{transform:scale(1.15) rotate(-2deg);}
+  50%{transform:scale(0.97) rotate(1.5deg);}
+  100%{transform:scale(1) rotate(0deg);}
+}
+
+.card{
+  background:#fff;
+  border-radius:36px;
+  box-shadow:0 10px 0 rgba(0,0,0,0.15), 0 14px 30px rgba(0,0,0,0.2);
+  padding:4% 5%;
+  text-align:center;
+}
+.chunky-text{
+  font-weight:800;
+  color:#2b2b3d;
+  -webkit-text-stroke:2px rgba(0,0,0,0.08);
+  paint-order:stroke fill;
+}
+.title-badge{
+  display:inline-block;
+  background:rgba(0,0,0,0.22);
+  border-radius:50px;
+  padding:2.2% 6%;
+  font-weight:800;
+  letter-spacing:2px;
+  color:#fff;
+}
+
+.opt-correct{background:#5cd85c !important;box-shadow:0 10px 0 #2e9e2e, 0 14px 30px rgba(0,0,0,0.25) !important;}
+.opt-correct .chunky-text, .opt-correct{color:#fff !important;}
+.opt-wrong{opacity:0.35 !important;transform:scale(0.92) !important;filter:grayscale(0.5);}
+
+#flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:20;}
+.confetti{position:absolute;width:14px;height:14px;border-radius:4px;opacity:0;z-index:15;}
+
+.cta-badge{
+  background:#ffd93d;
+  border-radius:50px;
+  padding:3.5% 6%;
+  box-shadow:0 8px 0 #d9a800, 0 12px 24px rgba(0,0,0,0.25);
+}
+</style>
+</head>
+<body>
+<canvas id="bgCanvas"></canvas>
+<div id="ui"></div>
+<div id="flash"></div>
+
+<script>
+(()=>{
+'use strict';
+
+function safeR(v){return Math.max(0.01,isFinite(v)?v:0.01);}
+
+// ══════════════════════════════════════════════════════════
+// CONTENT BANK
+// ══════════════════════════════════════════════════════════
+const CONTENT = {
+  word_blast: [
+    {word:"UBIQUITOUS",meaning:"Found everywhere, present in every part",wrong1:"Extremely rare and hard to find",wrong2:"Related to underground tunnels"},
+    {word:"CANDID",meaning:"Honest and direct, without hiding the truth",wrong1:"Very cautious and slow to decide",wrong2:"Related to bright colors"},
+    {word:"ARBITRARY",meaning:"Based on random choice, not on a clear reason",wrong1:"Carefully planned in advance",wrong2:"Related to court judges"},
+    {word:"MITIGATE",meaning:"To make a bad situation less severe",wrong1:"To make a problem worse over time",wrong2:"To completely ignore an issue"},
+    {word:"LEVERAGE",meaning:"To use something to your advantage effectively",wrong1:"To lose control of a situation",wrong2:"To borrow money from a bank"},
+    {word:"RESILIENT",meaning:"Able to recover quickly from difficulty",wrong1:"Very quiet and unwilling to speak",wrong2:"Made of a flexible material"},
+    {word:"AMBIGUOUS",meaning:"Unclear, open to more than one meaning",wrong1:"Extremely obvious and simple",wrong2:"Related to walking direction"},
+    {word:"METICULOUS",meaning:"Very careful and precise about small details",wrong1:"Careless and quick to finish",wrong2:"Related to working with metal"},
+    {word:"VERSATILE",meaning:"Able to adapt to many different uses or situations",wrong1:"Limited to just one single purpose",wrong2:"Related to speaking loudly"},
+    {word:"COHERENT",meaning:"Clear and logical, easy to follow",wrong1:"Confusing and impossible to understand",wrong2:"Related to sticking things together"},
+  ],
+  grammar_fix: [
+    {wrong:"I am agree with you",right:"I agree with you"},
+    {wrong:"She is married with him",right:"She is married to him"},
+    {wrong:"I have 25 years old",right:"I am 25 years old"},
+    {wrong:"Please give me some informations",right:"Please give me some information"},
+    {wrong:"He gave me many advices",right:"He gave me a lot of advice"},
+    {wrong:"I am boring in this class",right:"I am bored in this class"},
+    {wrong:"She explained me the plan",right:"She explained the plan to me"},
+    {wrong:"I look forward to see you",right:"I look forward to seeing you"},
+    {wrong:"He is depend on his parents",right:"He depends on his parents"},
+    {wrong:"I'm agree that it's true",right:"I agree that it's true"},
+  ],
+  pronunciation: [
+    {word:"COMFORTABLE",silentIdx:[3,4],phonetic:"KUMF-ter-bul"},
+    {word:"VEGETABLE",silentIdx:[4],phonetic:"VEJ-tuh-bul"},
+    {word:"WEDNESDAY",silentIdx:[2,4,5],phonetic:"WENZ-day"},
+    {word:"ESPRESSO",silentIdx:[],phonetic:"es-PRESS-oh"},
+    {word:"NICHE",silentIdx:[],phonetic:"NEESH"},
+    {word:"EPITOME",silentIdx:[],phonetic:"eh-PIT-uh-mee"},
+    {word:"COLONEL",silentIdx:[2,3,4],phonetic:"KER-nul"},
+    {word:"SEGUE",silentIdx:[],phonetic:"SEG-way"},
+    {word:"WORCESTERSHIRE",silentIdx:[3,4,5,6,7],phonetic:"WUSS-ter-sher"},
+    {word:"QUEUE",silentIdx:[2,3,4],phonetic:"KYOO"},
+  ],
+  slang_match: [
+    {term:"BREAK THE ICE",meaning:"Start a conversation comfortably with someone new"},
+    {term:"UNDER THE WEATHER",meaning:"Feeling a little sick"},
+    {term:"HIT THE BOOKS",meaning:"Start studying seriously"},
+    {term:"PIECE OF CAKE",meaning:"Something very easy to do"},
+    {term:"COST AN ARM AND A LEG",meaning:"Be very expensive"},
+    {term:"ON THE FENCE",meaning:"Undecided between two choices"},
+    {term:"UP IN THE AIR",meaning:"Not yet decided or confirmed"},
+    {term:"CUT CORNERS",meaning:"Do something in the easiest, cheapest way"},
+    {term:"BACK TO SQUARE ONE",meaning:"Starting over from the very beginning"},
+    {term:"GET THE HANG OF IT",meaning:"Learn how to do something properly"},
+  ],
+};
+
+let _pools={},_pidxs={};
+function nextContent(fmt){
+  if(!_pools[fmt]||_pidxs[fmt]>=_pools[fmt].length){
+    _pools[fmt]=[...CONTENT[fmt]].sort(()=>Math.random()-0.5);
+    _pidxs[fmt]=0;
+  }
+  return _pools[fmt][_pidxs[fmt]++];
+}
+
+// ══════════════════════════════════════════════════════════
+// CANVAS + AUDIO
+// ══════════════════════════════════════════════════════════
+const bgC=document.getElementById('bgCanvas');
+const bgCtx=bgC.getContext('2d');
+let W=window.innerWidth,H=window.innerHeight;
+bgC.width=W;bgC.height=H;
+
+let _t=0,_sceneStart=0,_formatIdx=0;
+
+const AC=new (window.AudioContext||window.webkitAudioContext)();
+const master=AC.createGain();master.gain.value=0.85;master.connect(AC.destination);
+let _audioOn=false;
+function unlockAC(){if(_audioOn)return;AC.resume().then(()=>{_audioOn=true;});}
+
+function sfxPop(){
+  if(!_audioOn)return;
+  try{
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='sine';o.frequency.setValueAtTime(700,AC.currentTime);
+    o.frequency.exponentialRampToValueAtTime(900,AC.currentTime+0.08);
+    g.gain.setValueAtTime(0.07,AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.13);
+    o.connect(g);g.connect(master);o.start();o.stop(AC.currentTime+0.14);
+  }catch(e){}
+}
+function sfxDing(){
+  if(!_audioOn)return;
+  try{
+    const notes=[880,1108,1318];
+    notes.forEach((f,i)=>{
+      const o=AC.createOscillator(),g=AC.createGain();
+      o.type='sine';o.frequency.setValueAtTime(f,AC.currentTime+i*0.06);
+      g.gain.setValueAtTime(0.0001,AC.currentTime+i*0.06);
+      g.gain.linearRampToValueAtTime(0.08,AC.currentTime+i*0.06+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+i*0.06+0.5);
+      o.connect(g);g.connect(master);o.start(AC.currentTime+i*0.06);o.stop(AC.currentTime+i*0.06+0.55);
+    });
+  }catch(e){}
+}
+function sfxThud(){
+  if(!_audioOn)return;
+  try{
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='sine';o.frequency.setValueAtTime(180,AC.currentTime);
+    o.frequency.exponentialRampToValueAtTime(90,AC.currentTime+0.15);
+    g.gain.setValueAtTime(0.06,AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.2);
+    o.connect(g);g.connect(master);o.start();o.stop(AC.currentTime+0.22);
+  }catch(e){}
+}
+function sfxWhoosh(){
+  if(!_audioOn)return;
+  try{
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='sine';o.frequency.setValueAtTime(600,AC.currentTime);
+    o.frequency.exponentialRampToValueAtTime(200,AC.currentTime+0.25);
+    g.gain.setValueAtTime(0.035,AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.35);
+    o.connect(g);g.connect(master);o.start();o.stop(AC.currentTime+0.4);
+  }catch(e){}
+}
+function sfxTick(){
+  if(!_audioOn)return;
+  try{
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='square';o.frequency.setValueAtTime(1000,AC.currentTime);
+    g.gain.setValueAtTime(0.05,AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.06);
+    o.connect(g);g.connect(master);o.start();o.stop(AC.currentTime+0.07);
+  }catch(e){}
+}
+function sfxTimeUp(){
+  if(!_audioOn)return;
+  try{
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='square';o.frequency.setValueAtTime(500,AC.currentTime);
+    o.frequency.setValueAtTime(650,AC.currentTime+0.09);
+    g.gain.setValueAtTime(0.06,AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.2);
+    o.connect(g);g.connect(master);o.start();o.stop(AC.currentTime+0.22);
+  }catch(e){}
+}
+function sfxCta(){
+  if(!_audioOn)return;
+  try{
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='triangle';o.frequency.setValueAtTime(1000,AC.currentTime);
+    o.frequency.exponentialRampToValueAtTime(1300,AC.currentTime+0.1);
+    g.gain.setValueAtTime(0.06,AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.3);
+    o.connect(g);g.connect(master);o.start();o.stop(AC.currentTime+0.32);
+  }catch(e){}
+}
+
+// ══════════════════════════════════════════════════════════
+// SHARED HELPERS
+// ══════════════════════════════════════════════════════════
+function show(id,withWobble){
+  const el=document.getElementById(id);
+  if(!el)return;
+  if(withWobble)el.classList.add('wobble');
+  el.classList.add('in');
+}
+function setClass(id,cls){const el=document.getElementById(id);if(el)el.classList.add(cls);}
+
+function flashScreen(){
+  const f=document.getElementById('flash');
+  f.style.transition='opacity 0.08s';
+  f.style.opacity='0.55';
+  setTimeout(()=>{f.style.transition='opacity 0.3s';f.style.opacity='0';},90);
+}
+function shakeScreen(){
+  const ui=document.getElementById('ui');
+  ui.style.transition='transform 0.06s';
+  let n=0;
+  const seq=[[6,0],[-6,0],[4,0],[-4,0],[0,0]];
+  function step(){
+    if(n>=seq.length)return;
+    ui.style.transform=`translate(${seq[n][0]}px,${seq[n][1]}px)`;
+    n++;
+    setTimeout(step,50);
+  }
+  step();
+}
+function burstConfetti(originEl){
+  const box=originEl.getBoundingClientRect();
+  const colors=['#ffd93d','#ff6b9d','#6bcbff','#7effa0','#ff9f4a'];
+  for(let i=0;i<28;i++){
+    const p=document.createElement('div');
+    p.className='confetti';
+    p.style.background=colors[i%colors.length];
+    p.style.left=(box.left+box.width/2)+'px';
+    p.style.top=(box.top+box.height/2)+'px';
+    p.style.opacity='1';
+    document.getElementById('ui').appendChild(p);
+    const ang=(Math.PI*2*i)/28+Math.random()*0.3;
+    const dist=140+Math.random()*120;
+    const rot=Math.random()*720-360;
+    p.style.transition='transform 0.9s cubic-bezier(.25,.8,.25,1), opacity 0.9s ease-out';
+    requestAnimationFrame(()=>{
+      p.style.transform=`translate(${Math.cos(ang)*dist}px,${Math.sin(ang)*dist+80}px) rotate(${rot}deg)`;
+      p.style.opacity='0';
+    });
+    setTimeout(()=>p.remove(),1000);
+  }
+}
+function correctReveal(id){
+  const el=document.getElementById(id);
+  setClass(id,'opt-correct');
+  sfxDing();
+  flashScreen();
+  shakeScreen();
+  if(el)burstConfetti(el);
+}
+function wrongReveal(id){
+  setClass(id,'opt-wrong');
+  sfxThud();
+}
+
+// ══════════════════════════════════════════════════════════
+// TIMER — visible countdown bar with per-second tick SFX,
+// used identically across all 4 formats before the reveal
+// ══════════════════════════════════════════════════════════
+function timerHtml(topPct){
+  return `
+    <div class="gEl" id="timer_wrap" style="top:${topPct}%;left:14%;right:14%;">
+      <div style="background:rgba(0,0,0,0.25);border-radius:50px;padding:10px;box-shadow:0 6px 0 rgba(0,0,0,0.15);">
+        <div id="timer_fill" style="height:${W*0.05}px;width:100%;background:#ffd93d;border-radius:50px;transition:width 1s linear, background 0.3s;"></div>
+      </div>
+    </div>
+  `;
+}
+function runTimer(seconds,onTick,onDone){
+  show('timer_wrap',true);
+  sfxPop();
+  const fill=document.getElementById('timer_fill');
+  let remaining=seconds;
+  // kick to 100% first so the CSS transition has a defined starting point
+  if(fill){fill.style.transition='none';fill.style.width='100%';void fill.offsetWidth;fill.style.transition='width 1s linear, background 0.3s';}
+  const timers=[];
+  for(let i=1;i<=seconds;i++){
+    timers.push(setTimeout(()=>{
+      sfxTick();
+      const pct=Math.max(0,100-(i/seconds)*100);
+      if(fill){
+        fill.style.width=pct+'%';
+        if(pct<=33)fill.style.background='#ff6b6b';
+        else if(pct<=66)fill.style.background='#ffb84d';
+      }
+      if(onTick)onTick(i);
+    }, i*1000));
+  }
+  timers.push(setTimeout(()=>{
+    sfxTimeUp();
+    if(onDone)onDone();
+  }, seconds*1000+150));
+  return timers;
+}
+
+// ══════════════════════════════════════════════════════════
+// FORMAT BACKGROUNDS
+// ══════════════════════════════════════════════════════════
+function bgSolid(ctx,w,h,color1,color2){
+  const g=ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,color1);g.addColorStop(1,color2);
+  ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+  for(let i=0;i<5;i++){
+    const cx=w*(0.15+i*0.2), cy=h*0.15+Math.sin(_t*0.4+i)*30;
+    ctx.save();ctx.globalAlpha=0.08;ctx.fillStyle='#fff';
+    ctx.beginPath();ctx.arc(cx,cy,60+i*10,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
+}
+function drawWordBlast(ctx,t,w,h,st){ bgSolid(ctx,w,h,'#8a6bff','#6a4ee0'); }
+function drawGrammarFix(ctx,t,w,h,st){ bgSolid(ctx,w,h,'#5eb8ff','#3a8fe0'); }
+function drawPronunciation(ctx,t,w,h,st){ bgSolid(ctx,w,h,'#5ee6a0','#2ec27a'); }
+function drawSlangMatch(ctx,t,w,h,st){ bgSolid(ctx,w,h,'#ff8fc4','#e05a9a'); }
+
+// ══════════════════════════════════════════════════════════
+// 1. WORD BLAST
+// title -> word -> question -> 3 options -> timer(3s) -> cta -> reveal
+// ══════════════════════════════════════════════════════════
+function buildWordBlast(container,data){
+  container.innerHTML=`
+    <div class="gEl" id="wb_title" style="top:4%;width:100%;text-align:center;">
+      <span class="title-badge" style="font-size:${W*0.034}px;">🎮 VOCABULARY BLAST</span>
+    </div>
+    <div class="gEl card" id="wb_word" style="top:13%;left:6%;right:6%;">
+      <div class="chunky-text" style="font-size:${W*0.095}px;color:#6a4ee0;">${data.word}</div>
+    </div>
+    <div class="gEl card" id="wb_q" style="top:35%;left:10%;right:10%;background:rgba(255,255,255,0.95);">
+      <div class="chunky-text" style="font-size:${W*0.058}px;color:#2b2b3d;">What does this mean?</div>
+    </div>
+    <div class="gEl card" id="wb_opt1" style="top:47%;left:6%;right:6%;">
+      <div class="chunky-text" style="font-size:${W*0.036}px;">${data.wrong1}</div>
+    </div>
+    <div class="gEl card" id="wb_opt2" style="top:60%;left:6%;right:6%;">
+      <div class="chunky-text" style="font-size:${W*0.036}px;">${data.meaning}</div>
+    </div>
+    <div class="gEl card" id="wb_opt3" style="top:73%;left:6%;right:6%;">
+      <div class="chunky-text" style="font-size:${W*0.036}px;">${data.wrong2}</div>
+    </div>
+    ${timerHtml(87)}
+    <div class="gEl" id="wb_cta" style="top:87%;width:100%;text-align:center;">
+      <span class="cta-badge chunky-text" style="font-size:${W*0.034}px;color:#5a4200;">💬 COMMENT YOUR GUESS!</span>
+    </div>
+  `;
+}
+const wordBlastSchedule=[
+  {t:0.2,  sfx:sfxPop, fn:()=>show('wb_title',true)},
+  {t:0.9,  sfx:sfxPop, fn:()=>show('wb_word',true)},
+  {t:1.8,  sfx:sfxPop, fn:()=>show('wb_q',true)},
+  {t:2.6,  sfx:sfxPop, fn:()=>show('wb_opt1',true)},
+  {t:3.3,  sfx:sfxPop, fn:()=>show('wb_opt2',true)},
+  {t:4.0,  sfx:sfxPop, fn:()=>show('wb_opt3',true)},
+  {t:4.8,  sfx:sfxPop, fn:()=>{ runTimer(3,null,()=>{
+      show('wb_cta',true); sfxCta();
+      setTimeout(()=>{ wrongReveal('wb_opt1'); wrongReveal('wb_opt3'); correctReveal('wb_opt2'); }, 1400);
+    }); }},
+];
+const wordBlastDuration=11.0;
+
+// ══════════════════════════════════════════════════════════
+// 2. GRAMMAR FIX
+// title -> question -> A -> B -> timer(3s) -> cta -> reveal
+// ══════════════════════════════════════════════════════════
+function buildGrammarFix(container,data){
+  container.innerHTML=`
+    <div class="gEl" id="gf_title" style="top:5%;width:100%;text-align:center;">
+      <span class="title-badge" style="font-size:${W*0.034}px;">📝 GRAMMAR FIX</span>
+    </div>
+    <div class="gEl card" id="gf_q" style="top:16%;left:10%;right:10%;">
+      <div class="chunky-text" style="font-size:${W*0.058}px;color:#2b2b3d;">Which is correct?</div>
+    </div>
+    <div class="gEl card" id="gf_a" style="top:38%;left:6%;right:6%;">
+      <div style="font-size:${W*0.048}px;font-weight:700;color:#2b2b3d;">A) "${data.wrong}"</div>
+    </div>
+    <div class="gEl card" id="gf_b" style="top:58%;left:6%;right:6%;">
+      <div style="font-size:${W*0.048}px;font-weight:700;color:#2b2b3d;">B) "${data.right}"</div>
+    </div>
+    ${timerHtml(80)}
+    <div class="gEl" id="gf_cta" style="top:80%;width:100%;text-align:center;">
+      <span class="cta-badge chunky-text" style="font-size:${W*0.034}px;color:#5a4200;">💬 COMMENT A OR B!</span>
+    </div>
+  `;
+}
+const grammarFixSchedule=[
+  {t:0.2,  sfx:sfxPop, fn:()=>show('gf_title',true)},
+  {t:0.9,  sfx:sfxPop, fn:()=>show('gf_q',true)},
+  {t:1.8,  sfx:sfxPop, fn:()=>show('gf_a',true)},
+  {t:2.6,  sfx:sfxPop, fn:()=>show('gf_b',true)},
+  {t:3.4,  sfx:sfxPop, fn:()=>{ runTimer(3,null,()=>{
+      show('gf_cta',true); sfxCta();
+      setTimeout(()=>{ wrongReveal('gf_a'); correctReveal('gf_b'); }, 1400);
+    }); }},
+];
+const grammarFixDuration=9.4;
+
+// ══════════════════════════════════════════════════════════
+// 3. PRONUNCIATION
+// title -> word -> question -> timer(3s) -> cta -> reveal
+// ══════════════════════════════════════════════════════════
+function buildPronunciation(container,data){
+  const word=data.word;
+  let lettersHtml='';
+  for(let i=0;i<word.length;i++){
+    const isSilent=data.silentIdx.includes(i);
+    lettersHtml+=`<span class="pr-letter" data-idx="${i}" data-silent="${isSilent}" style="transition:opacity .4s, color .4s;">${word[i]}</span>`;
+  }
+  container.innerHTML=`
+    <div class="gEl" id="pr_title" style="top:5%;width:100%;text-align:center;">
+      <span class="title-badge" style="font-size:${W*0.034}px;">🗣️ PRONUNCIATION CHALLENGE</span>
+    </div>
+    <div class="gEl card" id="pr_word" style="top:16%;left:5%;right:5%;">
+      <div class="chunky-text" id="pr_letters" style="font-size:${Math.min(W*0.11, 900/word.length)}px;color:#2ec27a;letter-spacing:2px;">${lettersHtml}</div>
+    </div>
+    <div class="gEl card" id="pr_q" style="top:44%;left:10%;right:10%;">
+      <div class="chunky-text" style="font-size:${W*0.058}px;color:#2b2b3d;">How do you say this?</div>
+    </div>
+    <div class="gEl card" id="pr_answer" style="top:58%;left:12%;right:12%;">
+      <div class="chunky-text" style="font-size:${W*0.06}px;color:#2ec27a;">"${data.phonetic}"</div>
+    </div>
+    ${timerHtml(80)}
+    <div class="gEl" id="pr_cta" style="top:80%;width:100%;text-align:center;">
+      <span class="cta-badge chunky-text" style="font-size:${W*0.034}px;color:#5a4200;">🗣️ SAY IT OUT LOUD NOW!</span>
+    </div>
+  `;
+}
+function pronunciationReveal(data){
+  data.silentIdx.forEach(idx=>{
+    const el=document.querySelector(`.pr-letter[data-idx="${idx}"]`);
+    if(el){el.style.opacity='0.3';el.style.color='#b7ecce';el.style.textDecoration='line-through';}
+  });
+}
+const pronunciationSchedule=[
+  {t:0.2, sfx:sfxPop, fn:()=>show('pr_title',true)},
+  {t:0.9, sfx:sfxPop, fn:()=>show('pr_word',true)},
+  {t:1.8, sfx:sfxPop, fn:()=>show('pr_q',true)},
+  {t:2.6, sfx:sfxPop, fn:(data)=>{ runTimer(3,null,()=>{
+      show('pr_cta',true); sfxCta();
+      setTimeout(()=>{
+        show('pr_answer',true); sfxDing(); pronunciationReveal(data); flashScreen();
+      }, 1400);
+    }); }},
+];
+const pronunciationDuration=7.6;
+
+// ══════════════════════════════════════════════════════════
+// 4. SLANG MATCH
+// title -> term -> question -> timer(3s) -> cta -> reveal
+// ══════════════════════════════════════════════════════════
+function buildSlangMatch(container,data){
+  container.innerHTML=`
+    <div class="gEl" id="sm_title" style="top:6%;width:100%;text-align:center;">
+      <span class="title-badge" style="font-size:${W*0.034}px;">🍬 SLANG OF THE DAY</span>
+    </div>
+    <div class="gEl card" id="sm_term" style="top:20%;left:6%;right:6%;">
+      <div class="chunky-text" style="font-size:${W*0.072}px;color:#e05a9a;">"${data.term}"</div>
+    </div>
+    <div class="gEl card" id="sm_q" style="top:46%;left:10%;right:10%;">
+      <div class="chunky-text" style="font-size:${W*0.052}px;color:#2b2b3d;">What do you think it means?</div>
+    </div>
+    <div class="gEl card" id="sm_meaning" style="top:60%;left:8%;right:8%;">
+      <div style="font-size:${W*0.045}px;font-weight:700;color:#2b2b3d;">${data.meaning}</div>
+    </div>
+    ${timerHtml(82)}
+    <div class="gEl" id="sm_cta" style="top:82%;width:100%;text-align:center;">
+      <span class="cta-badge chunky-text" style="font-size:${W*0.034}px;color:#5a4200;">💬 COMMENT YOUR GUESS!</span>
+    </div>
+  `;
+}
+const slangMatchSchedule=[
+  {t:0.2, sfx:sfxPop, fn:()=>show('sm_title',true)},
+  {t:0.9, sfx:sfxPop, fn:()=>show('sm_term',true)},
+  {t:1.8, sfx:sfxPop, fn:()=>show('sm_q',true)},
+  {t:2.6, sfx:sfxPop, fn:()=>{ runTimer(3,null,()=>{
+      show('sm_cta',true); sfxCta();
+      setTimeout(()=>{ show('sm_meaning',true); sfxDing(); flashScreen(); }, 1400);
+    }); }},
+];
+const slangMatchDuration=7.6;
+
+// ══════════════════════════════════════════════════════════
+// FORMAT REGISTRY
+// ══════════════════════════════════════════════════════════
+const FORMATS=[
+  {id:'word_blast',   draw:drawWordBlast,   build:buildWordBlast,   schedule:wordBlastSchedule,   duration:wordBlastDuration},
+  {id:'grammar_fix',  draw:drawGrammarFix,  build:buildGrammarFix,  schedule:grammarFixSchedule,  duration:grammarFixDuration},
+  {id:'pronunciation',draw:drawPronunciation,build:buildPronunciation,schedule:pronunciationSchedule,duration:pronunciationDuration},
+  {id:'slang_match',  draw:drawSlangMatch,  build:buildSlangMatch,  schedule:slangMatchSchedule,  duration:slangMatchDuration},
+];
+
+function pickFormatIdx(){
+  if(window.FORCE_FORMAT){
+    const idx=FORMATS.findIndex(f=>f.id===window.FORCE_FORMAT);
+    if(idx>=0)return idx;
+  }
+  return Math.floor(Math.random()*FORMATS.length);
+}
+
+let _timers=[];
+function clearT(){_timers.forEach(clearTimeout);_timers=[];}
+
+function showScene(){
+  clearT();
+  unlockAC();
+  _formatIdx=pickFormatIdx();
+  const fmt=FORMATS[_formatIdx];
+  window._lastFormat=fmt.id;
+  _sceneStart=_t;
+  const data=nextContent(fmt.id);
+  const ui=document.getElementById('ui');
+  ui.style.transform='translate(0,0)';
+  fmt.build(ui,data);
+  window._sceneDuration=fmt.duration;
+  fmt.schedule.forEach(ev=>{
+    _timers.push(setTimeout(()=>{
+      ev.fn(data);
+      if(ev.sfx)ev.sfx();
+    }, ev.t*1000));
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// RECORDING — MediaRecorder + captureStream, composite canvas
+// ══════════════════════════════════════════════════════════
+let _compC=null,_compCtx=null;
+window._recActive=false;
+window._recordingDone=false;
+window._recordingBlob=null;
+let _recChunks=[],_recorder=null,_recDest=null;
+
+function roundRectPath(ctx,x,y,w,h,r){
+  const rr=Math.min(r,w/2,h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+rr,y);
+  ctx.arcTo(x+w,y,x+w,y+h,rr);
+  ctx.arcTo(x+w,y+h,x,y+h,rr);
+  ctx.arcTo(x,y+h,x,y,rr);
+  ctx.arcTo(x,y,x+w,y,rr);
+  ctx.closePath();
+}
+
+function drawElementToCanvas(ctx,el){
+  const cs=window.getComputedStyle(el);
+  const op=parseFloat(cs.opacity)||0;
+  if(op<0.02)return;
+  const r=el.getBoundingClientRect();
+  if(r.width<1||r.height<1)return;
+
+  ctx.save();
+  ctx.globalAlpha=op;
+
+  const bg=cs.backgroundColor;
+  const hasBg=bg && bg!=='rgba(0, 0, 0, 0)' && bg!=='transparent';
+  const radius=parseFloat(cs.borderRadius)||0;
+
+  if(hasBg){
+    if(cs.boxShadow && cs.boxShadow!=='none'){
+      ctx.save();ctx.globalAlpha=op*0.5;ctx.fillStyle='rgba(0,0,0,0.2)';
+      roundRectPath(ctx,r.left,r.top+8,r.width,r.height,radius);ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle=bg;
+    roundRectPath(ctx,r.left,r.top,r.width,r.height,radius);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawTextRecursive(ctx,el){
+  for(const node of el.childNodes){
+    if(node.nodeType===3){
+      const text=node.textContent.trim();
+      if(!text)continue;
+      const parent=node.parentElement;
+      const cs=window.getComputedStyle(parent);
+      const op=parseFloat(cs.opacity)||0;
+      if(op<0.02)continue;
+      const range=document.createRange();
+      range.selectNodeContents(node);
+      const rects=range.getClientRects();
+      if(!rects.length)continue;
+      const r=rects[0];
+      const fs=parseFloat(cs.fontSize)||24;
+      ctx.save();
+      ctx.globalAlpha=op;
+      ctx.font=`${cs.fontWeight} ${fs}px 'Baloo 2',sans-serif`;
+      ctx.fillStyle=cs.color;
+      ctx.textAlign='left';
+      ctx.textBaseline='alphabetic';
+      const strokeW=parseFloat(cs.webkitTextStrokeWidth)||0;
+      if(strokeW>0){
+        ctx.lineWidth=strokeW*2;
+        ctx.strokeStyle=cs.webkitTextStrokeColor||'rgba(0,0,0,0.1)';
+        ctx.strokeText(text,r.left,r.top+fs*0.82);
+      }
+      ctx.fillText(text,r.left,r.top+fs*0.82);
+      ctx.restore();
+    } else if(node.nodeType===1){
+      drawTextRecursive(ctx,node);
+    }
+  }
+}
+
+function _drawComposite(){
+  if(!_compCtx)return;
+  const ctx=_compCtx,cW=_compC.width,cH=_compC.height;
+  ctx.clearRect(0,0,cW,cH);
+  try{ctx.drawImage(bgC,0,0,cW,cH);}catch(e){}
+
+  document.querySelectorAll('#ui .gEl').forEach(el=>{
+    drawElementToCanvas(ctx,el);
+  });
+  document.querySelectorAll('#ui .gEl').forEach(el=>{
+    drawTextRecursive(ctx,el);
+  });
+
+  // timer fill bar (drawn directly since it's a plain div, not text)
+  const timerFill=document.getElementById('timer_fill');
+  if(timerFill){
+    const wrapOp=parseFloat(window.getComputedStyle(document.getElementById('timer_wrap')).opacity)||0;
+    if(wrapOp>0.02){
+      const track=timerFill.parentElement;
+      const tr=track.getBoundingClientRect();
+      ctx.save();ctx.globalAlpha=wrapOp;ctx.fillStyle='rgba(0,0,0,0.25)';
+      roundRectPath(ctx,tr.left,tr.top,tr.width,tr.height,50);ctx.fill();
+      ctx.restore();
+      const fr=timerFill.getBoundingClientRect();
+      const fillCs=window.getComputedStyle(timerFill);
+      if(fr.width>1){
+        ctx.save();ctx.globalAlpha=wrapOp;ctx.fillStyle=fillCs.backgroundColor;
+        roundRectPath(ctx,fr.left,fr.top,fr.width,fr.height,50);ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
+  const lettersWrap=document.getElementById('pr_letters');
+  if(lettersWrap){
+    const parentOp=parseFloat(window.getComputedStyle(lettersWrap.closest('.gEl')).opacity)||0;
+    if(parentOp>0.02){
+      document.querySelectorAll('.pr-letter').forEach(span=>{
+        const cs=window.getComputedStyle(span);
+        const r=span.getBoundingClientRect();
+        if(r.width<1)return;
+        ctx.save();
+        ctx.globalAlpha=parentOp;
+        ctx.font=`800 ${parseFloat(cs.fontSize)}px 'Baloo 2',sans-serif`;
+        ctx.fillStyle=cs.color;
+        ctx.textAlign='left';ctx.textBaseline='alphabetic';
+        ctx.fillText(span.textContent,r.left,r.top+parseFloat(cs.fontSize)*0.82);
+        if(cs.textDecoration && cs.textDecoration.includes('line-through')){
+          ctx.strokeStyle=cs.color;ctx.lineWidth=3;
+          ctx.beginPath();ctx.moveTo(r.left,r.top+r.height/2);ctx.lineTo(r.right,r.top+r.height/2);ctx.stroke();
+        }
+        ctx.restore();
+      });
+    }
+  }
+
+  document.querySelectorAll('.confetti').forEach(el=>{
+    const cs=window.getComputedStyle(el);
+    const op=parseFloat(cs.opacity)||0;
+    if(op<0.02)return;
+    const r=el.getBoundingClientRect();
+    ctx.save();ctx.globalAlpha=op;ctx.fillStyle=cs.backgroundColor;
+    roundRectPath(ctx,r.left,r.top,r.width,r.height,4);ctx.fill();
+    ctx.restore();
+  });
+
+  const flashEl=document.getElementById('flash');
+  const flashOp=parseFloat(window.getComputedStyle(flashEl).opacity)||0;
+  if(flashOp>0.01){
+    ctx.save();ctx.globalAlpha=flashOp;ctx.fillStyle='#fff';ctx.fillRect(0,0,cW,cH);ctx.restore();
+  }
+}
+
+window.startRecordingFreshScene=function(fps){
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      window.startRecording(fps);
+    });
+  });
+};
+window.startRecording=function(fps){
+  fps=fps||30;
+  try{
+    AC.resume().catch(()=>{});
+    _compC=document.createElement('canvas');
+    _compC.width=W;_compC.height=H;
+    _compCtx=_compC.getContext('2d');
+    window._recActive=true;
+    window._recordingDone=false;
+    _recChunks=[];
+    _drawComposite();
+    _recDest=AC.createMediaStreamDestination();
+    master.connect(_recDest);
+    const vs=_compC.captureStream(fps);
+    const combined=new MediaStream([...vs.getVideoTracks(),..._recDest.stream.getAudioTracks()]);
+    const mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'video/webm';
+    _recorder=new MediaRecorder(combined,{mimeType:mime,videoBitsPerSecond:8000000,audioBitsPerSecond:192000});
+    _recorder.ondataavailable=e=>{if(e.data&&e.data.size>0)_recChunks.push(e.data);};
+    _recorder.onstop=()=>{
+      window._recActive=false;
+      try{master.disconnect(_recDest);}catch(e){}
+      window._recordingBlob=new Blob(_recChunks,{type:'video/webm'});
+      window._recordingDone=true;
+    };
+    _recorder.start(200);
+    console.log('Recording started');
+  }catch(e){console.error('startRecording error:',e);}
+};
+window.stopRecording=function(){try{if(_recorder&&_recorder.state!=='inactive')_recorder.stop();}catch(e){}};
+window.forceFinalize=function(){
+  window._recActive=false;
+  if(_recChunks.length>0&&!window._recordingDone){
+    window._recordingBlob=new Blob(_recChunks,{type:'video/webm'});
+    window._recordingDone=true;
+  }
+};
+window.getRecordingBase64=function(){
+  return new Promise((resolve,reject)=>{
+    const chk=()=>{
+      if(!window._recordingBlob){setTimeout(chk,100);return;}
+      const r=new FileReader();
+      r.onloadend=()=>resolve(r.result.split(',')[1]);
+      r.onerror=reject;
+      r.readAsDataURL(window._recordingBlob);
+    };chk();
+  });
+};
+
+// ══════════════════════════════════════════════════════════
+// LOOP
+// ══════════════════════════════════════════════════════════
+(function loop(){
+  requestAnimationFrame(loop);
+  _t+=0.016;
+  const st=Math.max(0,_t-_sceneStart);
+  FORMATS[_formatIdx].draw(bgCtx,_t,W,H,st);
+  if(window._recActive)_drawComposite();
+})();
+
+window.addEventListener('resize',()=>{
+  W=window.innerWidth;H=window.innerHeight;
+  bgC.width=W;bgC.height=H;
+});
+
+document.body.addEventListener('click',showScene);
+document.body.addEventListener('touchend',e=>{e.preventDefault();showScene();},{passive:false});
+
+window.setFormatAndStart=function(formatId){
+  window.FORCE_FORMAT=formatId||null;
+  showScene();
+};
+
+showScene();
+})();
+</script>
+</body>
+</html>
