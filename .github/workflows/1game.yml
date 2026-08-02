@@ -1,7 +1,6 @@
 name: 🎮 Post English Game Short to YouTube
 
 on:
-  # Makes it appear in Actions tab
   push:
     branches: [ main, master ]
   workflow_dispatch:
@@ -18,7 +17,6 @@ on:
           - "pronunciation"
           - "slang_match"
   schedule:
-    # Runs daily at 19:00 UTC (7 PM)
     - cron: "0 19 * * *"
 
 jobs:
@@ -93,7 +91,6 @@ jobs:
           from googleapiclient.http import MediaFileUpload
           from google.oauth2.credentials import Credentials
 
-          # ── EDIT THIS to change which folder(s) background music is picked from ──
           MUSIC_FOLDERS = ["bgmusic", "Bgmusic"]
           MUSIC_EXTENSIONS = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac"]
 
@@ -203,7 +200,6 @@ jobs:
           os.remove(webm_file)
           print(f"mp4: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
 
-          # ── Pick background music ──
           def pick_music_file(folders):
             for folder in folders:
               if not os.path.isdir(folder):
