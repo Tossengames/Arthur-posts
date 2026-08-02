@@ -1,22 +1,28 @@
-name: Test Workflow
+name: Test Simple Workflow
 
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      test_input:
+        description: "Test input"
+        required: false
+        default: "Hello"
+        type: string
+  schedule:
+    - cron: "0 20 * * *"
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Print hello
-        run: echo "Hello from GitHub Actions!"
+      - name: Print test message
+        run: echo "Test workflow is working!"
       
-      - name: Show current time
+      - name: Show input
+        run: echo "Input was: ${{ github.event.inputs.test_input || 'default' }}"
+      
+      - name: Show date
         run: date
-      
-      - name: List files
-        run: ls -la
