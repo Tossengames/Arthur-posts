@@ -1,142 +1,438 @@
-name: 🎮 Post English Game Short to YouTube
+name: Post Pixabay Footage to YouTube
 
 on:
   workflow_dispatch:
+    inputs:
+      niche:
+        description: "Pick a niche (used only if custom terms below is empty)"
+        required: true
+        default: "Nature"
+        type: choice
+        options:
+          - "City"
+          - "Nature"
+          - "Driving"
+          - "Ocean"
+          - "Space"
+          - "Animals"
+      custom_terms:
+        description: "Custom search terms (comma separated, optional). If set, only these are searched - no fallback."
+        required: false
+        default: ""
+      min_size:
+        description: "Minimum footage size to search for"
+        required: true
+        default: "100"
+        type: choice
+        options:
+          - "100"
+          - "200"
+          - "400"
+          - "500"
+          - "700"
+          - "1000"
+          - "2000"
   schedule:
-    - cron: "0 19 * * *"
+    - cron: "0 19 * * 1,3,5"
 
 jobs:
   post:
     runs-on: ubuntu-22.04
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
+        timeout-minutes: 5
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio
-          pip install selenium webdriver-manager google-auth google-auth-oauthlib google-api-python-client
+          sudo apt-get install -y ffmpeg
+          pip install requests google-auth google-auth-oauthlib google-api-python-client
+          echo "Done"
 
-      - name: Start virtual display and audio
+      - name: Find and download footage
+        timeout-minutes: 10
         run: |
-          Xvfb :99 -screen 0 1080x1920x24 -ac &
-          pulseaudio --start --exit-idle-time=-1 &
-          sleep 3
+          python3 << 'PYEOF'
+          import requests, os, sys, json, random
 
-      - name: Record and Post to YouTube
+          POSTED_FILE = "posted.txt"
+          already_posted = set()
+          if os.path.exists(POSTED_FILE):
+              with open(POSTED_FILE) as f:
+                  already_posted = set(line.strip() for line in f if line.strip())
+          print(f"Already posted: {len(already_posted)} items")
+
+          ALL_TIERS = [100, 200, 400, 500, 700, 1000, 2000]
+          min_size = int(os.environ.get("MIN_SIZE_MB", "100"))
+          SIZE_TIERS_MB = sorted(set(t for t in ALL_TIERS if t >= min_size))
+          if not SIZE_TIERS_MB:
+              SIZE_TIERS_MB = [2000]
+
+          PIXABAY_KEY = os.environ.get("PIXABAY_KEY", "")
+          if not PIXABAY_KEY:
+              print("PIXABAY_KEY missing")
+              sys.exit(1)
+
+          niche = os.environ.get("NICHE", "Nature").strip()
+          custom_raw = os.environ.get("CUSTOM_TERMS", "").strip()
+          custom_terms = [t.strip() for t in custom_raw.split(",") if t.strip()] if custom_raw else []
+
+          NICHE_QUERIES = {
+              "City": ["city skyline", "city traffic", "street life", "city timelapse",
+                       "downtown city", "urban night city", "city aerial view", "busy street"],
+              "Nature": ["forest", "mountains", "waterfall", "landscape nature",
+                         "national park", "sunrise nature", "meadow", "river nature"],
+              "Driving": ["car driving", "highway driving", "road trip", "dashboard view driving",
+                          "night driving", "car on road", "driving mountain road", "traffic road"],
+              "Ocean": ["ocean waves", "underwater", "beach ocean", "deep sea",
+                        "coral reef", "ocean aerial", "ship ocean", "sea waves"],
+              "Space": ["rocket launch", "space", "galaxy", "planet",
+                        "night sky stars", "moon", "nebula", "space station"],
+              "Animals": ["wildlife", "birds flying", "lion", "elephant",
+                          "forest animals", "ocean animals", "safari animals", "animals nature"],
+          }
+
+          queries = custom_terms if custom_terms else NICHE_QUERIES.get(niche, NICHE_QUERIES["Nature"])
+          print(f"Mode: {'custom terms' if custom_terms else 'niche list'} -> {niche if not custom_terms else custom_terms}")
+
+          def search_pixabay(min_mb, max_mb, qlist):
+              qlist = list(qlist)
+              random.shuffle(qlist)
+              for query in qlist:
+                  try:
+                      r = requests.get(
+                          "https://pixabay.com/api/videos/",
+                          params={"key": PIXABAY_KEY, "q": query, "per_page": 20, "safesearch": "true"},
+                          timeout=20
+                      )
+                      if r.status_code != 200:
+                          continue
+                      hits = r.json().get("hits", [])
+                      random.shuffle(hits)
+                      for hit in hits:
+                          vid_id = str(hit.get("id", ""))
+                          if vid_id in already_posted:
+                              continue
+                          title = hit.get("tags", "Pixabay Video").title()
+                          videos = hit.get("videos", {})
+                          for quality in ["large", "medium", "small", "tiny"]:
+                              v = videos.get(quality)
+                              if not v:
+                                  continue
+                              size_mb = int(v.get("size", 0)) / 1024 / 1024
+                              if min_mb < size_mb <= max_mb:
+                                  return {"url": v["url"], "title": title, "desc": "",
+                                          "id": vid_id, "source": "Pixabay", "size_mb": size_mb,
+                                          "query": query}
+                  except Exception:
+                      continue
+              return None
+
+          found = None
+          for max_mb in SIZE_TIERS_MB:
+              found = search_pixabay(min_size, max_mb, queries)
+              if found:
+                  break
+
+          if not found:
+              if custom_terms:
+                  print("No footage found for custom terms - stopping (no fallback)")
+              else:
+                  print(f"No footage found for niche '{niche}'")
+              sys.exit(1)
+
+          print(f"Found: {found['title']} ({found['size_mb']:.1f}MB)")
+          r = requests.get(found["url"], stream=True, timeout=120)
+          raw_path = "/tmp/raw_footage" + os.path.splitext(found["url"].split("?")[0])[-1]
+          with open(raw_path, "wb") as f:
+              for chunk in r.iter_content(chunk_size=65536):
+                  f.write(chunk)
+          print(f"Downloaded: {os.path.getsize(raw_path)/1024/1024:.1f}MB")
+
+          with open("/tmp/meta.json", "w") as f:
+              json.dump({**found, "raw_path": raw_path, "niche": niche}, f)
+          PYEOF
+        env:
+          MIN_SIZE_MB: ${{ github.event.inputs.min_size || '100' }}
+          NICHE: ${{ github.event.inputs.niche || 'Nature' }}
+          CUSTOM_TERMS: ${{ github.event.inputs.custom_terms || '' }}
+          PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
+
+      - name: Process footage
         timeout-minutes: 15
         run: |
           python3 << 'PYEOF'
-          import os, time, subprocess, base64, json
-          from selenium import webdriver
-          from selenium.webdriver.chrome.options import Options
-          from selenium.webdriver.chrome.service import Service
-          from webdriver_manager.chrome import ChromeDriverManager
+          import json, subprocess, os, sys, time, random, glob
+
+          with open("/tmp/meta.json") as f:
+              meta = json.load(f)
+
+          raw = meta["raw_path"]
+          out = "/tmp/processed.mp4"
+
+          probe = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", raw],
+                                  capture_output=True, text=True)
+          info = json.loads(probe.stdout)
+          duration = 0
+          width = height = 0
+          for s in info.get("streams", []):
+              if s.get("codec_type") == "video":
+                  width = s.get("width", 0)
+                  height = s.get("height", 0)
+              try:
+                  duration = max(duration, float(s.get("duration", 0)))
+              except Exception:
+                  pass
+          file_size_mb = os.path.getsize(raw) / 1024 / 1024
+          print(f"SOURCE INFO: {width}x{height}, duration={duration:.1f}s, size={file_size_mb:.1f}MB")
+
+          audio_probe = subprocess.run(
+              ["ffprobe", "-v", "error", "-select_streams", "a",
+               "-show_entries", "stream=index", "-of", "csv=p=0", raw],
+              capture_output=True, text=True
+          )
+          has_audio = bool(audio_probe.stdout.strip())
+          print(f"Has audio: {has_audio}")
+
+          music_file = None
+          music_files = []
+          for ext in ["*.mp3", "*.mp4", "*.m4a", "*.wav", "*.ogg", "*.flac"]:
+              music_files += glob.glob(f"bgmusic/{ext}")
+          if music_files:
+              music_file = random.choice(music_files)
+              print(f"Music: {music_file}")
+          else:
+              print("No bgmusic found")
+
+          vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+
+          # Build audio: if original has audio + music -> mix 70/30, if only music -> 100% music, if neither -> silence
+          if has_audio and music_file:
+              cmd = [
+                  "ffmpeg", "-y", "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                  "-vf", vf,
+                  "-filter_complex", "[0:a]volume=0.7[a1];[1:a]volume=0.3[a2];[a1][a2]amix=inputs=2:duration=first[aout]",
+                  "-map", "0:v", "-map", "[aout]",
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k",
+                  "-movflags", "+faststart",
+                  out
+              ]
+          elif has_audio and not music_file:
+              cmd = [
+                  "ffmpeg", "-y", "-i", raw,
+                  "-vf", vf,
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k",
+                  "-movflags", "+faststart",
+                  out
+              ]
+          elif not has_audio and music_file:
+              cmd = [
+                  "ffmpeg", "-y", "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                  "-vf", vf,
+                  "-map", "0:v", "-map", "1:a",
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k",
+                  "-shortest",
+                  "-movflags", "+faststart",
+                  out
+              ]
+          else:
+              cmd = [
+                  "ffmpeg", "-y", "-i", raw,
+                  "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+                  "-vf", vf,
+                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "192k",
+                  "-shortest",
+                  "-movflags", "+faststart",
+                  out
+              ]
+
+          t0 = time.time()
+          result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+          print(f"Main encode took {time.time()-t0:.1f}s")
+          if result.returncode != 0:
+              print(f"ffmpeg error:\n{result.stderr[-3000:]}")
+              sys.exit(1)
+          print(f"Processed: {os.path.getsize(out)/1024/1024:.1f}MB")
+
+          try:
+              short_out = "/tmp/short.mp4"
+              short_len = 25
+              max_start = max(0, duration - short_len)
+              clip_start = random.uniform(0, max_start) if max_start > 0 else 0
+              short_vf = "crop=ih*9/16:ih,scale=1080:1920"
+
+              if has_audio and music_file:
+                  short_cmd = [
+                      "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                      "-t", str(short_len),
+                      "-vf", short_vf,
+                      "-filter_complex", "[0:a]volume=0.7[a1];[1:a]volume=0.3[a2];[a1][a2]amix=inputs=2:duration=first[aout]",
+                      "-map", "0:v", "-map", "[aout]",
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                      "-pix_fmt", "yuv420p",
+                      "-c:a", "aac", "-b:a", "128k",
+                      short_out
+                  ]
+              elif has_audio and not music_file:
+                  short_cmd = [
+                      "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-t", str(short_len),
+                      "-vf", short_vf,
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                      "-pix_fmt", "yuv420p",
+                      "-c:a", "aac", "-b:a", "128k",
+                      short_out
+                  ]
+              elif not has_audio and music_file:
+                  short_cmd = [
+                      "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw, "-stream_loop", "-1", "-i", music_file,
+                      "-t", str(short_len),
+                      "-vf", short_vf,
+                      "-map", "0:v", "-map", "1:a",
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                      "-pix_fmt", "yuv420p",
+                      "-c:a", "aac", "-b:a", "128k",
+                      "-shortest",
+                      short_out
+                  ]
+              else:
+                  short_cmd = [
+                      "ffmpeg", "-y", "-ss", str(clip_start), "-i", raw,
+                      "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+                      "-t", str(short_len),
+                      "-vf", short_vf,
+                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                      "-pix_fmt", "yuv420p",
+                      "-c:a", "aac", "-b:a", "128k",
+                      "-shortest",
+                      short_out
+                  ]
+
+              t0 = time.time()
+              r2 = subprocess.run(short_cmd, capture_output=True, text=True, timeout=120)
+              print(f"Short encode took {time.time()-t0:.1f}s")
+              if r2.returncode == 0:
+                  print(f"Short created: {os.path.getsize(short_out)/1024/1024:.1f}MB")
+              else:
+                  print(f"Short failed, skipping: {r2.stderr[-500:]}")
+          except Exception as e:
+              print(f"Short skipped: {e}")
+
+          os.remove(raw)
+          PYEOF
+
+      - name: Upload to YouTube
+        timeout-minutes: 15
+        run: |
+          python3 << 'PYEOF'
+          import os, json, sys, re
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
           from google.oauth2.credentials import Credentials
 
-          webm_file = "/tmp/game.webm"
-          mp4_file = "/tmp/game.mp4"
-          html_path = os.path.abspath("english_game.html")
+          with open("/tmp/meta.json") as f:
+              meta = json.load(f)
 
-          opts = Options()
-          opts.add_argument("--no-sandbox")
-          opts.add_argument("--disable-dev-shm-usage")
-          opts.add_argument("--disable-gpu")
-          opts.add_argument("--window-size=1080,1920")
-          opts.add_argument("--autoplay-policy=no-user-gesture-required")
-          opts.add_argument("--use-fake-ui-for-media-stream")
-          opts.add_argument("--use-fake-device-for-media-stream")
-          opts.add_argument("--allow-file-access-from-files")
-          opts.add_experimental_option("mobileEmulation", {
-            "deviceMetrics": {"width": 1080, "height": 1920, "pixelRatio": 1.0},
-            "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
-          })
+          mp4 = "/tmp/processed.mp4"
+          if not os.path.exists(mp4):
+              print("Processed video not found")
+              sys.exit(1)
 
-          print("Starting Chrome...")
-          driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
-          driver.set_window_size(1080, 1920)
+          title_base = meta["title"].strip()
+          query = meta.get("query", "footage")
+          niche = meta.get("niche", "")
+          title_base = re.sub(r'[^\w\s\-\(\)\:\,\.\!]', '', title_base)[:80].strip()
+          title = title_base[:97] + "..." if len(title_base) > 100 else title_base
+          if not title:
+              title = query.title()
 
-          print(f"Loading file://{html_path}")
-          driver.get(f"file://{html_path}")
-          time.sleep(3)
+          hashtag_query = query.replace(" ", "").lower()
 
-          print("Starting recording...")
-          driver.execute_script("""
-            document.body.click();
-            if(typeof AC !== 'undefined') AC.resume();
-            window.setFormatAndStart(null);
-            window.startRecordingFreshScene(30);
-          """)
+          def build_description(is_short=False):
+              lines = [
+                  title_base if title_base else query.title(),
+                  "", "Pixabay -- pixabay.com",
+                  f"Original footage ID: {meta['id']}",
+                  "", "----------------------------------------", "About this video:",
+                  f"{query.title()} footage.",
+                  "", "Subscribe for more.", "",
+                  "----------------------------------------",
+                  f"Tags: {query}, {niche.lower()}, relaxation, ambient, timelapse, documentary",
+                  "----------------------------------------", "",
+                  f"#{hashtag_query} #{niche.lower()} #relaxation #ambient #timelapse #documentary" + (" #shorts" if is_short else ""),
+              ]
+              return "\n".join(lines)
 
-          time.sleep(12)
-
-          driver.execute_script("window.stopRecording();")
-          time.sleep(1)
-          driver.execute_script("window.forceFinalize();")
-          time.sleep(1)
-
-          b64 = driver.execute_async_script("""
-            var done = arguments[0];
-            window.getRecordingBase64().then(done).catch(function(e){ done(null); });
-          """)
-          driver.quit()
-
-          if not b64:
-            raise RuntimeError("Failed to get base64 data")
-
-          with open(webm_file, 'wb') as f:
-            f.write(base64.b64decode(b64))
-
-          print("Converting to MP4...")
-          subprocess.run([
-            "ffmpeg", "-y", "-i", webm_file,
-            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-            "-pix_fmt", "yuv420p", "-vf", "scale=1080:1920",
-            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-            "-movflags", "+faststart", mp4_file
-          ], check=True)
+          tags = list(dict.fromkeys([
+              query, niche.lower(), "relaxation", "ambient", "timelapse",
+              "documentary", "footage", "stock footage"
+          ]))[:30]
 
           creds = Credentials(
-            token=os.environ.get("YT_ACCESS_TOKEN"),
-            refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=os.environ.get("YT_CLIENT_ID"),
-            client_secret=os.environ.get("YT_CLIENT_SECRET"),
+              token=os.environ.get("YT_ACCESS_TOKEN"),
+              refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
+              token_uri="https://oauth2.googleapis.com/token",
+              client_id=os.environ.get("YT_CLIENT_ID"),
+              client_secret=os.environ.get("YT_CLIENT_SECRET"),
           )
           youtube = build("youtube", "v3", credentials=creds)
 
-          print("Uploading to YouTube...")
-          request = youtube.videos().insert(
-            part="snippet,status",
-            body={
-              "snippet": {
-                "title": "Daily English Challenge 🎮 #shorts",
-                "description": "Fun daily English learning challenge!\n\n#englishlearning #shorts",
-                "tags": ["english learning", "shorts"],
-                "categoryId": "27"
-              },
-              "status": {"privacyStatus": "public", "madeForKids": False}
-            },
-            media_body=MediaFileUpload(mp4_file, mimetype="video/mp4", resumable=True)
-          )
-          response = None
-          while response is None:
-            _, response = request.next_chunk()
+          def upload(filepath, vid_title, vid_desc):
+              request = youtube.videos().insert(
+                  part="snippet,status",
+                  body={
+                      "snippet": {"title": vid_title, "description": vid_desc, "tags": tags,
+                                  "categoryId": "22", "defaultLanguage": "en"},
+                      "status": {"privacyStatus": "public", "madeForKids": False, "selfDeclaredMadeForKids": False}
+                  },
+                  media_body=MediaFileUpload(filepath, mimetype="video/mp4", resumable=True)
+              )
+              response = None
+              while response is None:
+                  status, response = request.next_chunk()
+                  if status:
+                      print(f"Upload progress: {int(status.progress()*100)}%")
+              return response.get("id", "")
 
-          print(f"Posted! Video ID: {response.get('id')}")
+          video_id = upload(mp4, title, build_description(False))
+          print(f"https://youtube.com/watch?v={video_id}")
+          os.remove(mp4)
+
+          short_path = "/tmp/short.mp4"
+          if os.path.exists(short_path):
+              short_title = (title[:90] + " #shorts") if len(title) <= 90 else (title[:90] + "#shorts")
+              short_id = upload(short_path, short_title, build_description(True))
+              print(f"https://youtube.com/shorts/{short_id}")
+              os.remove(short_path)
+          else:
+              print("No short to upload")
+
+          with open("posted.txt", "a") as f:
+              f.write(meta["id"] + "\n")
           PYEOF
         env:
-          DISPLAY: ":99"
           YT_ACCESS_TOKEN: ${{ secrets.YT_ACCESS_TOKEN }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+
+      - name: Save posted.txt to repo
+        timeout-minutes: 5
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add posted.txt
+          git diff --staged --quiet || git commit -m "track posted footage [skip ci]"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
