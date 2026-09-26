@@ -18,7 +18,9 @@ canvas{display:block;}
 
 /* HEADER */
 #hdr{width:100%;display:flex;align-items:center;justify-content:space-between;
-  padding:max(env(safe-area-inset-top),14px) 18px 6px;flex-shrink:0;}
+  padding:max(env(safe-area-inset-top),14px) 18px 6px;flex-shrink:0;
+  opacity:0;transform:translateY(-10px);transition:opacity .4s,transform .4s;}
+#hdr.in{opacity:1;transform:translateY(0);}
 #brand{font-family:'Baloo 2',cursive;font-weight:800;font-size:1.25rem;color:var(--txt,#fff);
   letter-spacing:.5px;text-shadow:0 3px 0 rgba(0,0,0,.3);display:flex;align-items:center;gap:6px;}
 #mode-badge{font-family:'Fredoka',sans-serif;font-weight:700;font-size:.65rem;letter-spacing:.5px;
@@ -32,133 +34,102 @@ canvas{display:block;}
 .tbl-wrap{width:100%;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:10px;}
 
 .eyebrow{font-family:'Fredoka',sans-serif;font-weight:700;font-size:.8rem;letter-spacing:2px;
-  text-transform:uppercase;color:rgba(255,255,255,.75);text-shadow:0 2px 0 rgba(0,0,0,.25);}
+  text-transform:uppercase;color:rgba(255,255,255,.75);text-shadow:0 2px 0 rgba(0,0,0,.25);
+  opacity:0;transform:translateY(-6px);transition:opacity .4s,transform .4s;}
+.eyebrow.in{opacity:1;transform:translateY(0);}
 
 /* TABLE CARD */
 #table-card{width:100%;background:var(--panel,rgba(10,40,25,.92));border-radius:26px;
   padding:20px 18px;box-shadow:0 12px 0 rgba(0,0,0,.25),0 20px 40px rgba(0,0,0,.4);
   border:4px solid var(--panelBorder,rgba(255,215,110,.5));position:relative;
-  transform:scale(1);opacity:1;}
-#table-card.pop{animation:cardPop .45s cubic-bezier(.34,1.7,.5,1);}
-@keyframes cardPop{0%{transform:scale(.4);}60%{transform:scale(1.04);}100%{transform:scale(1);}}
+  transform:scale(.85);opacity:0;transition:transform .5s cubic-bezier(.34,1.4,.5,1),opacity .5s;}
+#table-card.in{transform:scale(1);opacity:1;}
 
 .row-label{font-family:'Fredoka',sans-serif;font-weight:700;font-size:.72rem;letter-spacing:1.5px;
-  text-transform:uppercase;color:var(--label,#ffd166);margin-bottom:6px;text-align:center;opacity:.85;}
+  text-transform:uppercase;color:var(--label,#ffd166);margin-bottom:6px;text-align:center;opacity:0;
+  transition:opacity .3s;height:0;overflow:hidden;}
+.row-label.in{opacity:.85;height:auto;margin-bottom:6px;}
 
-#hand-row,#board-row{display:flex;justify-content:center;gap:10px;margin-bottom:14px;min-height:76px;align-items:center;}
+#hand-row,#board-row{display:flex;justify-content:center;gap:10px;margin-bottom:0;min-height:0;align-items:center;
+  transition:min-height .3s,margin-bottom .3s;}
+#hand-row.active,#board-row.active{min-height:76px;margin-bottom:14px;}
 .pcard{width:52px;height:74px;border-radius:8px;background:#fff;box-shadow:0 4px 0 rgba(0,0,0,.3),0 6px 14px rgba(0,0,0,.35);
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  font-family:'Baloo 2',cursive;font-weight:800;transform:scale(0) rotate(-8deg);opacity:0;
+  font-family:'Baloo 2',cursive;font-weight:800;transform:scale(0) rotate(-14deg) translateY(20px);opacity:0;
   transition:transform .4s cubic-bezier(.34,1.7,.5,1),opacity .3s;}
-.pcard.in{transform:scale(1) rotate(0deg);opacity:1;}
+.pcard.in{transform:scale(1) rotate(0deg) translateY(0);opacity:1;}
 .pcard .rk{font-size:1.3rem;line-height:1;}
 .pcard .st{font-size:1.5rem;line-height:1;margin-top:-2px;}
 .pcard.red{color:#d7263d;}
 .pcard.black{color:#1a1a2e;}
-.pcard.back{background:linear-gradient(135deg,#1a3a5c,#0d1f33);border:2px solid rgba(255,255,255,.25);}
 
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-bottom:12px;}
-.info-cell{background:rgba(0,0,0,.22);border-radius:12px;padding:8px 10px;text-align:center;}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-bottom:0;
+  max-height:0;overflow:hidden;opacity:0;transition:max-height .4s,opacity .4s,margin-bottom .4s;}
+.info-grid.in{max-height:200px;opacity:1;margin-bottom:12px;}
+.info-cell{background:rgba(0,0,0,.22);border-radius:12px;padding:8px 10px;text-align:center;
+  transform:translateY(8px);opacity:0;transition:transform .35s,opacity .35s;}
+.info-cell.in{transform:translateY(0);opacity:1;}
 .info-k{font-family:'Fredoka',sans-serif;font-weight:600;font-size:.62rem;letter-spacing:1px;
   text-transform:uppercase;color:rgba(255,255,255,.6);}
 .info-v{font-family:'Baloo 2',cursive;font-weight:800;font-size:1rem;color:#fff;margin-top:1px;}
 
-#math-row{display:none;flex-direction:column;gap:6px;margin-bottom:12px;background:rgba(0,0,0,.18);
-  border-radius:14px;padding:10px 12px;}
-.math-line{display:flex;justify-content:space-between;font-family:'Fredoka',sans-serif;font-size:.82rem;color:#fff;}
+#math-row{display:none;flex-direction:column;gap:6px;margin-bottom:0;background:rgba(0,0,0,.18);
+  border-radius:14px;padding:0 12px;max-height:0;overflow:hidden;opacity:0;
+  transition:max-height .4s,opacity .4s,padding .4s,margin-bottom .4s;}
+#math-row.in{max-height:260px;opacity:1;padding:10px 12px;margin-bottom:12px;}
+.math-line{display:flex;justify-content:space-between;font-family:'Fredoka',sans-serif;font-size:.82rem;color:#fff;
+  opacity:0;transform:translateX(-6px);transition:opacity .3s,transform .3s;}
+.math-line.in{opacity:1;transform:translateX(0);}
 .math-line b{font-family:'Baloo 2',cursive;color:var(--accent,#ffd166);}
 
 #question{font-family:'Baloo 2',cursive;font-weight:800;font-size:clamp(1.1rem,5.2vw,1.5rem);
-  color:#fff;text-align:center;text-shadow:0 2px 0 rgba(0,0,0,.3);}
+  color:#fff;text-align:center;text-shadow:0 2px 0 rgba(0,0,0,.3);
+  opacity:0;transform:scale(.9);transition:opacity .4s,transform .4s;min-height:1.4em;}
+#question.in{opacity:1;transform:scale(1);}
 
 /* OPTIONS */
 #opts{width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px;margin-top:12px;}
 .opt-btn{font-family:'Baloo 2',cursive;font-weight:700;font-size:clamp(.95rem,4vw,1.1rem);
   color:#0b3d24;background:#fff;border:none;border-radius:18px;padding:14px 18px;
-  text-align:left;cursor:pointer;box-shadow:0 6px 0 rgba(0,0,0,.22);
+  text-align:left;cursor:default;box-shadow:0 6px 0 rgba(0,0,0,.22);
   display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;
-  transform:scale(1) translateY(0);transition:transform .12s,box-shadow .12s,background .2s,color .2s;
-  opacity:1;}
-.opt-btn.pop{animation:optIn .4s cubic-bezier(.34,1.7,.5,1);}
-.opt-btn.pop:nth-child(1){animation-delay:.05s;}
-.opt-btn.pop:nth-child(2){animation-delay:.13s;}
-.opt-btn.pop:nth-child(3){animation-delay:.21s;}
-.opt-btn.pop:nth-child(4){animation-delay:.29s;}
-@keyframes optIn{from{opacity:0;transform:scale(.7) translateY(14px);}to{opacity:1;transform:scale(1) translateY(0);}}
+  transform:scale(.7) translateY(14px);opacity:0;
+  transition:transform .4s cubic-bezier(.34,1.7,.5,1),opacity .3s;}
+.opt-btn.in{transform:scale(1) translateY(0);opacity:1;}
 .opt-letter{font-family:'Baloo 2',cursive;font-weight:800;font-size:.9rem;color:#fff;
   background:var(--accent2,#2a9d5c);width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
   justify-content:center;flex-shrink:0;box-shadow:0 2px 0 rgba(0,0,0,.25);}
-.opt-btn.press{transform:scale(.94) translateY(3px);box-shadow:0 2px 0 rgba(0,0,0,.18);}
-.opt-btn.correct{background:linear-gradient(135deg,#43e97b,#2fd66a);color:#003818;
-  box-shadow:0 6px 0 #1a8a45;animation:correctPop .5s cubic-bezier(.34,1.7,.5,1);}
-.opt-btn.correct .opt-letter{background:#00612e;}
-.opt-btn.wrong{background:linear-gradient(135deg,#ff6b6b,#e84545);color:#4a0000;box-shadow:0 6px 0 #a11c1c;}
-.opt-btn.wrong .opt-letter{background:#6b0000;}
-.opt-btn.dim{opacity:.4;}
-@keyframes correctPop{0%{transform:scale(1);}40%{transform:scale(1.06);}100%{transform:scale(1);}}
-.opt-btn .check{margin-left:auto;font-size:1.1rem;opacity:0;transform:scale(0);transition:transform .3s cubic-bezier(.34,1.7,.5,1),opacity .2s;}
-.opt-btn.correct .check,.opt-btn.wrong .check{opacity:1;transform:scale(1);}
 
-/* TIMER */
-#timer-wrap{width:100%;max-width:420px;display:flex;align-items:center;gap:10px;margin-top:14px;}
-#timer-track{flex:1;height:13px;background:rgba(255,255,255,.22);border-radius:50px;overflow:hidden;
-  border:2px solid rgba(255,255,255,.3);}
-#timer-fill{height:100%;border-radius:50px;background:linear-gradient(90deg,#43e97b,#38f9d7);
-  width:100%;transition:width .1s linear,background .3s;}
-#timer-num{font-family:'Baloo 2',cursive;font-weight:800;color:#fff;font-size:1.05rem;
-  text-shadow:0 2px 0 rgba(0,0,0,.3);min-width:20px;text-align:center;}
-
-/* CTA */
-#cta-overlay{position:fixed;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;
-  background:rgba(0,20,10,.45);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .25s;}
-#cta-overlay.show{opacity:1;}
-#cta-card{background:linear-gradient(160deg,var(--ctaA,#1a5c3a),var(--ctaB,#0d3320));border-radius:28px;padding:28px 30px;
-  max-width:320px;text-align:center;box-shadow:0 16px 0 rgba(0,0,0,.3),0 20px 50px rgba(0,0,0,.45);
-  border:4px solid var(--accent,#ffd166);transform:scale(.5) rotate(-6deg);
-  transition:transform .4s cubic-bezier(.34,1.7,.5,1);}
-#cta-overlay.show #cta-card{transform:scale(1) rotate(0deg);}
-#cta-icon{font-size:2.8rem;margin-bottom:6px;}
-#cta-text{font-family:'Baloo 2',cursive;font-weight:800;font-size:1.3rem;color:#fff;
-  text-shadow:0 3px 0 rgba(0,0,0,.25);line-height:1.25;}
-#cta-sub{font-family:'Fredoka',sans-serif;font-weight:600;font-size:.82rem;color:rgba(255,255,255,.85);margin-top:6px;}
-
-/* REVEAL BANNER */
-#reveal-banner{position:fixed;top:12%;left:50%;transform:translate(-50%,-30px) scale(.7);
-  font-family:'Baloo 2',cursive;font-weight:800;font-size:clamp(1.15rem,5.5vw,1.6rem);color:#fff;
-  background:linear-gradient(135deg,#43e97b,#2fd66a);padding:12px 26px;border-radius:22px;
-  box-shadow:0 10px 0 rgba(0,0,0,.25),0 16px 34px rgba(0,0,0,.4);
-  border:4px solid rgba(255,255,255,.55);z-index:180;opacity:0;transition:opacity .3s,transform .3s;
-  pointer-events:none;white-space:nowrap;}
-#reveal-banner.show{opacity:1;transform:translate(-50%,0) scale(1);}
-
-#tap-hint{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);
-  font-family:'Fredoka',sans-serif;font-weight:700;font-size:.82rem;color:rgba(255,255,255,.75);
-  background:rgba(0,0,0,.32);padding:8px 18px;border-radius:50px;opacity:0;transition:opacity .3s;
-  pointer-events:none;letter-spacing:.5px;z-index:60;}
-#tap-hint.show{opacity:1;animation:tapPulse 1.4s ease-in-out infinite;}
-@keyframes tapPulse{0%,100%{transform:translateX(-50%) scale(1);}50%{transform:translateX(-50%) scale(1.05);}}
-
-#float-pts{position:fixed;left:50%;top:38%;transform:translateX(-50%);
-  font-family:'Baloo 2',cursive;font-weight:800;font-size:1.8rem;color:#ffd166;
-  text-shadow:0 3px 0 rgba(0,0,0,.35);pointer-events:none;z-index:190;opacity:0;}
-#float-pts.pop{animation:ptsFloat .9s cubic-bezier(.2,.8,.4,1) forwards;}
-@keyframes ptsFloat{0%{opacity:0;transform:translateX(-50%) translateY(10px) scale(.6);}
-20%{opacity:1;transform:translateX(-50%) translateY(-6px) scale(1.15);}
-70%{opacity:1;transform:translateX(-50%) translateY(-26px) scale(1);}
-100%{opacity:0;transform:translateX(-50%) translateY(-50px) scale(.9);}}
+/* CTA BANNER (persistent hook, not a modal) */
+#cta-banner{width:100%;max-width:420px;margin-top:16px;display:flex;align-items:center;gap:10px;
+  background:linear-gradient(135deg,var(--ctaA,#1a5c3a),var(--ctaB,#0d3320));
+  border:3px solid var(--accent,#ffd166);border-radius:20px;padding:12px 16px;
+  box-shadow:0 6px 0 rgba(0,0,0,.25);
+  opacity:0;transform:translateY(10px) scale(.95);transition:opacity .4s,transform .4s;}
+#cta-banner.in{opacity:1;transform:translateY(0) scale(1);animation:ctaPulse 1.8s ease-in-out infinite;}
+@keyframes ctaPulse{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(0) scale(1.025);}}
+#cta-icon-inline{font-size:1.6rem;flex-shrink:0;}
+#cta-text-inline{font-family:'Baloo 2',cursive;font-weight:800;font-size:.95rem;color:#fff;line-height:1.25;
+  text-shadow:0 2px 0 rgba(0,0,0,.25);}
+#cta-sub-inline{font-family:'Fredoka',sans-serif;font-weight:600;font-size:.72rem;color:rgba(255,255,255,.8);margin-top:2px;}
 
 /* CHEAT SHEET / STATIC MODES */
 #static-panel{display:none;width:100%;max-width:420px;background:var(--panel,rgba(10,40,25,.94));
   border-radius:26px;padding:26px 22px;box-shadow:0 12px 0 rgba(0,0,0,.25),0 20px 40px rgba(0,0,0,.4);
-  border:4px solid var(--panelBorder,rgba(255,215,110,.5));}
+  border:4px solid var(--panelBorder,rgba(255,215,110,.5));
+  transform:scale(.85);opacity:0;transition:transform .5s cubic-bezier(.34,1.4,.5,1),opacity .5s;}
+#static-panel.in{transform:scale(1);opacity:1;}
 #static-title{font-family:'Baloo 2',cursive;font-weight:800;font-size:1.3rem;color:var(--accent,#ffd166);
   text-align:center;margin-bottom:16px;text-shadow:0 2px 0 rgba(0,0,0,.3);}
 .sheet-line{display:flex;justify-content:space-between;align-items:center;padding:9px 4px;
-  border-bottom:1px solid rgba(255,255,255,.12);font-family:'Fredoka',sans-serif;color:#fff;}
+  border-bottom:1px solid rgba(255,255,255,.12);font-family:'Fredoka',sans-serif;color:#fff;
+  opacity:0;transform:translateX(-8px);transition:opacity .35s,transform .35s;}
+.sheet-line.in{opacity:1;transform:translateX(0);}
 .sheet-line b{font-family:'Baloo 2',cursive;color:#fff;}
 .sheet-line:last-child{border-bottom:none;}
 #static-foot{font-family:'Fredoka',sans-serif;font-weight:600;font-size:.85rem;color:rgba(255,255,255,.7);
-  text-align:center;margin-top:14px;}
+  text-align:center;margin-top:14px;opacity:0;transition:opacity .4s;}
+#static-foot.in{opacity:1;}
 </style>
 </head>
 <body>
@@ -180,7 +151,7 @@ canvas{display:block;}
         <div class="row-label" id="hand-label">Your Hand</div>
         <div id="hand-row"></div>
 
-        <div class="row-label" id="board-label" style="display:none">The Board</div>
+        <div class="row-label" id="board-label">The Board</div>
         <div id="board-row"></div>
 
         <div class="info-grid" id="info-grid"></div>
@@ -192,9 +163,12 @@ canvas{display:block;}
 
       <div id="opts"></div>
 
-      <div id="timer-wrap">
-        <div id="timer-track"><div id="timer-fill"></div></div>
-        <div id="timer-num">6</div>
+      <div id="cta-banner">
+        <div id="cta-icon-inline">💬</div>
+        <div>
+          <div id="cta-text-inline">Comment your move below!</div>
+          <div id="cta-sub-inline">Let's see who's got the best play</div>
+        </div>
       </div>
     </div>
 
@@ -203,18 +177,6 @@ canvas{display:block;}
       <div id="static-body"></div>
       <div id="static-foot">Save this. You'll use it every session.</div>
     </div>
-  </div>
-</div>
-
-<div id="reveal-banner"></div>
-<div id="tap-hint">👉 Tap to continue</div>
-<div id="float-pts">+10</div>
-
-<div id="cta-overlay">
-  <div id="cta-card">
-    <div id="cta-icon">🔔</div>
-    <div id="cta-text">Follow for daily spots!</div>
-    <div id="cta-sub">New poker quiz every day</div>
   </div>
 </div>
 
@@ -260,7 +222,6 @@ function makeFeltPattern(){
       background:${theme.feltDot};opacity:${.05+Math.random()*.1};left:${Math.random()*100}%;top:${Math.random()*100}%;`;
     feltEl.appendChild(d);
   }
-  // subtle vignette
   const v=document.createElement('div');
   v.style.cssText='position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,.45) 100%);';
   feltEl.appendChild(v);
@@ -281,12 +242,8 @@ const SFX_CACHE={};
 const SFX_FILES={
   cardflip:['sfx/cardflip.mp3','sfx/card.mp3','sfx/flip.mp3'],
   chip:['sfx/chip.mp3','sfx/chips.mp3','sfx/clink.mp3'],
-  tick:['sfx/tick.mp3','sfx/click.mp3'],
-  tap:['sfx/tap.mp3','sfx/select.mp3'],
-  correct:['sfx/correct.mp3','sfx/success.mp3','sfx/win.mp3'],
-  wrong:['sfx/wrong.mp3','sfx/fail.mp3','sfx/error.mp3'],
-  cta:['sfx/cta.mp3','sfx/whoosh.mp3','sfx/swoosh.mp3'],
-  reveal:['sfx/reveal.mp3','sfx/chime.mp3','sfx/ding.mp3']
+  whoosh:['sfx/whoosh.mp3','sfx/swoosh.mp3'],
+  cta:['sfx/cta.mp3','sfx/ding.mp3','sfx/chime.mp3']
 };
 function tryLoadSfxPath(name,path){return new Promise(resolve=>{if(!AC)return resolve(false);fetch(path).then(r=>{if(!r.ok)return resolve(false);return r.arrayBuffer();}).then(ab=>{if(!ab)return resolve(false);return AC.decodeAudioData(ab);}).then(buf=>{SFX_CACHE[name]=buf;resolve(true);}).catch(()=>resolve(false));});}
 async function tryLoadSfx(name,paths){for(const p of paths){try{if(await tryLoadSfxPath(name,p))return;}catch{}}}
@@ -295,12 +252,8 @@ Object.entries(SFX_FILES).forEach(([k,v])=>tryLoadSfx(k,v));
 
 const sfxCardFlip=()=>{if(!playSfxFile('cardflip',.7)){noiseBurst(.06,.12);tone(1400,'square',.03,.06,.02);}};
 const sfxChip=()=>{if(!playSfxFile('chip',.7)){tone(2200,'triangle',.05,.1);tone(1800,'triangle',.05,.08,.03);}};
-const sfxTick=()=>{if(!playSfxFile('tick',.5))tone(1000,'square',.04,.1);};
-const sfxTap=()=>{if(!playSfxFile('tap',.6))tone(440,'triangle',.06,.18);};
-const sfxCorrect=()=>{if(!playSfxFile('correct',.9))[523,659,784,1047].forEach((f,i)=>tone(f,'sine',.16,.26,i*.06));};
-const sfxWrong=()=>{if(!playSfxFile('wrong',.7)){tone(220,'sawtooth',.16,.2);tone(160,'sawtooth',.18,.15,.08);}};
-const sfxCta=()=>{if(!playSfxFile('cta',.8)){tone(600,'sine',.08,.15);tone(900,'sine',.1,.14,.07);tone(1200,'sine',.12,.12,.15);}};
-const sfxReveal=()=>{if(!playSfxFile('reveal',.85)){tone(880,'sine',.14,.22);tone(1174,'sine',.16,.18,.08);}};
+const sfxWhoosh=()=>{if(!playSfxFile('whoosh',.6)){noiseBurst(.12,.08);}};
+const sfxCta=()=>{if(!playSfxFile('cta',.8)){tone(700,'sine',.09,.16);tone(1000,'sine',.11,.14,.08);}};
 
 let bgMusic=null,bgMusicSearching=false;
 const BG_NAMES=['bgmusic/1.mp3','bgmusic/2.mp3','bgmusic/3.mp3','bgmusic/4.mp3','bgmusic/5.mp3','bgmusic/music1.mp3','bgmusic/music2.mp3','bgmusic/theme.mp3','bgmusic/bg.mp3','bgmusic/background.mp3','bgmusic/track1.mp3','bgmusic/track2.mp3','bgmusic/game.mp3'];
@@ -322,10 +275,6 @@ const RANK_VAL={'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'T':10,'J':11,'Q
 const SUITS=[{s:'♠',c:'black'},{s:'♥',c:'red'},{s:'♦',c:'red'},{s:'♣',c:'black'}];
 const POSITIONS=['Under the Gun','Middle Position','Hijack','Cutoff','Button','Small Blind','Big Blind'];
 const ACTIONS=[
-  {label:'Folded to you, you can open', pf:true},
-  {label:'One player raised before you', pf:false},
-  {label:'One player raised, one called', pf:false},
-  {label:'Player 3-bet before you', pf:false},
   {label:'Checked to you', pf:false, postflop:true},
   {label:'Player bet half pot', pf:false, postflop:true},
   {label:'Player bet full pot', pf:false, postflop:true}
@@ -343,14 +292,11 @@ function shuffle(arr){
 }
 function drawCards(deck,n){return deck.splice(0,n);}
 
-function cardHTML(card,hidden){
-  if(hidden) return `<div class="pcard back in"></div>`;
-  return `<div class="pcard ${card.su.c} in"><div class="rk">${card.r}</div><div class="st">${card.su.s}</div></div>`;
+function cardHTML(card){
+  return `<div class="pcard ${card.su.c}"><div class="rk">${card.r}</div><div class="st">${card.su.s}</div></div>`;
 }
 
-// Very lightweight 5/6/7-card hand ranking (enough to grade our own generated spots)
 function handRank(cards){
-  // cards: array of {r,su}
   const vals=cards.map(c=>RANK_VAL[c.r]).sort((a,b)=>b-a);
   const suitsArr=cards.map(c=>c.su.s);
   const counts={};
@@ -380,7 +326,6 @@ function handRank(cards){
 }
 
 function countOuts(hand,board){
-  // Monte-carlo-free exact out count: for each remaining card, does adding it improve hand category or top pair rank?
   const used=[...hand,...board];
   const usedKey=c=>c.r+c.su.s;
   const usedSet=new Set(used.map(usedKey));
@@ -394,7 +339,7 @@ function countOuts(hand,board){
       outs++;
     }
   }
-  return Math.min(outs,20); // sanity cap
+  return Math.min(outs,20);
 }
 
 function genSpot(){
@@ -402,14 +347,12 @@ function genSpot(){
   const hand=drawCards(deck,2);
   const streetRoll=Math.random();
   let boardCount=3;
-  if(streetRoll<0.4) boardCount=3;      // flop
-  else if(streetRoll<0.75) boardCount=4; // turn
-  else boardCount=5;                     // river
+  if(streetRoll<0.4) boardCount=3;
+  else if(streetRoll<0.75) boardCount=4;
+  else boardCount=5;
   const board=drawCards(deck,boardCount);
   const position=POSITIONS[Math.floor(Math.random()*POSITIONS.length)];
-  const postflopActions=ACTIONS.filter(a=>a.postflop);
-  const preflopActions=ACTIONS.filter(a=>!a.postflop);
-  const action=postflopActions[Math.floor(Math.random()*postflopActions.length)];
+  const action=ACTIONS[Math.floor(Math.random()*ACTIONS.length)];
   const potSize=[20,40,60,80,120,150][Math.floor(Math.random()*6)];
   const betMult=action.label.includes('half')?0.5:(action.label.includes('full')?1:0);
   const betSize=Math.round(potSize*betMult/5)*5;
@@ -418,13 +361,13 @@ function genSpot(){
   const outs=countOuts(hand,board);
   const rankNow=handRank([...hand,...board]);
   let outsPct;
-  if(board.length===3) outsPct=Math.min(outs*4,95);      // rule of 4 (2 cards to come... approx)
-  else if(board.length===4) outsPct=Math.min(outs*2,95); // rule of 2
-  else outsPct=0; // river, no more cards
+  if(board.length===3) outsPct=Math.min(outs*4,95);
+  else if(board.length===4) outsPct=Math.min(outs*2,95);
+  else outsPct=0;
 
-  const potOddsPct = betSize>0 ? (betSize/(potSize+betSize*2))*100 : 0; // amount to call vs total pot after call
+  const potOddsPct = betSize>0 ? (betSize/(potSize+betSize*2))*100 : 0;
   const callAmount=betSize;
-  const totalPotIfCall=potSize+betSize; // pot before our call
+  const totalPotIfCall=potSize+betSize;
   const breakEvenPct = betSize>0 ? (callAmount/(totalPotIfCall+callAmount))*100 : 0;
 
   const evWin = board.length<5 ? outsPct/100 : (rankNow.score>=1?0.6:0.3);
@@ -432,23 +375,9 @@ function genSpot(){
   const amountLost = callAmount;
   const ev = betSize>0 ? (evWin*amountWon)-((1-evWin)*amountLost) : null;
 
-  // Decide correct action: simple, explainable heuristic (this is a content game, not a solver)
-  let correct='B'; // default Call
-  let explanation='';
-  if(betSize===0){
-    // checked to us
-    if(rankNow.score>=1){correct='C';explanation=`You've made ${rankNow.name.toLowerCase()}. Bet to build the pot and charge worse hands for the right to draw or catch up.`;}
-    else {correct='A';explanation=`No made hand and nothing was bet at you. Checking back keeps the pot small until you have something to bet on.`;}
-  } else {
-    if(rankNow.score>=3){correct='D';explanation=`You've got ${rankNow.name.toLowerCase()} — a very strong hand here. Getting stacks in is the play; you're rarely behind.`;}
-    else if(rankNow.score>=1 && breakEvenPct<40){correct='B';explanation=`You have ${rankNow.name.toLowerCase()} and the pot odds are good enough to continue. You need ${breakEvenPct.toFixed(0)}% equity to break even — this is close.`;}
-    else if(rankNow.score===0 && outsPct>=breakEvenPct && outsPct>0){correct='B';explanation=`You have a draw giving you roughly ${outsPct.toFixed(0)}% to improve, and you only need ${breakEvenPct.toFixed(0)}% to break even. The math says call.`;}
-    else {correct='A';explanation=`Your equity here (about ${(rankNow.score>=1?55:outsPct).toFixed(0)}%) doesn't clear the ${breakEvenPct.toFixed(0)}% you need to break even. Folding saves chips for a better spot.`;}
-  }
-
   return {
     hand,board,position,action,potSize,betSize,stackSize,
-    outs,outsPct,potOddsPct,breakEvenPct,ev,rankNow,correct,explanation,
+    outs,outsPct,potOddsPct,breakEvenPct,ev,rankNow,
     street: board.length===3?'Flop':board.length===4?'Turn':'River'
   };
 }
@@ -457,54 +386,36 @@ function genSpot(){
 const POST_TYPES=['spot','spotmath','math15','cheatsheet','equity','evgame','beginner'];
 let currentType='spot';
 let spot=null;
-
-const OPTION_SETS={
-  default:['Fold','Call','Raise','All-In'],
-};
+let narrationText="";
 
 const CAPTIONS={
   spot:[
-    "What's YOUR move here? Comment below 👇 #Poker #PokerStrategy #TexasHoldem #PokerTips #WhatsYourMove",
-    "Most people get this spot wrong. Do you know the play? #Poker #PokerQuiz #TexasHoldem #PokerTips",
-    "Fold, call, raise, or all-in? Drop your answer below. #Poker #PokerStrategy #PokerTips #HoldemPoker",
-    "Real spot. Real decision. What do you do? #Poker #PokerCommunity #TexasHoldem #PokerTips",
+    "What's YOUR move here? 👇 Comment your play — let's see who's got the best move. #Poker #PokerStrategy #TexasHoldem #PokerTips",
+    "Fold, call, or raise? Drop your answer below and let's argue about it. #Poker #PokerQuiz #TexasHoldem #PokerTips",
+    "Real spot, real decision. Comment what you'd do. #Poker #PokerStrategy #PokerTips #HoldemPoker",
   ],
   spotmath:[
-    "The math AND the spot in one post. Can you solve it? #Poker #PokerMath #PokerStrategy #PokerTips",
-    "Outs, odds, and one big decision. What's the move? #Poker #PokerMath #TexasHoldem #PokerTips",
-    "This is how winning players think. Follow the numbers. #Poker #PokerStrategy #PokerMath #PokerTips",
+    "The numbers are on screen. What's the play? Comment below. #Poker #PokerMath #PokerStrategy #PokerTips",
+    "Outs, odds, one big decision. What do you do? Comment your move. #Poker #PokerMath #TexasHoldem #PokerTips",
   ],
   math15:[
-    "Poker math in 15 seconds. Save this. #Poker #PokerMath #PokerTips #TexasHoldem #PokerStrategy",
-    "Learn this and you'll never misplay a draw again. #Poker #PokerMath #PokerTips #PokerStrategy",
-    "The math that separates winners from losers. #Poker #PokerMath #PokerTips #HoldemPoker",
+    "Call or fold based on the math? Comment your answer. #Poker #PokerMath #PokerTips #TexasHoldem",
+    "The math says something. Do you agree? Comment below. #Poker #PokerMath #PokerTips #PokerStrategy",
   ],
   cheatsheet:[
     "Save this. You'll use it every session. #Poker #PokerTips #PokerMath #PokerStrategy #TexasHoldem",
     "Screenshot this poker math cheat sheet. #Poker #PokerTips #PokerMath #PokerStrategy",
-    "Every poker player needs to know this. #Poker #PokerTips #PokerMath #PokerCommunity",
   ],
   equity:[
-    "What's your equity here? Most people guess wrong. #Poker #PokerMath #PokerQuiz #PokerTips",
-    "Guess the equity before you scroll past. #Poker #PokerStrategy #PokerMath #PokerTips",
+    "What's your equity here? Comment your guess before you scroll on. #Poker #PokerMath #PokerQuiz #PokerTips",
   ],
   evgame:[
-    "Is this call +EV or -EV? The math doesn't lie. #Poker #PokerMath #PokerStrategy #PokerTips",
-    "The single most important poker concept. +EV or -EV? #Poker #PokerMath #PokerTips #TexasHoldem",
+    "Is this call +EV or -EV? Comment your answer below. #Poker #PokerMath #PokerStrategy #PokerTips",
   ],
   beginner:[
-    "90% of beginners get this wrong. Don't be one of them. #Poker #PokerTips #PokerStrategy #TexasHoldem",
-    "The common mistake that's costing you money. #Poker #PokerTips #PokerStrategy #PokerMath",
+    "Most beginners get this wrong. What's your move? Comment below. #Poker #PokerTips #PokerStrategy #TexasHoldem",
   ],
 };
-
-const CTAS=[
-  {icon:"♠",text:"Follow for daily spots!",sub:"New poker quiz every day"},
-  {icon:"💬",text:"Comment your answer!",sub:"Let's see who gets it right"},
-  {icon:"🔁",text:"Share with your poker group!",sub:"Spread the strategy"},
-  {icon:"🔥",text:"Tag someone who folds too much!",sub:"Time to call them out"},
-  {icon:"👑",text:"Follow for daily poker math!",sub:"Level up your game"},
-];
 
 const MATH_FACTS=[
   {title:"Rule of 4 & 2", lines:[["After the flop","Outs × 4"],["After the turn","Outs × 2"],["Flush draw","9 outs ≈ 36%"],["Open-ended straight","8 outs ≈ 32%"]]},
@@ -515,6 +426,7 @@ const MATH_FACTS=[
 ];
 
 /* ============ DOM refs ============ */
+const hdr=document.getElementById('hdr');
 const eyebrow=document.getElementById('eyebrow');
 const modeBadge=document.getElementById('mode-badge');
 const tableCard=document.getElementById('table-card');
@@ -526,85 +438,75 @@ const infoGrid=document.getElementById('info-grid');
 const mathRow=document.getElementById('math-row');
 const questionEl=document.getElementById('question');
 const optsEl=document.getElementById('opts');
-const timerWrap=document.getElementById('timer-wrap');
-const timerFill=document.getElementById('timer-fill');
-const timerNum=document.getElementById('timer-num');
-const revealBanner=document.getElementById('reveal-banner');
-const tapHint=document.getElementById('tap-hint');
-const ctaOverlay=document.getElementById('cta-overlay');
-const ctaIcon=document.getElementById('cta-icon');
-const ctaText=document.getElementById('cta-text');
-const ctaSub=document.getElementById('cta-sub');
-const floatPts=document.getElementById('float-pts');
+const ctaBanner=document.getElementById('cta-banner');
+const ctaIconInline=document.getElementById('cta-icon-inline');
+const ctaTextInline=document.getElementById('cta-text-inline');
+const ctaSubInline=document.getElementById('cta-sub-inline');
 const staticPanel=document.getElementById('static-panel');
 const staticTitle=document.getElementById('static-title');
 const staticBody=document.getElementById('static-body');
+const staticFoot=document.getElementById('static-foot');
 const tblWrap=document.getElementById('tbl-wrap');
 
-let phase="idle";
-let countLeft=6;
-let countTimerId=null;
-let narrationText="";
+let phase="idle"; // idle -> revealing -> locked (final state, holds forever, no auto-advance)
+let sequenceTimers=[];
+
+function clearSequenceTimers(){
+  sequenceTimers.forEach(t=>clearTimeout(t));
+  sequenceTimers=[];
+}
+function seq(fn,delay){
+  const t=setTimeout(fn,delay);
+  sequenceTimers.push(t);
+  return t;
+}
 
 function fmtMoney(n){return '$'+n;}
-
-function buildInfoGrid(s){
-  infoGrid.innerHTML='';
-  const cells=[
-    ['Position',s.position],
-    ['Street',s.street],
-    ['Pot',fmtMoney(s.potSize)],
-    ['Stack',fmtMoney(s.stackSize)],
-  ];
-  cells.forEach(([k,v])=>{
-    const d=document.createElement('div');
-    d.className='info-cell';
-    d.innerHTML=`<div class="info-k">${k}</div><div class="info-v">${v}</div>`;
-    infoGrid.appendChild(d);
-  });
-}
-
-function buildOpts(labels,correctLetter,onDone){
-  optsEl.innerHTML='';
-  const letters=['A','B','C','D'];
-  labels.forEach((opt,i)=>{
-    const btn=document.createElement('button');
-    btn.className='opt-btn pop';
-    btn.dataset.letter=letters[i];
-    btn.innerHTML=`<span class="opt-letter">${letters[i]}</span><span class="opt-label">${opt}</span><span class="check"></span>`;
-    btn.onclick=()=>selectOption(letters[i],correctLetter,btn);
-    optsEl.appendChild(btn);
-  });
-}
-
-function newRound(){
-  try{ newRoundInner(); }catch(e){ console.error('newRound failed',e); }
-}
+function suitName(s){return s==='♠'?'Spades':s==='♥'?'Hearts':s==='♦'?'Diamonds':'Clubs';}
 
 function narrate(txt){
   narrationText=txt;
-  window._narrationLog=window._narrationLog||[];
-  window._narrationLog.push(txt);
 }
 
-function newRoundInner(){
-  clearInterval(countTimerId);
-  phase="showing";
-  currentType=POST_TYPES[Math.floor(Math.random()*POST_TYPES.length)];
+const CTA_HOOKS=[
+  {icon:"💬",text:"Comment your move below!",sub:"Let's see who's got the best play"},
+  {icon:"🔥",text:"What's YOUR move? Comment it!",sub:"Prove you know this spot"},
+  {icon:"♠",text:"Drop your answer in the comments!",sub:"Fold, call, or raise?"},
+  {icon:"👑",text:"Comment below — let's settle this!",sub:"Who's got the best move?"},
+];
+
+/* ============ SINGLE-PASS REVEAL SEQUENCE ============ */
+/* Builds ONE scenario, reveals it piece by piece, ends locked on the
+   question + CTA with nothing further happening (no timer, no answer,
+   no auto-advance to a new round). */
+function startSequence(forceType){
+  try{ startSequenceInner(forceType); }catch(e){ console.error('startSequence failed',e); }
+}
+
+function startSequenceInner(forceType){
+  clearSequenceTimers();
+  phase="revealing";
+  currentType = (forceType && POST_TYPES.includes(forceType)) ? forceType : POST_TYPES[Math.floor(Math.random()*POST_TYPES.length)];
   window._lastPostType=currentType;
   narrationText="";
-  window._narrationLog=[];
 
-  tableCard.classList.remove('pop');
-  handRow.innerHTML='';boardRow.innerHTML='';
+  // reset all visual state
+  hdr.classList.remove('in');
+  eyebrow.classList.remove('in');
+  tableCard.classList.remove('in');
+  handLabel.classList.remove('in');
+  boardLabel.classList.remove('in');
+  handRow.className=''; handRow.innerHTML='';
+  boardRow.className=''; boardRow.innerHTML='';
+  infoGrid.classList.remove('in'); infoGrid.innerHTML='';
+  mathRow.classList.remove('in'); mathRow.innerHTML=''; mathRow.style.display='none';
+  questionEl.classList.remove('in'); questionEl.textContent='';
   optsEl.innerHTML='';
-  mathRow.style.display='none';
-  boardLabel.style.display='none';
-  revealBanner.classList.remove('show');
-  tapHint.classList.remove('show');
-  timerWrap.style.opacity='1';
-  staticPanel.style.display='none';
+  ctaBanner.classList.remove('in');
+  staticPanel.classList.remove('in'); staticPanel.style.display='none';
   tblWrap.style.display='flex';
+
+  seq(()=>hdr.classList.add('in'), 100);
 
   if(currentType==='cheatsheet'){
     tblWrap.style.display='none';
@@ -615,44 +517,29 @@ function newRoundInner(){
     staticTitle.textContent=fact.title;
     staticBody.innerHTML=fact.lines.map(([k,v])=>`<div class="sheet-line"><span>${k}</span><b>${v}</b></div>`).join('');
     narrate(`Here's your poker math cheat sheet: ${fact.title}. ${fact.lines.map(l=>l.join(': ')).join('. ')}. Save this, you'll use it every session.`);
-    timerWrap.style.opacity='0';
-    void staticPanel.offsetWidth;
-    staticPanel.style.animation='none';
-    burst(window.innerWidth/2,window.innerHeight*0.4,theme.accent,14);
-    sfxReveal();
-    setTimeout(()=>{ phase="done"; tapHint.classList.add('show'); },1800);
+
+    seq(()=>{ eyebrow.classList.add('in'); },250);
+    seq(()=>{ staticPanel.classList.add('in'); sfxWhoosh(); },450);
+    const lines=Array.from(staticBody.children);
+    lines.forEach((ln,i)=>{
+      seq(()=>{ ln.classList.add('in'); sfxCardFlip(); },900+i*350);
+    });
+    seq(()=>{ staticFoot.classList.add('in'); burst(window.innerWidth/2,window.innerHeight*0.35,theme.accent,14); sfxCta(); },900+lines.length*350+300);
+    seq(()=>{ phase="locked"; },900+lines.length*350+600);
     return;
   }
 
   spot=genSpot();
   const s=spot;
 
-  if(currentType==='math15'){
-    modeBadge.textContent='Poker Math';
-    eyebrow.textContent='15-Second Lesson';
-  } else if(currentType==='equity'){
-    modeBadge.textContent='Guess Equity';
-    eyebrow.textContent="What's Your Equity?";
-  } else if(currentType==='evgame'){
-    modeBadge.textContent='EV Check';
-    eyebrow.textContent='+EV or -EV?';
-  } else if(currentType==='beginner'){
-    modeBadge.textContent='Beginner Mistake';
-    eyebrow.textContent='Most People Get This Wrong';
-  } else if(currentType==='spotmath'){
-    modeBadge.textContent='Spot + Math';
-    eyebrow.textContent='Think In Numbers';
-  } else {
-    modeBadge.textContent='Poker Spot';
-    eyebrow.textContent="What's Your Move?";
-  }
+  if(currentType==='math15'){ modeBadge.textContent='Poker Math'; eyebrow.textContent='15-Second Lesson'; }
+  else if(currentType==='equity'){ modeBadge.textContent='Guess Equity'; eyebrow.textContent="What's Your Equity?"; }
+  else if(currentType==='evgame'){ modeBadge.textContent='EV Check'; eyebrow.textContent='+EV or -EV?'; }
+  else if(currentType==='beginner'){ modeBadge.textContent='Beginner Mistake'; eyebrow.textContent='Most People Get This Wrong'; }
+  else if(currentType==='spotmath'){ modeBadge.textContent='Spot + Math'; eyebrow.textContent='Think In Numbers'; }
+  else { modeBadge.textContent='Poker Spot'; eyebrow.textContent="What's Your Move?"; }
 
   handLabel.textContent='Your Hand';
-  handRow.innerHTML=s.hand.map(c=>cardHTML(c)).join('');
-  buildInfoGrid(s);
-
-  boardLabel.style.display='block';
-  boardRow.innerHTML=s.board.map(c=>cardHTML(c)).join('');
 
   let narrationParts=[];
   narrationParts.push(`You're in the ${s.position}.`);
@@ -660,208 +547,158 @@ function newRoundInner(){
   narrationParts.push(`The board shows ${s.board.map(c=>c.r+' of '+suitName(c.su.s)).join(', ')}.`);
   narrationParts.push(`${s.action.label}. Pot is ${s.potSize} dollars, your stack is ${s.stackSize} dollars.`);
 
-  if(currentType==='spotmath' || currentType==='evgame'){
-    mathRow.style.display='flex';
-    mathRow.innerHTML='';
-    const lines=[];
-    lines.push(['Outs', s.outs]);
-    if(s.board.length<5) lines.push(['Equity (Rule of '+(s.board.length===3?4:2)+')', s.outsPct.toFixed(0)+'%']);
-    if(s.betSize>0){
-      lines.push(['Pot Odds', s.potOddsPct.toFixed(0)+'% to call']);
-      lines.push(['Break-Even', s.breakEvenPct.toFixed(0)+'%']);
-    }
-    if(s.ev!==null) lines.push(['Expected Value', (s.ev>=0?'+':'')+'$'+s.ev.toFixed(2)]);
-    lines.forEach(([k,v])=>{
-      const d=document.createElement('div');
-      d.className='math-line';
-      d.innerHTML=`<span>${k}</span><b>${v}</b>`;
-      mathRow.appendChild(d);
-    });
-    narrationParts.push(`You have ${s.outs} outs.`);
-    if(s.ev!==null) narrationParts.push(`Expected value works out to ${s.ev>=0?'positive':'negative'} ${Math.abs(s.ev).toFixed(2)} dollars.`);
-  }
-
   let question="What's your move?";
   let optionLabels=['Fold','Call','Raise','All-In'];
-  let correctLetter=spot.correct;
 
   if(currentType==='equity'){
     question="What's your equity right now?";
     const real=Math.round(s.board.length<5?s.outsPct:(s.rankNow.score>=1?60:25));
     const pool=[real,Math.max(0,real-15),Math.min(100,real+15),Math.max(0,real-28)];
-    const shuffled=shuffle(pool.map((v,i)=>({v,correct:v===real})));
-    optionLabels=shuffled.map(o=>o.v+'%');
-    correctLetter=['A','B','C','D'][shuffled.findIndex(o=>o.correct)];
-    narrationParts.push(`What's your equity? The answer is about ${real} percent.`);
+    optionLabels=shuffle(pool).map(v=>v+'%');
+    narrationParts.push(`What's your equity here? Comment your guess.`);
   } else if(currentType==='evgame'){
     question="Is this call +EV or -EV?";
     optionLabels=['+EV, easy call','+EV, close spot','-EV, close spot','-EV, easy fold'];
-    const isPos=s.ev!==null && s.ev>=0;
-    const margin=s.ev!==null?Math.abs(s.ev):0;
-    if(isPos) correctLetter = margin>15?'A':'B';
-    else correctLetter = margin>15?'D':'C';
   } else if(currentType==='beginner'){
     question="Most beginners get this wrong. What's the move?";
   } else if(currentType==='math15'){
     question="Call or fold based on the math?";
     optionLabels=['Fold','Call'];
-    correctLetter = (spot.correct==='A')?'A':'B';
   }
 
-  questionEl.textContent=question;
-  buildOpts(optionLabels,correctLetter);
   narrate(narrationParts.join(' '));
 
-  tableCard.classList.remove('pop');
-  void tableCard.offsetWidth;
-  tableCard.classList.add('pop');
-  sfxCardFlip();
-  const rc=tableCard.getBoundingClientRect();
-  burst(rc.left+rc.width/2,rc.top+20,theme.accent,8);
-  setTimeout(()=>sfxChip(),250);
+  // ---- TIMELINE (staggered reveal, social-media pacing) ----
+  let t=250;
 
-  countLeft=6;
-  timerFill.style.width='100%';
-  timerFill.style.background='linear-gradient(90deg,#43e97b,#38f9d7)';
-  timerNum.textContent=countLeft;
-  setTimeout(()=>startCountdown(),500);
-}
+  seq(()=>{ eyebrow.classList.add('in'); },t); t+=200;
+  seq(()=>{ tableCard.classList.add('in'); sfxWhoosh(); },t); t+=350;
 
-function suitName(s){return s==='♠'?'Spades':s==='♥'?'Hearts':s==='♦'?'Diamonds':'Clubs';}
+  // hand label + cards, one at a time
+  seq(()=>{ handLabel.classList.add('in'); handRow.classList.add('active'); },t); t+=200;
+  s.hand.forEach((card,i)=>{
+    seq(()=>{
+      const el=document.createElement('div');
+      el.innerHTML=cardHTML(card);
+      const cardEl=el.firstElementChild;
+      handRow.appendChild(cardEl);
+      requestAnimationFrame(()=>cardEl.classList.add('in'));
+      sfxCardFlip();
+      const rc=handRow.getBoundingClientRect();
+      burst(rc.left+rc.width/2,rc.top+rc.height/2,theme.accent,6);
+    },t);
+    t+=380;
+  });
+  t+=200;
 
-function startCountdown(){
-  phase="counting";
-  countTimerId=setInterval(()=>{
-    countLeft--;
-    const pct=Math.max(0,(countLeft/6)*100);
-    timerFill.style.width=pct+'%';
-    if(countLeft<=2)timerFill.style.background='linear-gradient(90deg,#ff9a3c,#ff5e7e)';
-    timerNum.textContent=Math.max(0,countLeft);
-    if(countLeft>0)sfxTick();
-    if(countLeft<=0){
-      clearInterval(countTimerId);
-      autoSelectCorrect();
-    }
-  },1000);
-}
+  // board label + cards, one at a time
+  seq(()=>{ boardLabel.classList.add('in'); boardRow.classList.add('active'); },t); t+=200;
+  s.board.forEach((card,i)=>{
+    seq(()=>{
+      const el=document.createElement('div');
+      el.innerHTML=cardHTML(card);
+      const cardEl=el.firstElementChild;
+      boardRow.appendChild(cardEl);
+      requestAnimationFrame(()=>cardEl.classList.add('in'));
+      sfxCardFlip();
+    },t);
+    t+=320;
+  });
+  t+=250;
 
-function autoSelectCorrect(){
-  if(phase!=="counting")return;
-  const btn=optsEl.querySelector(`[data-letter]`);
-  const correctBtn=Array.from(optsEl.children).find(b=>b.dataset.letter===currentCorrectLetter());
-  if(correctBtn)selectOption(correctBtn.dataset.letter,correctBtn.dataset.letter,correctBtn);
-}
-function currentCorrectLetter(){
-  return Array.from(optsEl.children).find(b=>b.classList.contains('__correct_marker'))?.dataset.letter || optsEl.dataset.correct;
-}
+  // info grid (position/street/pot/stack) fades in together, cells staggered
+  seq(()=>{
+    infoGrid.innerHTML='';
+    const cells=[['Position',s.position],['Street',s.street],['Pot',fmtMoney(s.potSize)],['Stack',fmtMoney(s.stackSize)]];
+    cells.forEach(([k,v])=>{
+      const d=document.createElement('div');
+      d.className='info-cell';
+      d.innerHTML=`<div class="info-k">${k}</div><div class="info-v">${v}</div>`;
+      infoGrid.appendChild(d);
+    });
+    infoGrid.classList.add('in');
+    sfxChip();
+    Array.from(infoGrid.children).forEach((cell,i)=>seq(()=>cell.classList.add('in'), i*90));
+  },t);
+  t+=650;
 
-function selectOption(letter,correctLetter,btnEl){
-  if(phase!=="counting")return;
-  clearInterval(countTimerId);
-  phase="selected";
-  sfxTap();
-  btnEl.classList.add('press');
-  setTimeout(()=>btnEl.classList.remove('press'),140);
-  Array.from(optsEl.children).forEach(b=>{ if(b.dataset.letter!==letter) b.classList.add('dim'); });
-  setTimeout(()=>showCta(letter,correctLetter),380);
-}
-
-function showCta(letter,correctLetter){
-  phase="cta";
-  const c=CTAS[Math.floor(Math.random()*CTAS.length)];
-  ctaIcon.textContent=c.icon;
-  ctaText.textContent=c.text;
-  ctaSub.textContent=c.sub;
-  ctaOverlay.classList.add('show');
-  sfxCta();
-  setTimeout(()=>{
-    ctaOverlay.classList.remove('show');
-    setTimeout(()=>revealAnswer(letter,correctLetter),250);
-  },1600);
-}
-
-function revealAnswer(letter,correctLetter){
-  phase="reveal";
-  Array.from(optsEl.children).forEach(b=>b.classList.remove('dim'));
-  const correctBtn=optsEl.querySelector(`[data-letter="${correctLetter}"]`);
-  const pickedBtn=optsEl.querySelector(`[data-letter="${letter}"]`);
-  const isRight=letter===correctLetter;
-  if(correctBtn){correctBtn.classList.add('correct');correctBtn.querySelector('.check').textContent='✓';}
-  if(!isRight&&pickedBtn){pickedBtn.classList.add('wrong');pickedBtn.querySelector('.check').textContent='✗';}
-
-  const rc=(correctBtn||tableCard).getBoundingClientRect();
-  if(isRight){
-    sfxCorrect();
-    burst(rc.left+rc.width/2,rc.top+rc.height/2,'#43e97b',24);
-    revealBanner.textContent="✓ Correct!";
-    revealBanner.style.background='linear-gradient(135deg,#43e97b,#2fd66a)';
-    showFloatPts('+10');
-  } else {
-    sfxWrong();
-    burst(rc.left+rc.width/2,rc.top+rc.height/2,'#ff6b6b',16);
-    revealBanner.textContent="✗ Nice try!";
-    revealBanner.style.background='linear-gradient(135deg,#ff6b6b,#e84545)';
+  // math row, if applicable
+  if(currentType==='spotmath' || currentType==='evgame'){
+    seq(()=>{
+      mathRow.style.display='flex';
+      mathRow.innerHTML='';
+      const lines=[];
+      lines.push(['Outs', s.outs]);
+      if(s.board.length<5) lines.push(['Equity (Rule of '+(s.board.length===3?4:2)+')', s.outsPct.toFixed(0)+'%']);
+      if(s.betSize>0){
+        lines.push(['Pot Odds', s.potOddsPct.toFixed(0)+'% to call']);
+        lines.push(['Break-Even', s.breakEvenPct.toFixed(0)+'%']);
+      }
+      if(s.ev!==null) lines.push(['Expected Value', (s.ev>=0?'+':'')+'$'+s.ev.toFixed(2)]);
+      lines.forEach(([k,v])=>{
+        const d=document.createElement('div');
+        d.className='math-line';
+        d.innerHTML=`<span>${k}</span><b>${v}</b>`;
+        mathRow.appendChild(d);
+      });
+      mathRow.classList.add('in');
+      Array.from(mathRow.children).forEach((ln,i)=>seq(()=>{ ln.classList.add('in'); sfxChip(); }, 150+i*220));
+    },t);
+    t+= 300 + (currentType==='spotmath'?5:5)*220 + 400;
   }
-  sfxReveal();
-  revealBanner.classList.add('show');
-  if(spot && spot.explanation) narrate((narrationText?narrationText+' ':'')+spot.explanation);
-  setTimeout(()=>{
-    phase="done";
-    tapHint.classList.add('show');
-  },700);
+
+  // question text, typed-in style (fade+scale, holds as final on-screen text)
+  seq(()=>{
+    questionEl.textContent=question;
+    questionEl.classList.add('in');
+    sfxWhoosh();
+  },t);
+  t+=550;
+
+  // options pop in one by one
+  seq(()=>{
+    optsEl.innerHTML='';
+    const letters=['A','B','C','D'];
+    optionLabels.forEach((opt,i)=>{
+      const btn=document.createElement('div');
+      btn.className='opt-btn';
+      btn.innerHTML=`<span class="opt-letter">${letters[i]}</span><span class="opt-label">${opt}</span>`;
+      optsEl.appendChild(btn);
+      seq(()=>btn.classList.add('in'), i*140);
+    });
+  },t);
+  t += optionLabels.length*140 + 300;
+
+  // final CTA banner — this is the hook that stays on screen for the rest of the clip
+  seq(()=>{
+    const hook=CTA_HOOKS[Math.floor(Math.random()*CTA_HOOKS.length)];
+    ctaIconInline.textContent=hook.icon;
+    ctaTextInline.textContent=hook.text;
+    ctaSubInline.textContent=hook.sub;
+    ctaBanner.classList.add('in');
+    sfxCta();
+    burst(window.innerWidth/2,window.innerHeight*0.7,theme.accent,12);
+  },t);
+  t+=500;
+
+  // LOCKED: nothing more happens. No timer, no reveal, no auto-advance.
+  seq(()=>{ phase="locked"; },t);
 }
 
-function showFloatPts(txt){
-  floatPts.textContent=txt;
-  floatPts.classList.remove('pop');
-  void floatPts.offsetWidth;
-  floatPts.classList.add('pop');
-}
-
-function advance(){
-  if(phase!=="done")return;
-  newRound();
-}
-document.addEventListener('click',()=>{ if(phase==="done") advance(); });
-
-/* patch buildOpts to store correct letter for autoSelect lookup */
-const _origBuildOpts=buildOpts;
-buildOpts=function(labels,correctLetter,onDone){
-  _origBuildOpts(labels,correctLetter,onDone);
-  optsEl.dataset.correct=correctLetter;
-  const cb=optsEl.querySelector(`[data-letter="${correctLetter}"]`);
-  if(cb)cb.classList.add('__correct_marker');
-};
-
-/* ============ AUTOSTART / BOT / EXTERNAL CONTROL ============ */
+/* ============ EXTERNAL CONTROL API ============ */
 window._autoStartGame=function(forceType){
   console.log('_autoStartGame called', forceType||'');
   try{ if(AC && AC.state==='suspended') AC.resume(); }catch(e){ console.error('AC.resume failed',e); }
   startBgMusic();
-  if(forceType && POST_TYPES.includes(forceType)){
-    window._forcedType=forceType;
-  }
-  newRound();
-  console.log('_autoStartGame done, phase=',phase,'type=',currentType);
+  startSequence(forceType);
+  console.log('_autoStartGame done, type=',currentType);
 };
 
-// allow forcing a specific post type from outside (Selenium sets window._forcedType before calling autostart)
-const _origNewRoundInner=newRoundInner;
-
-let botActive=false;
-window._startBot=function(){ botActive=true; };
-window._stopBot=function(){ botActive=false; };
-window._botTick=function(dt){
-  if(!botActive)return;
-  if(phase==="counting" && countLeft<=3 && Math.random()<0.35){
-    autoSelectCorrect();
-  }
-  if(phase==="done"){
-    if(!window._botAdvTimer){
-      window._botAdvTimer=setTimeout(()=>{ window._botAdvTimer=null; if(phase==="done")advance(); },700+Math.random()*500);
-    }
-  }
-};
+// Bot is now a no-op placeholder kept for backward-compat with the workflow script;
+// it intentionally does NOT advance rounds. The sequence plays exactly once and locks.
+window._startBot=function(){ /* no-op: single scenario per recording, no auto-advance */ };
+window._stopBot=function(){ /* no-op */ };
+window._botTick=function(dt){ /* no-op: intentionally does nothing */ };
 
 window._getNarration=function(){ return narrationText || ''; };
 window._getPostType=function(){ return currentType; };
@@ -869,8 +706,8 @@ window._getCaption=function(){
   const pool=CAPTIONS[currentType]||CAPTIONS.spot;
   return pool[Math.floor(Math.random()*pool.length)];
 };
+window._isLocked=function(){ return phase==='locked'; };
 window._getLayoutInfo=function(){
-  const hdr=document.getElementById('hdr');
   return {
     bodyW:document.body.offsetWidth||window.innerWidth,
     bodyH:document.body.offsetHeight||window.innerHeight,
@@ -880,27 +717,12 @@ window._getLayoutInfo=function(){
   };
 };
 
-/* ============ MAIN LOOP ============ */
+/* ============ MAIN LOOP (particles only) ============ */
 function loop(){
-  try{
-    tickP();
-    if(typeof window._botTick==='function')window._botTick(16);
-  }catch(e){ console.error('loop error',e); }
+  try{ tickP(); }catch(e){ console.error('loop error',e); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-
-/* honor forced type on first round */
-const _reallyNewRoundInner=newRoundInner;
-newRoundInner=function(){
-  if(window._forcedType){
-    currentType=window._forcedType;
-    window._forcedType=null;
-    // run inner logic but skip the random pick line by temporarily overriding Math.random pick
-    // simplest: just call original then override currentType back if it got randomized
-  }
-  _reallyNewRoundInner();
-};
 
 /* ============ RECORDING API ============ */
 window._recordingDone=false;
@@ -918,8 +740,6 @@ window.startRecording=function(fps=30){
     }catch(e){ console.error('audio record dest failed',e); }
   }
 
-  // Capture the actual rendered DOM using a display media style trick is not available headlessly,
-  // so we composite: real app is drawn to canvas each frame via a lightweight re-draw pass.
   const merged=document.createElement('canvas');
   merged.width=RW;merged.height=RH;
   const mctx=merged.getContext('2d');
@@ -934,6 +754,27 @@ window.startRecording=function(fps=30){
     c.closePath();
   }
 
+  function drawCardImg(c,x,y,w,h,cardData){
+    c.save();
+    roundRect(c,x,y,w,h,8);
+    c.fillStyle='#fff';
+    c.shadowColor='rgba(0,0,0,.35)';c.shadowBlur=6;c.shadowOffsetY=4;
+    c.fill();
+    c.shadowBlur=0;c.shadowOffsetY=0;
+    c.fillStyle=cardData.su.c==='red'?'#d7263d':'#1a1a2e';
+    c.textAlign='center';c.textBaseline='middle';
+    c.font="800 20px 'Baloo 2',Arial";
+    c.fillText(cardData.r, x+w/2, y+h*0.38);
+    c.font="24px Arial";
+    c.fillText(cardData.su.s, x+w/2, y+h*0.72);
+    c.restore();
+  }
+
+  function opacityOf(el){
+    const cs=window.getComputedStyle(el);
+    return parseFloat(cs.opacity)||0;
+  }
+
   function drawMerged(){
     mctx.clearRect(0,0,RW,RH);
     const bgGrad=mctx.createLinearGradient(0,0,RW*0.3,RH);
@@ -946,61 +787,49 @@ window.startRecording=function(fps=30){
     window._mergeRAF=requestAnimationFrame(drawMerged);
   }
 
-  function drawCardImg(c,x,y,w,h,cardData,hidden){
-    c.save();
-    roundRect(c,x,y,w,h,8);
-    c.fillStyle=hidden?'#0d1f33':'#fff';
-    c.shadowColor='rgba(0,0,0,.35)';c.shadowBlur=6;c.shadowOffsetY=4;
-    c.fill();
-    c.shadowBlur=0;c.shadowOffsetY=0;
-    if(!hidden && cardData){
-      c.fillStyle=cardData.su.c==='red'?'#d7263d':'#1a1a2e';
-      c.textAlign='center';c.textBaseline='middle';
-      c.font="800 20px 'Baloo 2',Arial";
-      c.fillText(cardData.r, x+w/2, y+h*0.38);
-      c.font="24px Arial";
-      c.fillText(cardData.su.s, x+w/2, y+h*0.72);
-    }
-    c.restore();
-  }
-
-  function wrapText(c,text,x,y,maxW,lineH){
-    const words=text.split(' ');
-    let line='',lines=[];
-    for(const w of words){
-      const test=line+w+' ';
-      if(c.measureText(test).width>maxW && line){lines.push(line);line=w+' ';}
-      else line=test;
-    }
-    lines.push(line);
-    lines.forEach((l,i)=>c.fillText(l.trim(),x,y+i*lineH));
-    return lines.length;
-  }
-
   function _drawUI(c,RW,RH){
     // header
-    c.save();
-    c.font="800 19px 'Baloo 2',Arial";
-    c.fillStyle=theme.txt;
-    c.textAlign='left';c.textBaseline='middle';
-    c.fillText("♠ What's Your Move?", 16, 34);
-    const badgeTxt=modeBadge.textContent;
-    c.font="700 11px Arial";
-    const bw=c.measureText(badgeTxt).width+22;
-    roundRect(c,RW-bw-14,20,bw,24,12);
-    c.fillStyle=theme.accent;c.fill();
-    c.fillStyle=theme.badgeTxt;c.textAlign='center';
-    c.fillText(badgeTxt,RW-bw/2-14,32);
-    c.restore();
+    const hdrOp=opacityOf(hdr);
+    if(hdrOp>0.01){
+      c.save();
+      c.globalAlpha=hdrOp;
+      c.font="800 19px 'Baloo 2',Arial";
+      c.fillStyle=theme.txt;
+      c.textAlign='left';c.textBaseline='middle';
+      c.fillText("♠ What's Your Move?", 16, 34);
+      const badgeTxt=modeBadge.textContent;
+      c.font="700 11px Arial";
+      const bw=c.measureText(badgeTxt).width+22;
+      roundRect(c,RW-bw-14,20,bw,24,12);
+      c.fillStyle=theme.accent;c.fill();
+      c.fillStyle=theme.badgeTxt;c.textAlign='center';
+      c.fillText(badgeTxt,RW-bw/2-14,32);
+      c.restore();
+    }
+
+    const eyebrowOp=opacityOf(eyebrow);
+    if(eyebrowOp>0.01){
+      c.save();
+      c.globalAlpha=eyebrowOp;
+      c.font="700 12px Fredoka, Arial";
+      c.fillStyle='rgba(255,255,255,.85)';
+      c.textAlign='center';
+      c.fillText(eyebrow.textContent.toUpperCase(), RW/2, RH*0.135);
+      c.restore();
+    }
 
     if(staticPanel.style.display==='block'){
-      const px=RW*0.08,pw=RW*0.84,py=RH*0.22,ph=RH*0.5;
+      const panelOp=opacityOf(staticPanel);
+      if(panelOp<0.01) return;
+      const px=RW*0.08,pw=RW*0.84,py=RH*0.2,ph=RH*0.52;
       c.save();
+      c.globalAlpha=panelOp;
       roundRect(c,px,py,pw,ph,24);
       c.fillStyle=theme.panel;c.fill();
       c.strokeStyle=theme.panelBorder;c.lineWidth=3;c.stroke();
       c.restore();
       c.save();
+      c.globalAlpha=panelOp;
       c.textAlign='center';
       c.fillStyle=theme.accent;
       c.font="800 22px 'Baloo 2',Arial";
@@ -1008,6 +837,10 @@ window.startRecording=function(fps=30){
       const lines=Array.from(staticBody.children);
       c.font="600 15px Fredoka, Arial";
       lines.forEach((ln,i)=>{
+        const lnOp=opacityOf(ln);
+        if(lnOp<0.01)return;
+        c.save();
+        c.globalAlpha=panelOp*lnOp;
         const k=ln.querySelector('span').textContent;
         const v=ln.querySelector('b').textContent;
         const ly=py+70+i*32;
@@ -1016,18 +849,28 @@ window.startRecording=function(fps=30){
         c.textAlign='right';c.fillStyle='#fff';c.font="800 15px 'Baloo 2',Arial";
         c.fillText(v, px+pw-18, ly);
         c.font="600 15px Fredoka, Arial";
+        c.restore();
       });
-      c.font="600 13px Fredoka, Arial";
-      c.fillStyle='rgba(255,255,255,.65)';
-      c.textAlign='center';
-      c.fillText("Save this. You'll use it every session.", RW/2, py+ph-16);
+      const footOp=opacityOf(staticFoot);
+      if(footOp>0.01){
+        c.save();
+        c.globalAlpha=panelOp*footOp;
+        c.font="600 13px Fredoka, Arial";
+        c.fillStyle='rgba(255,255,255,.65)';
+        c.textAlign='center';
+        c.fillText(staticFoot.textContent, RW/2, py+ph-16);
+        c.restore();
+      }
       c.restore();
       return;
     }
 
-    // table card
-    const cardX=RW*0.06,cardW=RW*0.88,cardY=RH*0.16,cardH=RH*0.5;
+    const cardOp=opacityOf(tableCard);
+    if(cardOp<0.01) return;
+
+    const cardX=RW*0.06,cardW=RW*0.88,cardY=RH*0.17,cardH=RH*0.48;
     c.save();
+    c.globalAlpha=cardOp;
     c.shadowColor='rgba(0,0,0,.35)';c.shadowBlur=20;c.shadowOffsetY=8;
     roundRect(c,cardX,cardY,cardW,cardH,22);
     c.fillStyle=theme.panel;c.fill();
@@ -1036,179 +879,170 @@ window.startRecording=function(fps=30){
     c.restore();
 
     let cy=cardY+22;
-    c.save();
-    c.textAlign='center';
-    c.font="700 11px Fredoka, Arial";
-    c.fillStyle=theme.label;
-    c.fillText('YOUR HAND', RW/2, cy);
-    cy+=16;
-    const cw=44,ch=62,gap=10;
-    const hand=spot?spot.hand:[];
-    const totalHandW=hand.length*cw+(hand.length-1)*gap;
-    let hx=RW/2-totalHandW/2;
-    hand.forEach(card=>{ drawCardImg(c,hx,cy,cw,ch,card,false); hx+=cw+gap; });
-    cy+=ch+14;
 
-    if(spot && spot.board && spot.board.length){
+    const handLabelOp=opacityOf(handLabel);
+    if(handLabelOp>0.01){
+      c.save();c.globalAlpha=cardOp*handLabelOp;
+      c.textAlign='center';
       c.font="700 11px Fredoka, Arial";
       c.fillStyle=theme.label;
-      c.fillText('THE BOARD', RW/2, cy);
+      c.fillText('YOUR HAND', RW/2, cy);
+      c.restore();
+    }
+    if(handRow.children.length){
       cy+=16;
-      const board=spot.board;
-      const totalBoardW=board.length*cw+(board.length-1)*gap;
-      let bx=RW/2-totalBoardW/2;
-      board.forEach(card=>{ drawCardImg(c,bx,cy,cw,ch,card,false); bx+=cw+gap; });
+      const cw=44,ch=62,gap=10;
+      const handCards=Array.from(handRow.children);
+      const totalHandW=handCards.length*cw+(handCards.length-1)*gap;
+      let hx=RW/2-totalHandW/2;
+      handCards.forEach(cardEl=>{
+        const op=opacityOf(cardEl);
+        if(op>0.01){
+          c.save();c.globalAlpha=cardOp*op;
+          const idx=Array.from(handRow.children).indexOf(cardEl);
+          drawCardImg(c,hx,cy,cw,ch,spot.hand[idx]);
+          c.restore();
+        }
+        hx+=cw+gap;
+      });
       cy+=ch+14;
     }
 
-    // info grid
-    if(spot){
-      const info=[['Position',spot.position],['Street',spot.street],['Pot','$'+spot.potSize],['Stack','$'+spot.stackSize]];
+    const boardLabelOp=opacityOf(boardLabel);
+    if(boardLabelOp>0.01){
+      c.save();c.globalAlpha=cardOp*boardLabelOp;
+      c.textAlign='center';
+      c.font="700 11px Fredoka, Arial";
+      c.fillStyle=theme.label;
+      c.fillText('THE BOARD', RW/2, cy);
+      c.restore();
+    }
+    if(boardRow.children.length){
+      cy+=16;
+      const cw=44,ch=62,gap=10;
+      const boardCards=Array.from(boardRow.children);
+      const totalBoardW=boardCards.length*cw+(boardCards.length-1)*gap;
+      let bx=RW/2-totalBoardW/2;
+      boardCards.forEach(cardEl=>{
+        const op=opacityOf(cardEl);
+        if(op>0.01){
+          c.save();c.globalAlpha=cardOp*op;
+          const idx=Array.from(boardRow.children).indexOf(cardEl);
+          drawCardImg(c,bx,cy,cw,ch,spot.board[idx]);
+          c.restore();
+        }
+        bx+=cw+gap;
+      });
+      cy+=ch+14;
+    }
+
+    const infoOp=opacityOf(infoGrid);
+    if(infoOp>0.01 && infoGrid.children.length){
       const gw=(cardW-24)/2, gh=34;
-      info.forEach((pair,i)=>{
+      Array.from(infoGrid.children).forEach((cell,i)=>{
+        const cellOp=opacityOf(cell);
+        if(cellOp<0.01)return;
         const gx=cardX+12+(i%2)*(gw+8);
         const gy=cy+Math.floor(i/2)*(gh+6);
+        c.save();c.globalAlpha=cardOp*infoOp*cellOp;
         roundRect(c,gx,gy,gw,gh,10);
         c.fillStyle='rgba(0,0,0,.22)';c.fill();
         c.textAlign='center';
         c.font="600 9px Fredoka, Arial";
         c.fillStyle='rgba(255,255,255,.6)';
-        c.fillText(pair[0].toUpperCase(), gx+gw/2, gy+13);
+        c.fillText(cell.querySelector('.info-k').textContent.toUpperCase(), gx+gw/2, gy+13);
         c.font="800 13px 'Baloo 2',Arial";
         c.fillStyle='#fff';
-        c.fillText(String(pair[1]), gx+gw/2, gy+27);
+        c.fillText(cell.querySelector('.info-v').textContent, gx+gw/2, gy+27);
+        c.restore();
       });
       cy+=2*(gh+6)+8;
     }
 
-    // math row
-    if(mathRow.style.display==='flex' && mathRow.children.length){
-      c.save();
+    const mathOp=opacityOf(mathRow);
+    if(mathRow.style.display==='flex' && mathOp>0.01 && mathRow.children.length){
       const mh=mathRow.children.length*20+12;
+      c.save();c.globalAlpha=cardOp*mathOp;
       roundRect(c,cardX+12,cy,cardW-24,mh,10);
       c.fillStyle='rgba(0,0,0,.18)';c.fill();
+      c.restore();
       let my=cy+18;
       Array.from(mathRow.children).forEach(ln=>{
-        const k=ln.querySelector('span').textContent;
-        const v=ln.querySelector('b').textContent;
-        c.textAlign='left';c.font="600 12px Fredoka, Arial";c.fillStyle='#fff';
-        c.fillText(k, cardX+22, my);
-        c.textAlign='right';c.font="800 12px 'Baloo 2',Arial";c.fillStyle=theme.accent;
-        c.fillText(v, cardX+cardW-22, my);
+        const lnOp=opacityOf(ln);
+        if(lnOp>0.01){
+          c.save();c.globalAlpha=cardOp*mathOp*lnOp;
+          const k=ln.querySelector('span').textContent;
+          const v=ln.querySelector('b').textContent;
+          c.textAlign='left';c.font="600 12px Fredoka, Arial";c.fillStyle='#fff';
+          c.fillText(k, cardX+22, my);
+          c.textAlign='right';c.font="800 12px 'Baloo 2',Arial";c.fillStyle=theme.accent;
+          c.fillText(v, cardX+cardW-22, my);
+          c.restore();
+        }
         my+=20;
       });
-      c.restore();
       cy+=mh+10;
     }
 
-    // question
-    c.textAlign='center';
-    c.font="800 17px 'Baloo 2',Arial";
-    c.fillStyle='#fff';
-    c.fillText(questionEl.textContent, RW/2, cardY+cardH-14);
-    c.restore();
+    const qOp=opacityOf(questionEl);
+    if(qOp>0.01 && questionEl.textContent){
+      c.save();c.globalAlpha=cardOp*qOp;
+      c.textAlign='center';
+      c.font="800 17px 'Baloo 2',Arial";
+      c.fillStyle='#fff';
+      c.fillText(questionEl.textContent, RW/2, cardY+cardH-14);
+      c.restore();
+    }
 
     // options
     const btns=Array.from(optsEl.children);
     const optY0=cardY+cardH+16;
     const optH=48, ogap=10;
     btns.forEach((b,i)=>{
+      const bOp=opacityOf(b);
+      if(bOp<0.01)return;
       const oy=optY0+i*(optH+ogap);
       const label=b.querySelector('.opt-label')?.textContent||'';
-      const isCorrect=b.classList.contains('correct');
-      const isWrong=b.classList.contains('wrong');
-      const isDim=b.classList.contains('dim');
-      c.save();
+      const letter=b.querySelector('.opt-letter')?.textContent||'';
+      c.save();c.globalAlpha=bOp;
       roundRect(c,cardX,oy,cardW,optH,16);
-      if(isCorrect){c.fillStyle='#2fd66a';}
-      else if(isWrong){c.fillStyle='#e84545';}
-      else{c.fillStyle='#fff';}
-      c.globalAlpha=isDim?.4:1;
+      c.fillStyle='#fff';
       c.fill();
-      c.globalAlpha=1;
       c.beginPath();
       c.arc(cardX+26,oy+optH/2,13,0,Math.PI*2);
-      c.fillStyle=isCorrect?'#00612e':(isWrong?'#6b0000':theme.accent2);
+      c.fillStyle=theme.accent2;
       c.fill();
       c.fillStyle='#fff';
       c.font="800 12px Arial";
       c.textAlign='center';c.textBaseline='middle';
-      c.fillText(b.dataset.letter||'', cardX+26, oy+optH/2+1);
-      c.fillStyle=isCorrect?'#003818':(isWrong?'#4a0000':'#0b3d24');
+      c.fillText(letter, cardX+26, oy+optH/2+1);
+      c.fillStyle='#0b3d24';
       c.font="700 14px 'Baloo 2',Arial";
       c.textAlign='left';
       c.fillText(label, cardX+48, oy+optH/2+1, cardW-76);
       c.restore();
     });
 
-    // timer
-    if(timerWrap.style.opacity!=='0'){
-      const twY=optY0+btns.length*(optH+ogap)+8;
-      const twX=cardX,twW=cardW*0.86;
-      c.save();
-      roundRect(c,twX,twY,twW,12,6);
-      c.fillStyle='rgba(255,255,255,.22)';c.fill();
-      const pct=parseFloat(timerFill.style.width)/100||1;
-      roundRect(c,twX,twY,twW*pct,12,6);
-      c.fillStyle=pct<=0.34?'#ff5e7e':'#43e97b';
-      c.fill();
-      c.fillStyle='#fff';
-      c.font="800 14px 'Baloo 2',Arial";
-      c.textAlign='left';c.textBaseline='middle';
-      c.fillText(timerNum.textContent, twX+twW+10, twY+6);
-      c.restore();
-    }
-
-    // reveal banner
-    if(revealBanner.classList.contains('show')){
-      c.save();
-      const txt=revealBanner.textContent;
-      c.font="800 20px 'Baloo 2',Arial";
-      const tw=c.measureText(txt).width+46;
-      const bx=RW/2-tw/2, by=RH*0.1;
-      roundRect(c,bx,by,tw,46,20);
-      c.fillStyle=revealBanner.style.background.includes('43e97b')?'#3ad86a':'#ff6b6b';
-      c.fill();
-      c.fillStyle='#fff';
-      c.textAlign='center';c.textBaseline='middle';
-      c.fillText(txt, RW/2, by+24);
-      c.restore();
-    }
-
-    // CTA overlay
-    if(ctaOverlay.classList.contains('show')){
-      c.save();
-      c.fillStyle='rgba(0,20,10,.5)';
-      c.fillRect(0,0,RW,RH);
-      const cw2=RW*0.72,ch2=170,ccx=RW/2-cw2/2,ccy=RH/2-ch2/2;
-      roundRect(c,ccx,ccy,cw2,ch2,26);
-      const g=c.createLinearGradient(ccx,ccy,ccx,ccy+ch2);
+    // CTA banner (final hook, stays on screen)
+    const ctaOp=opacityOf(ctaBanner);
+    if(ctaOp>0.01){
+      const lastOptY = optY0 + btns.length*(optH+ogap);
+      const ctaY = lastOptY + 6;
+      const ctaH = 62;
+      c.save();c.globalAlpha=ctaOp;
+      roundRect(c,cardX,ctaY,cardW,ctaH,20);
+      const g=c.createLinearGradient(cardX,ctaY,cardX,ctaY+ctaH);
       g.addColorStop(0,theme.ctaA);g.addColorStop(1,theme.ctaB);
       c.fillStyle=g;c.fill();
       c.strokeStyle=theme.accent;c.lineWidth=3;c.stroke();
-      c.font="38px Arial";c.textAlign='center';c.textBaseline='middle';
+      c.font="26px Arial";c.textAlign='left';c.textBaseline='middle';
       c.fillStyle='#fff';
-      c.fillText(ctaIcon.textContent, RW/2, ccy+50);
-      c.font="800 18px 'Baloo 2',Arial";
-      c.fillText(ctaText.textContent, RW/2, ccy+94);
-      c.font="600 12px Arial";
+      c.fillText(ctaIconInline.textContent, cardX+16, ctaY+ctaH/2);
+      c.font="800 14px 'Baloo 2',Arial";
+      c.fillText(ctaTextInline.textContent, cardX+50, ctaY+ctaH*0.38, cardW-70);
+      c.font="600 11px Fredoka, Arial";
       c.fillStyle='rgba(255,255,255,.85)';
-      c.fillText(ctaSub.textContent, RW/2, ccy+118);
-      c.restore();
-    }
-
-    // tap hint
-    if(tapHint.classList.contains('show')){
-      c.save();
-      const txt='👉 Tap to continue';
-      c.font="700 13px Arial";
-      const tw=c.measureText(txt).width+32;
-      const bx=RW/2-tw/2, by=RH-64;
-      roundRect(c,bx,by,tw,32,16);
-      c.fillStyle='rgba(0,0,0,.35)';c.fill();
-      c.fillStyle='rgba(255,255,255,.85)';
-      c.textAlign='center';c.textBaseline='middle';
-      c.fillText(txt, RW/2, by+16);
+      c.fillText(ctaSubInline.textContent, cardX+50, ctaY+ctaH*0.72, cardW-70);
       c.restore();
     }
   }
