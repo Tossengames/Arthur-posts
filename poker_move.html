@@ -16,31 +16,42 @@ canvas{display:block;}
 #app{position:relative;z-index:5;width:100vw;max-width:480px;height:100dvh;
   display:flex;flex-direction:column;align-items:center;}
 
-/* HEADER */
+/* HEADER (hidden entirely for non-question types like cheat sheet) */
 #hdr{width:100%;display:flex;align-items:center;justify-content:space-between;
-  padding:max(env(safe-area-inset-top),14px) 18px 6px;flex-shrink:0;
+  padding:max(env(safe-area-inset-top),12px) 18px 4px;flex-shrink:0;
   opacity:0;transform:translateY(-10px);transition:opacity .4s,transform .4s;}
 #hdr.in{opacity:1;transform:translateY(0);}
-#brand{font-family:'Baloo 2',cursive;font-weight:800;font-size:1.25rem;color:var(--txt,#fff);
+#hdr.hidden-type{display:none;}
+#brand{font-family:'Baloo 2',cursive;font-weight:800;font-size:1.1rem;color:var(--txt,#fff);
   letter-spacing:.5px;text-shadow:0 3px 0 rgba(0,0,0,.3);display:flex;align-items:center;gap:6px;}
-#mode-badge{font-family:'Fredoka',sans-serif;font-weight:700;font-size:.65rem;letter-spacing:.5px;
-  color:var(--badgeTxt,#3a1a00);background:var(--accent,#ffd166);padding:5px 12px;border-radius:50px;
+#mode-badge{font-family:'Fredoka',sans-serif;font-weight:700;font-size:.62rem;letter-spacing:.5px;
+  color:var(--badgeTxt,#3a1a00);background:var(--accent,#ffd166);padding:4px 11px;border-radius:50px;
   box-shadow:0 3px 0 rgba(0,0,0,.25);text-transform:uppercase;}
+
+/* TOP QUESTION BANNER - the main hook, big & bold, above the board */
+#top-question{width:100%;max-width:440px;padding:0 16px;margin-top:2px;text-align:center;
+  min-height:0;opacity:0;transform:scale(.85) translateY(-8px);
+  transition:opacity .45s cubic-bezier(.34,1.4,.5,1),transform .45s cubic-bezier(.34,1.4,.5,1);}
+#top-question.in{opacity:1;transform:scale(1) translateY(0);}
+#top-question-text{font-family:'Baloo 2',cursive;font-weight:800;
+  font-size:clamp(1.5rem,7.5vw,2.1rem);line-height:1.15;color:#fff;
+  text-shadow:0 3px 0 rgba(0,0,0,.4),0 0 26px rgba(0,0,0,.35);
+  -webkit-text-stroke:1px rgba(0,0,0,.15);}
 
 /* STAGE */
 #stage{flex:1;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:4px 16px;min-height:0;position:relative;}
+  padding:4px 16px;min-height:0;position:relative;gap:8px;}
 
-.tbl-wrap{width:100%;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.tbl-wrap{width:100%;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:8px;}
 
-.eyebrow{font-family:'Fredoka',sans-serif;font-weight:700;font-size:.8rem;letter-spacing:2px;
+.eyebrow{font-family:'Fredoka',sans-serif;font-weight:700;font-size:.78rem;letter-spacing:2px;
   text-transform:uppercase;color:rgba(255,255,255,.75);text-shadow:0 2px 0 rgba(0,0,0,.25);
   opacity:0;transform:translateY(-6px);transition:opacity .4s,transform .4s;}
 .eyebrow.in{opacity:1;transform:translateY(0);}
 
 /* TABLE CARD */
 #table-card{width:100%;background:var(--panel,rgba(10,40,25,.92));border-radius:26px;
-  padding:20px 18px;box-shadow:0 12px 0 rgba(0,0,0,.25),0 20px 40px rgba(0,0,0,.4);
+  padding:18px 18px;box-shadow:0 12px 0 rgba(0,0,0,.25),0 20px 40px rgba(0,0,0,.4);
   border:4px solid var(--panelBorder,rgba(255,215,110,.5));position:relative;
   transform:scale(.85);opacity:0;transition:transform .5s cubic-bezier(.34,1.4,.5,1),opacity .5s;}
 #table-card.in{transform:scale(1);opacity:1;}
@@ -76,42 +87,37 @@ canvas{display:block;}
 #math-row{display:none;flex-direction:column;gap:6px;margin-bottom:0;background:rgba(0,0,0,.18);
   border-radius:14px;padding:0 12px;max-height:0;overflow:hidden;opacity:0;
   transition:max-height .4s,opacity .4s,padding .4s,margin-bottom .4s;}
-#math-row.in{max-height:260px;opacity:1;padding:10px 12px;margin-bottom:12px;}
+#math-row.in{max-height:260px;opacity:1;padding:10px 12px;margin-bottom:0;}
 .math-line{display:flex;justify-content:space-between;font-family:'Fredoka',sans-serif;font-size:.82rem;color:#fff;
   opacity:0;transform:translateX(-6px);transition:opacity .3s,transform .3s;}
 .math-line.in{opacity:1;transform:translateX(0);}
 .math-line b{font-family:'Baloo 2',cursive;color:var(--accent,#ffd166);}
 
-#question{font-family:'Baloo 2',cursive;font-weight:800;font-size:clamp(1.1rem,5.2vw,1.5rem);
-  color:#fff;text-align:center;text-shadow:0 2px 0 rgba(0,0,0,.3);
-  opacity:0;transform:scale(.9);transition:opacity .4s,transform .4s;min-height:1.4em;}
-#question.in{opacity:1;transform:scale(1);}
-
 /* OPTIONS */
-#opts{width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px;margin-top:12px;}
-.opt-btn{font-family:'Baloo 2',cursive;font-weight:700;font-size:clamp(.95rem,4vw,1.1rem);
-  color:#0b3d24;background:#fff;border:none;border-radius:18px;padding:14px 18px;
-  text-align:left;cursor:default;box-shadow:0 6px 0 rgba(0,0,0,.22);
-  display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;
+#opts{width:100%;max-width:420px;display:flex;flex-direction:column;gap:9px;margin-top:2px;}
+.opt-btn{font-family:'Baloo 2',cursive;font-weight:700;font-size:clamp(.92rem,3.8vw,1.05rem);
+  color:#0b3d24;background:#fff;border:none;border-radius:16px;padding:12px 16px;
+  text-align:left;cursor:default;box-shadow:0 5px 0 rgba(0,0,0,.22);
+  display:flex;align-items:center;gap:11px;position:relative;overflow:hidden;
   transform:scale(.7) translateY(14px);opacity:0;
   transition:transform .4s cubic-bezier(.34,1.7,.5,1),opacity .3s;}
 .opt-btn.in{transform:scale(1) translateY(0);opacity:1;}
-.opt-letter{font-family:'Baloo 2',cursive;font-weight:800;font-size:.9rem;color:#fff;
-  background:var(--accent2,#2a9d5c);width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
+.opt-letter{font-family:'Baloo 2',cursive;font-weight:800;font-size:.85rem;color:#fff;
+  background:var(--accent2,#2a9d5c);width:26px;height:26px;border-radius:50%;display:flex;align-items:center;
   justify-content:center;flex-shrink:0;box-shadow:0 2px 0 rgba(0,0,0,.25);}
 
 /* CTA BANNER (persistent hook, not a modal) */
-#cta-banner{width:100%;max-width:420px;margin-top:16px;display:flex;align-items:center;gap:10px;
+#cta-banner{width:100%;max-width:420px;margin-top:4px;display:flex;align-items:center;gap:10px;
   background:linear-gradient(135deg,var(--ctaA,#1a5c3a),var(--ctaB,#0d3320));
-  border:3px solid var(--accent,#ffd166);border-radius:20px;padding:12px 16px;
+  border:3px solid var(--accent,#ffd166);border-radius:20px;padding:11px 15px;
   box-shadow:0 6px 0 rgba(0,0,0,.25);
   opacity:0;transform:translateY(10px) scale(.95);transition:opacity .4s,transform .4s;}
 #cta-banner.in{opacity:1;transform:translateY(0) scale(1);animation:ctaPulse 1.8s ease-in-out infinite;}
 @keyframes ctaPulse{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(0) scale(1.025);}}
-#cta-icon-inline{font-size:1.6rem;flex-shrink:0;}
-#cta-text-inline{font-family:'Baloo 2',cursive;font-weight:800;font-size:.95rem;color:#fff;line-height:1.25;
+#cta-icon-inline{font-size:1.5rem;flex-shrink:0;}
+#cta-text-inline{font-family:'Baloo 2',cursive;font-weight:800;font-size:.92rem;color:#fff;line-height:1.25;
   text-shadow:0 2px 0 rgba(0,0,0,.25);}
-#cta-sub-inline{font-family:'Fredoka',sans-serif;font-weight:600;font-size:.72rem;color:rgba(255,255,255,.8);margin-top:2px;}
+#cta-sub-inline{font-family:'Fredoka',sans-serif;font-weight:600;font-size:.7rem;color:rgba(255,255,255,.8);margin-top:2px;}
 
 /* CHEAT SHEET / STATIC MODES */
 #static-panel{display:none;width:100%;max-width:420px;background:var(--panel,rgba(10,40,25,.94));
@@ -143,6 +149,10 @@ canvas{display:block;}
     <div id="mode-badge">Spot</div>
   </div>
 
+  <div id="top-question">
+    <div id="top-question-text"></div>
+  </div>
+
   <div id="stage">
     <div class="tbl-wrap" id="tbl-wrap">
       <div class="eyebrow" id="eyebrow">Poker Spot</div>
@@ -157,8 +167,6 @@ canvas{display:block;}
         <div class="info-grid" id="info-grid"></div>
 
         <div id="math-row"></div>
-
-        <div id="question">What's your move?</div>
       </div>
 
       <div id="opts"></div>
@@ -167,7 +175,7 @@ canvas{display:block;}
         <div id="cta-icon-inline">💬</div>
         <div>
           <div id="cta-text-inline">Comment your move below!</div>
-          <div id="cta-sub-inline">Let's see who's got the best play</div>
+          <div id="cta-sub-inline">Let's see who's got the best move</div>
         </div>
       </div>
     </div>
@@ -388,32 +396,41 @@ let currentType='spot';
 let spot=null;
 let narrationText="";
 
+/* Captions matched to what's actually on screen for each post type.
+   Every question-type caption ends with a clear comment CTA.
+   Cheat sheet (no question) asks for saves/shares instead. */
 const CAPTIONS={
   spot:[
-    "What's YOUR move here? 👇 Comment your play — let's see who's got the best move. #Poker #PokerStrategy #TexasHoldem #PokerTips",
-    "Fold, call, or raise? Drop your answer below and let's argue about it. #Poker #PokerQuiz #TexasHoldem #PokerTips",
-    "Real spot, real decision. Comment what you'd do. #Poker #PokerStrategy #PokerTips #HoldemPoker",
+    "You're dealt this hand and it's your move. Fold, call, or raise — comment your play below! #Poker #PokerStrategy #TexasHoldem #PokerTips #WhatsYourMove",
+    "This is a real spot with a real decision on the line. What would YOU do? Comment below. #Poker #PokerQuiz #TexasHoldem #PokerTips",
+    "The board is out, the action is on you. Drop your move in the comments and let's see who nails it. #Poker #PokerStrategy #PokerTips #HoldemPoker",
+    "Fold, call, raise, or shove? Comment your answer — let's settle this one. #Poker #PokerCommunity #TexasHoldem #PokerTips",
   ],
   spotmath:[
-    "The numbers are on screen. What's the play? Comment below. #Poker #PokerMath #PokerStrategy #PokerTips",
-    "Outs, odds, one big decision. What do you do? Comment your move. #Poker #PokerMath #TexasHoldem #PokerTips",
+    "The outs, the odds, and the decision are all on screen. What's the play? Comment below. #Poker #PokerMath #PokerStrategy #PokerTips",
+    "We did the math for you — now it's your call. Comment your move. #Poker #PokerMath #TexasHoldem #PokerTips",
+    "This is exactly how winning players think through a hand. What's your move? #Poker #PokerStrategy #PokerMath #PokerTips",
   ],
   math15:[
-    "Call or fold based on the math? Comment your answer. #Poker #PokerMath #PokerTips #TexasHoldem",
-    "The math says something. Do you agree? Comment below. #Poker #PokerMath #PokerTips #PokerStrategy",
+    "Quick gut check: does the math say call or fold here? Comment your answer. #Poker #PokerMath #PokerTips #TexasHoldem",
+    "15 seconds of poker math. Do you agree with the numbers? Comment below. #Poker #PokerMath #PokerTips #PokerStrategy",
   ],
   cheatsheet:[
-    "Save this. You'll use it every session. #Poker #PokerTips #PokerMath #PokerStrategy #TexasHoldem",
-    "Screenshot this poker math cheat sheet. #Poker #PokerTips #PokerMath #PokerStrategy",
+    "Save this poker math cheat sheet — you'll use it every session. #Poker #PokerTips #PokerMath #PokerStrategy #TexasHoldem",
+    "Screenshot this before your next session. #Poker #PokerTips #PokerMath #PokerStrategy",
+    "Every poker player needs this saved somewhere. #Poker #PokerTips #PokerMath #PokerCommunity",
   ],
   equity:[
-    "What's your equity here? Comment your guess before you scroll on. #Poker #PokerMath #PokerQuiz #PokerTips",
+    "Before you scroll on — what's your equity in this spot? Comment your guess. #Poker #PokerMath #PokerQuiz #PokerTips",
+    "Most players guess this wrong. What's your equity here? Comment below. #Poker #PokerStrategy #PokerMath #PokerTips",
   ],
   evgame:[
-    "Is this call +EV or -EV? Comment your answer below. #Poker #PokerMath #PokerStrategy #PokerTips",
+    "Is this call plus-EV or minus-EV? The math doesn't lie — comment your answer. #Poker #PokerMath #PokerStrategy #PokerTips",
+    "One of the most important poker skills: spotting +EV vs -EV. What's your read? Comment below. #Poker #PokerMath #PokerTips #TexasHoldem",
   ],
   beginner:[
-    "Most beginners get this wrong. What's your move? Comment below. #Poker #PokerTips #PokerStrategy #TexasHoldem",
+    "Most beginners get this spot wrong. Do you know the right move? Comment below. #Poker #PokerTips #PokerStrategy #TexasHoldem",
+    "The common mistake that's costing players money. What would you do here? Comment your move. #Poker #PokerTips #PokerStrategy #PokerMath",
   ],
 };
 
@@ -429,6 +446,8 @@ const MATH_FACTS=[
 const hdr=document.getElementById('hdr');
 const eyebrow=document.getElementById('eyebrow');
 const modeBadge=document.getElementById('mode-badge');
+const topQuestion=document.getElementById('top-question');
+const topQuestionText=document.getElementById('top-question-text');
 const tableCard=document.getElementById('table-card');
 const handLabel=document.getElementById('hand-label');
 const handRow=document.getElementById('hand-row');
@@ -436,7 +455,6 @@ const boardLabel=document.getElementById('board-label');
 const boardRow=document.getElementById('board-row');
 const infoGrid=document.getElementById('info-grid');
 const mathRow=document.getElementById('math-row');
-const questionEl=document.getElementById('question');
 const optsEl=document.getElementById('opts');
 const ctaBanner=document.getElementById('cta-banner');
 const ctaIconInline=document.getElementById('cta-icon-inline');
@@ -476,9 +494,6 @@ const CTA_HOOKS=[
 ];
 
 /* ============ SINGLE-PASS REVEAL SEQUENCE ============ */
-/* Builds ONE scenario, reveals it piece by piece, ends locked on the
-   question + CTA with nothing further happening (no timer, no answer,
-   no auto-advance to a new round). */
 function startSequence(forceType){
   try{ startSequenceInner(forceType); }catch(e){ console.error('startSequence failed',e); }
 }
@@ -491,8 +506,10 @@ function startSequenceInner(forceType){
   narrationText="";
 
   // reset all visual state
-  hdr.classList.remove('in');
+  hdr.classList.remove('in','hidden-type');
   eyebrow.classList.remove('in');
+  topQuestion.classList.remove('in');
+  topQuestionText.textContent='';
   tableCard.classList.remove('in');
   handLabel.classList.remove('in');
   boardLabel.classList.remove('in');
@@ -500,15 +517,21 @@ function startSequenceInner(forceType){
   boardRow.className=''; boardRow.innerHTML='';
   infoGrid.classList.remove('in'); infoGrid.innerHTML='';
   mathRow.classList.remove('in'); mathRow.innerHTML=''; mathRow.style.display='none';
-  questionEl.classList.remove('in'); questionEl.textContent='';
   optsEl.innerHTML='';
   ctaBanner.classList.remove('in');
   staticPanel.classList.remove('in'); staticPanel.style.display='none';
   tblWrap.style.display='flex';
 
-  seq(()=>hdr.classList.add('in'), 100);
+  const isCheatsheet = currentType==='cheatsheet';
 
-  if(currentType==='cheatsheet'){
+  // Header only shows for question-type posts, never for the cheat sheet
+  if(!isCheatsheet){
+    seq(()=>hdr.classList.add('in'), 100);
+  } else {
+    hdr.classList.add('hidden-type');
+  }
+
+  if(isCheatsheet){
     tblWrap.style.display='none';
     staticPanel.style.display='block';
     modeBadge.textContent='Cheat Sheet';
@@ -533,11 +556,11 @@ function startSequenceInner(forceType){
   const s=spot;
 
   if(currentType==='math15'){ modeBadge.textContent='Poker Math'; eyebrow.textContent='15-Second Lesson'; }
-  else if(currentType==='equity'){ modeBadge.textContent='Guess Equity'; eyebrow.textContent="What's Your Equity?"; }
-  else if(currentType==='evgame'){ modeBadge.textContent='EV Check'; eyebrow.textContent='+EV or -EV?'; }
+  else if(currentType==='equity'){ modeBadge.textContent='Guess Equity'; eyebrow.textContent="Read The Board"; }
+  else if(currentType==='evgame'){ modeBadge.textContent='EV Check'; eyebrow.textContent='Think In Numbers'; }
   else if(currentType==='beginner'){ modeBadge.textContent='Beginner Mistake'; eyebrow.textContent='Most People Get This Wrong'; }
   else if(currentType==='spotmath'){ modeBadge.textContent='Spot + Math'; eyebrow.textContent='Think In Numbers'; }
-  else { modeBadge.textContent='Poker Spot'; eyebrow.textContent="What's Your Move?"; }
+  else { modeBadge.textContent='Poker Spot'; eyebrow.textContent="Real Hand, Real Decision"; }
 
   handLabel.textContent='Your Hand';
 
@@ -555,7 +578,6 @@ function startSequenceInner(forceType){
     const real=Math.round(s.board.length<5?s.outsPct:(s.rankNow.score>=1?60:25));
     const pool=[real,Math.max(0,real-15),Math.min(100,real+15),Math.max(0,real-28)];
     optionLabels=shuffle(pool).map(v=>v+'%');
-    narrationParts.push(`What's your equity here? Comment your guess.`);
   } else if(currentType==='evgame'){
     question="Is this call +EV or -EV?";
     optionLabels=['+EV, easy call','+EV, close spot','-EV, close spot','-EV, easy fold'];
@@ -566,17 +588,24 @@ function startSequenceInner(forceType){
     optionLabels=['Fold','Call'];
   }
 
+  // pick the CTA hook now so we can weave it into narration too
+  const hook=CTA_HOOKS[Math.floor(Math.random()*CTA_HOOKS.length)];
+
+  narrationParts.push(question);
+  narrationParts.push(`${hook.text} ${hook.sub}.`);
   narrate(narrationParts.join(' '));
 
   // ---- TIMELINE (staggered reveal, social-media pacing) ----
-  let t=250;
+  // Recording should start at t=0 with the very first hand card, so keep
+  // the intro (header/eyebrow/panel) fast and tight.
+  let t=150;
 
-  seq(()=>{ eyebrow.classList.add('in'); },t); t+=200;
-  seq(()=>{ tableCard.classList.add('in'); sfxWhoosh(); },t); t+=350;
+  seq(()=>{ eyebrow.classList.add('in'); },t); t+=150;
+  seq(()=>{ tableCard.classList.add('in'); sfxWhoosh(); },t); t+=300;
 
-  // hand label + cards, one at a time
-  seq(()=>{ handLabel.classList.add('in'); handRow.classList.add('active'); },t); t+=200;
-  s.hand.forEach((card,i)=>{
+  // hand label + cards, one at a time — this is the very first thing to render
+  seq(()=>{ handLabel.classList.add('in'); handRow.classList.add('active'); },t); t+=180;
+  s.hand.forEach((card)=>{
     seq(()=>{
       const el=document.createElement('div');
       el.innerHTML=cardHTML(card);
@@ -592,8 +621,8 @@ function startSequenceInner(forceType){
   t+=200;
 
   // board label + cards, one at a time
-  seq(()=>{ boardLabel.classList.add('in'); boardRow.classList.add('active'); },t); t+=200;
-  s.board.forEach((card,i)=>{
+  seq(()=>{ boardLabel.classList.add('in'); boardRow.classList.add('active'); },t); t+=180;
+  s.board.forEach((card)=>{
     seq(()=>{
       const el=document.createElement('div');
       el.innerHTML=cardHTML(card);
@@ -620,9 +649,10 @@ function startSequenceInner(forceType){
     sfxChip();
     Array.from(infoGrid.children).forEach((cell,i)=>seq(()=>cell.classList.add('in'), i*90));
   },t);
-  t+=650;
+  t+=600;
 
   // math row, if applicable
+  let mathLineCount=0;
   if(currentType==='spotmath' || currentType==='evgame'){
     seq(()=>{
       mathRow.style.display='flex';
@@ -635,6 +665,7 @@ function startSequenceInner(forceType){
         lines.push(['Break-Even', s.breakEvenPct.toFixed(0)+'%']);
       }
       if(s.ev!==null) lines.push(['Expected Value', (s.ev>=0?'+':'')+'$'+s.ev.toFixed(2)]);
+      mathLineCount=lines.length;
       lines.forEach(([k,v])=>{
         const d=document.createElement('div');
         d.className='math-line';
@@ -644,18 +675,20 @@ function startSequenceInner(forceType){
       mathRow.classList.add('in');
       Array.from(mathRow.children).forEach((ln,i)=>seq(()=>{ ln.classList.add('in'); sfxChip(); }, 150+i*220));
     },t);
-    t+= 300 + (currentType==='spotmath'?5:5)*220 + 400;
+    t += 300 + 5*220 + 400;
   }
 
-  // question text, typed-in style (fade+scale, holds as final on-screen text)
+  // TOP QUESTION reveal — big, bold, above the board. This is the main hook
+  // and it's timed to land right as the narration reaches the question line.
   seq(()=>{
-    questionEl.textContent=question;
-    questionEl.classList.add('in');
+    topQuestionText.textContent=question;
+    topQuestion.classList.add('in');
     sfxWhoosh();
+    burst(window.innerWidth/2,topQuestion.getBoundingClientRect().bottom,theme.accent,10);
   },t);
   t+=550;
 
-  // options pop in one by one
+  // options pop in one by one, right after the question lands
   seq(()=>{
     optsEl.innerHTML='';
     const letters=['A','B','C','D'];
@@ -664,20 +697,21 @@ function startSequenceInner(forceType){
       btn.className='opt-btn';
       btn.innerHTML=`<span class="opt-letter">${letters[i]}</span><span class="opt-label">${opt}</span>`;
       optsEl.appendChild(btn);
-      seq(()=>btn.classList.add('in'), i*140);
+      seq(()=>btn.classList.add('in'), i*130);
     });
   },t);
-  t += optionLabels.length*140 + 300;
+  t += optionLabels.length*130 + 250;
 
-  // final CTA banner — this is the hook that stays on screen for the rest of the clip
+  // CTA banner appears timed to when TTS narration speaks the CTA line
+  // (narration = scenario + question + hook, spoken roughly in that order,
+  //  so this visual lands close to when the hook is actually being read aloud)
   seq(()=>{
-    const hook=CTA_HOOKS[Math.floor(Math.random()*CTA_HOOKS.length)];
     ctaIconInline.textContent=hook.icon;
     ctaTextInline.textContent=hook.text;
     ctaSubInline.textContent=hook.sub;
     ctaBanner.classList.add('in');
     sfxCta();
-    burst(window.innerWidth/2,window.innerHeight*0.7,theme.accent,12);
+    burst(window.innerWidth/2,window.innerHeight*0.75,theme.accent,12);
   },t);
   t+=500;
 
@@ -694,7 +728,7 @@ window._autoStartGame=function(forceType){
   console.log('_autoStartGame done, type=',currentType);
 };
 
-// Bot is now a no-op placeholder kept for backward-compat with the workflow script;
+// Bot is a no-op placeholder kept for backward-compat with the workflow script;
 // it intentionally does NOT advance rounds. The sequence plays exactly once and locks.
 window._startBot=function(){ /* no-op: single scenario per recording, no auto-advance */ };
 window._stopBot=function(){ /* no-op */ };
@@ -770,6 +804,20 @@ window.startRecording=function(fps=30){
     c.restore();
   }
 
+  function wrapText(c,text,x,y,maxW,lineH){
+    const words=text.split(' ');
+    let line='',lines=[];
+    for(const w of words){
+      const test=line+w+' ';
+      if(c.measureText(test).width>maxW && line){lines.push(line);line=w+' ';}
+      else line=test;
+    }
+    lines.push(line);
+    const startY=y-((lines.length-1)*lineH)/2;
+    lines.forEach((l,i)=>c.fillText(l.trim(),x,startY+i*lineH));
+    return lines.length;
+  }
+
   function opacityOf(el){
     const cs=window.getComputedStyle(el);
     return parseFloat(cs.opacity)||0;
@@ -788,23 +836,44 @@ window.startRecording=function(fps=30){
   }
 
   function _drawUI(c,RW,RH){
-    // header
-    const hdrOp=opacityOf(hdr);
+    let cursorY=8;
+
+    // header (hidden entirely for non-question types)
+    const hdrVisible = !hdr.classList.contains('hidden-type');
+    const hdrOp=hdrVisible?opacityOf(hdr):0;
     if(hdrOp>0.01){
       c.save();
       c.globalAlpha=hdrOp;
-      c.font="800 19px 'Baloo 2',Arial";
+      c.font="800 17px 'Baloo 2',Arial";
       c.fillStyle=theme.txt;
       c.textAlign='left';c.textBaseline='middle';
-      c.fillText("♠ What's Your Move?", 16, 34);
+      c.fillText("♠ What's Your Move?", 16, 30);
       const badgeTxt=modeBadge.textContent;
-      c.font="700 11px Arial";
-      const bw=c.measureText(badgeTxt).width+22;
-      roundRect(c,RW-bw-14,20,bw,24,12);
+      c.font="700 10px Arial";
+      const bw=c.measureText(badgeTxt).width+20;
+      roundRect(c,RW-bw-14,18,bw,22,11);
       c.fillStyle=theme.accent;c.fill();
       c.fillStyle=theme.badgeTxt;c.textAlign='center';
-      c.fillText(badgeTxt,RW-bw/2-14,32);
+      c.fillText(badgeTxt,RW-bw/2-14,29);
       c.restore();
+      cursorY=48;
+    } else {
+      cursorY=16;
+    }
+
+    // TOP QUESTION — big bold banner above the board
+    const topQOp=opacityOf(topQuestion);
+    if(topQOp>0.01 && topQuestionText.textContent && staticPanel.style.display!=='block'){
+      c.save();
+      c.globalAlpha=topQOp;
+      c.font="800 26px 'Baloo 2',Arial";
+      c.fillStyle='#fff';
+      c.textAlign='center';
+      c.shadowColor='rgba(0,0,0,.45)';c.shadowBlur=8;c.shadowOffsetY=3;
+      const nLines=wrapText(c, topQuestionText.textContent, RW/2, cursorY+30, RW*0.88, 30);
+      c.shadowBlur=0;c.shadowOffsetY=0;
+      c.restore();
+      cursorY += 20 + nLines*30 + 10;
     }
 
     const eyebrowOp=opacityOf(eyebrow);
@@ -814,14 +883,15 @@ window.startRecording=function(fps=30){
       c.font="700 12px Fredoka, Arial";
       c.fillStyle='rgba(255,255,255,.85)';
       c.textAlign='center';
-      c.fillText(eyebrow.textContent.toUpperCase(), RW/2, RH*0.135);
+      c.fillText(eyebrow.textContent.toUpperCase(), RW/2, cursorY+8);
       c.restore();
+      cursorY += 24;
     }
 
     if(staticPanel.style.display==='block'){
       const panelOp=opacityOf(staticPanel);
       if(panelOp<0.01) return;
-      const px=RW*0.08,pw=RW*0.84,py=RH*0.2,ph=RH*0.52;
+      const px=RW*0.08,pw=RW*0.84,py=RH*0.22,ph=RH*0.52;
       c.save();
       c.globalAlpha=panelOp;
       roundRect(c,px,py,pw,ph,24);
@@ -868,7 +938,7 @@ window.startRecording=function(fps=30){
     const cardOp=opacityOf(tableCard);
     if(cardOp<0.01) return;
 
-    const cardX=RW*0.06,cardW=RW*0.88,cardY=RH*0.17,cardH=RH*0.48;
+    const cardX=RW*0.06,cardW=RW*0.88,cardY=cursorY+6,cardH=RH*0.42;
     c.save();
     c.globalAlpha=cardOp;
     c.shadowColor='rgba(0,0,0,.35)';c.shadowBlur=20;c.shadowOffsetY=8;
@@ -878,7 +948,7 @@ window.startRecording=function(fps=30){
     c.strokeStyle=theme.panelBorder;c.lineWidth=3;c.stroke();
     c.restore();
 
-    let cy=cardY+22;
+    let cy=cardY+20;
 
     const handLabelOp=opacityOf(handLabel);
     if(handLabelOp>0.01){
@@ -890,8 +960,8 @@ window.startRecording=function(fps=30){
       c.restore();
     }
     if(handRow.children.length){
-      cy+=16;
-      const cw=44,ch=62,gap=10;
+      cy+=15;
+      const cw=44,ch=60,gap=10;
       const handCards=Array.from(handRow.children);
       const totalHandW=handCards.length*cw+(handCards.length-1)*gap;
       let hx=RW/2-totalHandW/2;
@@ -905,7 +975,7 @@ window.startRecording=function(fps=30){
         }
         hx+=cw+gap;
       });
-      cy+=ch+14;
+      cy+=ch+12;
     }
 
     const boardLabelOp=opacityOf(boardLabel);
@@ -918,8 +988,8 @@ window.startRecording=function(fps=30){
       c.restore();
     }
     if(boardRow.children.length){
-      cy+=16;
-      const cw=44,ch=62,gap=10;
+      cy+=15;
+      const cw=44,ch=60,gap=10;
       const boardCards=Array.from(boardRow.children);
       const totalBoardW=boardCards.length*cw+(boardCards.length-1)*gap;
       let bx=RW/2-totalBoardW/2;
@@ -933,12 +1003,12 @@ window.startRecording=function(fps=30){
         }
         bx+=cw+gap;
       });
-      cy+=ch+14;
+      cy+=ch+12;
     }
 
     const infoOp=opacityOf(infoGrid);
     if(infoOp>0.01 && infoGrid.children.length){
-      const gw=(cardW-24)/2, gh=34;
+      const gw=(cardW-24)/2, gh=32;
       Array.from(infoGrid.children).forEach((cell,i)=>{
         const cellOp=opacityOf(cell);
         if(cellOp<0.01)return;
@@ -950,54 +1020,44 @@ window.startRecording=function(fps=30){
         c.textAlign='center';
         c.font="600 9px Fredoka, Arial";
         c.fillStyle='rgba(255,255,255,.6)';
-        c.fillText(cell.querySelector('.info-k').textContent.toUpperCase(), gx+gw/2, gy+13);
-        c.font="800 13px 'Baloo 2',Arial";
+        c.fillText(cell.querySelector('.info-k').textContent.toUpperCase(), gx+gw/2, gy+12);
+        c.font="800 12px 'Baloo 2',Arial";
         c.fillStyle='#fff';
-        c.fillText(cell.querySelector('.info-v').textContent, gx+gw/2, gy+27);
+        c.fillText(cell.querySelector('.info-v').textContent, gx+gw/2, gy+25);
         c.restore();
       });
-      cy+=2*(gh+6)+8;
+      cy+=2*(gh+6)+6;
     }
 
     const mathOp=opacityOf(mathRow);
     if(mathRow.style.display==='flex' && mathOp>0.01 && mathRow.children.length){
-      const mh=mathRow.children.length*20+12;
+      const mh=mathRow.children.length*19+10;
       c.save();c.globalAlpha=cardOp*mathOp;
       roundRect(c,cardX+12,cy,cardW-24,mh,10);
       c.fillStyle='rgba(0,0,0,.18)';c.fill();
       c.restore();
-      let my=cy+18;
+      let my=cy+16;
       Array.from(mathRow.children).forEach(ln=>{
         const lnOp=opacityOf(ln);
         if(lnOp>0.01){
           c.save();c.globalAlpha=cardOp*mathOp*lnOp;
           const k=ln.querySelector('span').textContent;
           const v=ln.querySelector('b').textContent;
-          c.textAlign='left';c.font="600 12px Fredoka, Arial";c.fillStyle='#fff';
+          c.textAlign='left';c.font="600 11px Fredoka, Arial";c.fillStyle='#fff';
           c.fillText(k, cardX+22, my);
-          c.textAlign='right';c.font="800 12px 'Baloo 2',Arial";c.fillStyle=theme.accent;
+          c.textAlign='right';c.font="800 11px 'Baloo 2',Arial";c.fillStyle=theme.accent;
           c.fillText(v, cardX+cardW-22, my);
           c.restore();
         }
-        my+=20;
+        my+=19;
       });
-      cy+=mh+10;
-    }
-
-    const qOp=opacityOf(questionEl);
-    if(qOp>0.01 && questionEl.textContent){
-      c.save();c.globalAlpha=cardOp*qOp;
-      c.textAlign='center';
-      c.font="800 17px 'Baloo 2',Arial";
-      c.fillStyle='#fff';
-      c.fillText(questionEl.textContent, RW/2, cardY+cardH-14);
-      c.restore();
+      cy+=mh+8;
     }
 
     // options
     const btns=Array.from(optsEl.children);
-    const optY0=cardY+cardH+16;
-    const optH=48, ogap=10;
+    const optY0=cardY+cardH+14;
+    const optH=46, ogap=9;
     btns.forEach((b,i)=>{
       const bOp=opacityOf(b);
       if(bOp<0.01)return;
@@ -1009,40 +1069,40 @@ window.startRecording=function(fps=30){
       c.fillStyle='#fff';
       c.fill();
       c.beginPath();
-      c.arc(cardX+26,oy+optH/2,13,0,Math.PI*2);
+      c.arc(cardX+25,oy+optH/2,12,0,Math.PI*2);
       c.fillStyle=theme.accent2;
       c.fill();
       c.fillStyle='#fff';
-      c.font="800 12px Arial";
+      c.font="800 11px Arial";
       c.textAlign='center';c.textBaseline='middle';
-      c.fillText(letter, cardX+26, oy+optH/2+1);
+      c.fillText(letter, cardX+25, oy+optH/2+1);
       c.fillStyle='#0b3d24';
-      c.font="700 14px 'Baloo 2',Arial";
+      c.font="700 13px 'Baloo 2',Arial";
       c.textAlign='left';
-      c.fillText(label, cardX+48, oy+optH/2+1, cardW-76);
+      c.fillText(label, cardX+46, oy+optH/2+1, cardW-70);
       c.restore();
     });
 
-    // CTA banner (final hook, stays on screen)
+    // CTA banner (final hook, stays on screen, synced with TTS reading it)
     const ctaOp=opacityOf(ctaBanner);
     if(ctaOp>0.01){
       const lastOptY = optY0 + btns.length*(optH+ogap);
-      const ctaY = lastOptY + 6;
-      const ctaH = 62;
+      const ctaY = lastOptY + 4;
+      const ctaH = 58;
       c.save();c.globalAlpha=ctaOp;
       roundRect(c,cardX,ctaY,cardW,ctaH,20);
       const g=c.createLinearGradient(cardX,ctaY,cardX,ctaY+ctaH);
       g.addColorStop(0,theme.ctaA);g.addColorStop(1,theme.ctaB);
       c.fillStyle=g;c.fill();
       c.strokeStyle=theme.accent;c.lineWidth=3;c.stroke();
-      c.font="26px Arial";c.textAlign='left';c.textBaseline='middle';
+      c.font="24px Arial";c.textAlign='left';c.textBaseline='middle';
       c.fillStyle='#fff';
-      c.fillText(ctaIconInline.textContent, cardX+16, ctaY+ctaH/2);
-      c.font="800 14px 'Baloo 2',Arial";
-      c.fillText(ctaTextInline.textContent, cardX+50, ctaY+ctaH*0.38, cardW-70);
-      c.font="600 11px Fredoka, Arial";
+      c.fillText(ctaIconInline.textContent, cardX+14, ctaY+ctaH/2);
+      c.font="800 13px 'Baloo 2',Arial";
+      c.fillText(ctaTextInline.textContent, cardX+46, ctaY+ctaH*0.36, cardW-64);
+      c.font="600 10px Fredoka, Arial";
       c.fillStyle='rgba(255,255,255,.85)';
-      c.fillText(ctaSubInline.textContent, cardX+50, ctaY+ctaH*0.72, cardW-70);
+      c.fillText(ctaSubInline.textContent, cardX+46, ctaY+ctaH*0.72, cardW-64);
       c.restore();
     }
   }
