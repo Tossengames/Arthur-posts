@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>What's Your Move?</title>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;touch-action:none;}
+body{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'Fredoka',sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;background:#0b3d24;}
+canvas{display:block;}
+#pcv{position:fixed;inset:0;pointer-events:none;z-index:60;}
+#felt{position:fixed;inset:0;z-index:0;pointer-events:none;}
+
+#app{position:relative;z-index:5;width:100vw;max-width:480px;height:100dvh;
+  display:flex;flex-direction:column;align-items:center;}
+
+/* HEADER */
+#hdr{width:100%;display:flex;align-items:center;justify-content:space-between;
+  padding:max(env(safe-area-inset-top),14px) 18px 6px;flex-shrink:0;}
+#brand{font-family:'Baloo 2',cursive;font-weight:800;font-size:1.25rem;color:var(--txt,#fff);
+  letter-spacing:.5px;text-shadow:0 3px 0 rgba(0,0,0,.3);display:flex;align-items:center;gap:6px;}
+#mode-badge{font-family:'Fredoka',sans-serif;font-weight:700;font-size:.65rem;letter-spacing:.5px;
+  color:var(--badgeTxt,#3a1a00);background:var(--accent,#ffd166);padding:5px 12px;border-radius:50px;
+  box-shadow:0 3px 0 rgba(0,0,0,.25);text-transform:uppercase;}
+
+/* STAGE */
+#stage{flex:1;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:4px 16px;min-height:0;position:relative;}
+
+.tbl-wrap{width:100%;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:10px;}
+
+.eyebrow{font-family:'Fredoka',sans-serif;font-weight:700;font-size:.8rem;letter-spacing:2px;
+  text-transform:uppercase;color:rgba(255,255,255,.75);text-shadow:0 2px 0 rgba(0,0,0,.25);}
+
+/* TABLE CARD */
+#table-card{width:100%;background:var(--panel,rgba(10,40,25,.92));border-radius:26px;
+  padding:20px 18px;box-shadow:0 12px 0 rgba(0,0,0,.25),0 20px 40px rgba(0,0,0,.4);
+  border:4px solid var(--panelBorder,rgba(255,215,110,.5));position:relative;
+  transform:scale(1);opacity:1;}
+#table-card.pop{animation:cardPop .45s cubic-bezier(.34,1.7,.5,1);}
+@keyframes cardPop{0%{transform:scale(.4);}60%{transform:scale(1.04);}100%{transform:scale(1);}}
+
+.row-label{font-family:'Fredoka',sans-serif;font-weight:700;font-size:.72rem;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--label,#ffd166);margin-bottom:6px;text-align:center;opacity:.85;}
+
+#hand-row,#board-row{display:flex;justify-content:center;gap:10px;margin-bottom:14px;min-height:76px;align-items:center;}
+.pcard{width:52px;height:74px;border-radius:8px;background:#fff;box-shadow:0 4px 0 rgba(0,0,0,.3),0 6px 14px rgba(0,0,0,.35);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'Baloo 2',cursive;font-weight:800;transform:scale(0) rotate(-8deg);opacity:0;
+  transition:transform .4s cubic-bezier(.34,1.7,.5,1),opacity .3s;}
+.pcard.in{transform:scale(1) rotate(0deg);opacity:1;}
+.pcard .rk{font-size:1.3rem;line-height:1;}
+.pcard .st{font-size:1.5rem;line-height:1;margin-top:-2px;}
+.pcard.red{color:#d7263d;}
+.pcard.black{color:#1a1a2e;}
+.pcard.back{background:linear-gradient(135deg,#1a3a5c,#0d1f33);border:2px solid rgba(255,255,255,.25);}
+
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-bottom:12px;}
+.info-cell{background:rgba(0,0,0,.22);border-radius:12px;padding:8px 10px;text-align:center;}
+.info-k{font-family:'Fredoka',sans-serif;font-weight:600;font-size:.62rem;letter-spacing:1px;
+  text-transform:uppercase;color:rgba(255,255,255,.6);}
+.info-v{font-family:'Baloo 2',cursive;font-weight:800;font-size:1rem;color:#fff;margin-top:1px;}
+
+#math-row{display:none;flex-direction:column;gap:6px;margin-bottom:12px;background:rgba(0,0,0,.18);
+  border-radius:14px;padding:10px 12px;}
+.math-line{display:flex;justify-content:space-between;font-family:'Fredoka',sans-serif;font-size:.82rem;color:#fff;}
+.math-line b{font-family:'Baloo 2',cursive;color:var(--accent,#ffd166);}
+
+#question{font-family:'Baloo 2',cursive;font-weight:800;font-size:clamp(1.1rem,5.2vw,1.5rem);
+  color:#fff;text-align:center;text-shadow:0 2px 0 rgba(0,0,0,.3);}
+
+/* OPTIONS */
+#opts{width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px;margin-top:12px;}
+.opt-btn{font-family:'Baloo 2',cursive;font-weight:700;font-size:clamp(.95rem,4vw,1.1rem);
+  color:#0b3d24;background:#fff;border:none;border-radius:18px;padding:14px 18px;
+  text-align:left;cursor:pointer;box-shadow:0 6px 0 rgba(0,0,0,.22);
+  display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;
+  transform:scale(1) translateY(0);transition:transform .12s,box-shadow .12s,background .2s,color .2s;
+  opacity:1;}
+.opt-btn.pop{animation:optIn .4s cubic-bezier(.34,1.7,.5,1);}
+.opt-btn.pop:nth-child(1){animation-delay:.05s;}
+.opt-btn.pop:nth-child(2){animation-delay:.13s;}
+.opt-btn.pop:nth-child(3){animation-delay:.21s;}
+.opt-btn.pop:nth-child(4){animation-delay:.29s;}
+@keyframes optIn{from{opacity:0;transform:scale(.7) translateY(14px);}to{opacity:1;transform:scale(1) translateY(0);}}
+.opt-letter{font-family:'Baloo 2',cursive;font-weight:800;font-size:.9rem;color:#fff;
+  background:var(--accent2,#2a9d5c);width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;flex-shrink:0;box-shadow:0 2px 0 rgba(0,0,0,.25);}
+.opt-btn.press{transform:scale(.94) translateY(3px);box-shadow:0 2px 0 rgba(0,0,0,.18);}
+.opt-btn.correct{background:linear-gradient(135deg,#43e97b,#2fd66a);color:#003818;
+  box-shadow:0 6px 0 #1a8a45;animation:correctPop .5s cubic-bezier(.34,1.7,.5,1);}
+.opt-btn.correct .opt-letter{background:#00612e;}
+.opt-btn.wrong{background:linear-gradient(135deg,#ff6b6b,#e84545);color:#4a0000;box-shadow:0 6px 0 #a11c1c;}
+.opt-btn.wrong .opt-letter{background:#6b0000;}
+.opt-btn.dim{opacity:.4;}
+@keyframes correctPop{0%{transform:scale(1);}40%{transform:scale(1.06);}100%{transform:scale(1);}}
+.opt-btn .check{margin-left:auto;font-size:1.1rem;opacity:0;transform:scale(0);transition:transform .3s cubic-bezier(.34,1.7,.5,1),opacity .2s;}
+.opt-btn.correct .check,.opt-btn.wrong .check{opacity:1;transform:scale(1);}
+
+/* TIMER */
+#timer-wrap{width:100%;max-width:420px;display:flex;align-items:center;gap:10px;margin-top:14px;}
+#timer-track{flex:1;height:13px;background:rgba(255,255,255,.22);border-radius:50px;overflow:hidden;
+  border:2px solid rgba(255,255,255,.3);}
+#timer-fill{height:100%;border-radius:50px;background:linear-gradient(90deg,#43e97b,#38f9d7);
+  width:100%;transition:width .1s linear,background .3s;}
+#timer-num{font-family:'Baloo 2',cursive;font-weight:800;color:#fff;font-size:1.05rem;
+  text-shadow:0 2px 0 rgba(0,0,0,.3);min-width:20px;text-align:center;}
+
+/* CTA */
+#cta-overlay{position:fixed;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,20,10,.45);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .25s;}
+#cta-overlay.show{opacity:1;}
+#cta-card{background:linear-gradient(160deg,var(--ctaA,#1a5c3a),var(--ctaB,#0d3320));border-radius:28px;padding:28px 30px;
+  max-width:320px;text-align:center;box-shadow:0 16px 0 rgba(0,0,0,.3),0 20px 50px rgba(0,0,0,.45);
+  border:4px solid var(--accent,#ffd166);transform:scale(.5) rotate(-6deg);
+  transition:transform .4s cubic-bezier(.34,1.7,.5,1);}
+#cta-overlay.show #cta-card{transform:scale(1) rotate(0deg);}
+#cta-icon{font-size:2.8rem;margin-bottom:6px;}
+#cta-text{font-family:'Baloo 2',cursive;font-weight:800;font-size:1.3rem;color:#fff;
+  text-shadow:0 3px 0 rgba(0,0,0,.25);line-height:1.25;}
+#cta-sub{font-family:'Fredoka',sans-serif;font-weight:600;font-size:.82rem;color:rgba(255,255,255,.85);margin-top:6px;}
+
+/* REVEAL BANNER */
+#reveal-banner{position:fixed;top:12%;left:50%;transform:translate(-50%,-30px) scale(.7);
+  font-family:'Baloo 2',cursive;font-weight:800;font-size:clamp(1.15rem,5.5vw,1.6rem);color:#fff;
+  background:linear-gradient(135deg,#43e97b,#2fd66a);padding:12px 26px;border-radius:22px;
+  box-shadow:0 10px 0 rgba(0,0,0,.25),0 16px 34px rgba(0,0,0,.4);
+  border:4px solid rgba(255,255,255,.55);z-index:180;opacity:0;transition:opacity .3s,transform .3s;
+  pointer-events:none;white-space:nowrap;}
+#reveal-banner.show{opacity:1;transform:translate(-50%,0) scale(1);}
+
+#tap-hint{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);
+  font-family:'Fredoka',sans-serif;font-weight:700;font-size:.82rem;color:rgba(255,255,255,.75);
+  background:rgba(0,0,0,.32);padding:8px 18px;border-radius:50px;opacity:0;transition:opacity .3s;
+  pointer-events:none;letter-spacing:.5px;z-index:60;}
+#tap-hint.show{opacity:1;animation:tapPulse 1.4s ease-in-out infinite;}
+@keyframes tapPulse{0%,100%{transform:translateX(-50%) scale(1);}50%{transform:translateX(-50%) scale(1.05);}}
+
+#float-pts{position:fixed;left:50%;top:38%;transform:translateX(-50%);
+  font-family:'Baloo 2',cursive;font-weight:800;font-size:1.8rem;color:#ffd166;
+  text-shadow:0 3px 0 rgba(0,0,0,.35);pointer-events:none;z-index:190;opacity:0;}
+#float-pts.pop{animation:ptsFloat .9s cubic-bezier(.2,.8,.4,1) forwards;}
+@keyframes ptsFloat{0%{opacity:0;transform:translateX(-50%) translateY(10px) scale(.6);}
+20%{opacity:1;transform:translateX(-50%) translateY(-6px) scale(1.15);}
+70%{opacity:1;transform:translateX(-50%) translateY(-26px) scale(1);}
+100%{opacity:0;transform:translateX(-50%) translateY(-50px) scale(.9);}}
+
+/* CHEAT SHEET / STATIC MODES */
+#static-panel{display:none;width:100%;max-width:420px;background:var(--panel,rgba(10,40,25,.94));
+  border-radius:26px;padding:26px 22px;box-shadow:0 12px 0 rgba(0,0,0,.25),0 20px 40px rgba(0,0,0,.4);
+  border:4px solid var(--panelBorder,rgba(255,215,110,.5));}
+#static-title{font-family:'Baloo 2',cursive;font-weight:800;font-size:1.3rem;color:var(--accent,#ffd166);
+  text-align:center;margin-bottom:16px;text-shadow:0 2px 0 rgba(0,0,0,.3);}
+.sheet-line{display:flex;justify-content:space-between;align-items:center;padding:9px 4px;
+  border-bottom:1px solid rgba(255,255,255,.12);font-family:'Fredoka',sans-serif;color:#fff;}
+.sheet-line b{font-family:'Baloo 2',cursive;color:#fff;}
+.sheet-line:last-child{border-bottom:none;}
+#static-foot{font-family:'Fredoka',sans-serif;font-weight:600;font-size:.85rem;color:rgba(255,255,255,.7);
+  text-align:center;margin-top:14px;}
+</style>
+</head>
+<body>
+
+<div id="felt"></div>
+<canvas id="pcv"></canvas>
+
+<div id="app">
+  <div id="hdr">
+    <div id="brand">♠ What's Your Move?</div>
+    <div id="mode-badge">Spot</div>
+  </div>
+
+  <div id="stage">
+    <div class="tbl-wrap" id="tbl-wrap">
+      <div class="eyebrow" id="eyebrow">Poker Spot</div>
+
+      <div id="table-card">
+        <div class="row-label" id="hand-label">Your Hand</div>
+        <div id="hand-row"></div>
+
+        <div class="row-label" id="board-label" style="display:none">The Board</div>
+        <div id="board-row"></div>
+
+        <div class="info-grid" id="info-grid"></div>
+
+        <div id="math-row"></div>
+
+        <div id="question">What's your move?</div>
+      </div>
+
+      <div id="opts"></div>
+
+      <div id="timer-wrap">
+        <div id="timer-track"><div id="timer-fill"></div></div>
+        <div id="timer-num">6</div>
+      </div>
+    </div>
+
+    <div id="static-panel">
+      <div id="static-title">Poker Math Cheat Sheet</div>
+      <div id="static-body"></div>
+      <div id="static-foot">Save this. You'll use it every session.</div>
+    </div>
+  </div>
+</div>
+
+<div id="reveal-banner"></div>
+<div id="tap-hint">👉 Tap to continue</div>
+<div id="float-pts">+10</div>
+
+<div id="cta-overlay">
+  <div id="cta-card">
+    <div id="cta-icon">🔔</div>
+    <div id="cta-text">Follow for daily spots!</div>
+    <div id="cta-sub">New poker quiz every day</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ============ THEMES ============ */
+const THEMES=[
+  {name:'Classic Felt', bg:['#0b3d24','#062015'], panel:'rgba(10,40,25,.92)', panelBorder:'rgba(255,215,110,.5)',
+   accent:'#ffd166', accent2:'#2a9d5c', label:'#ffd166', badgeTxt:'#3a1a00', txt:'#fff', ctaA:'#1a5c3a', ctaB:'#0d3320', feltDot:'#ffd166'},
+  {name:'Black Gold', bg:['#1a1a1a','#000000'], panel:'rgba(20,16,8,.94)', panelBorder:'rgba(255,196,0,.55)',
+   accent:'#ffc400', accent2:'#8a6d00', label:'#ffc400', badgeTxt:'#241c00', txt:'#fff', ctaA:'#3a2e00', ctaB:'#141000', feltDot:'#ffc400'},
+  {name:'Navy Silver', bg:['#0d1b2a','#020509'], panel:'rgba(15,28,42,.92)', panelBorder:'rgba(200,215,230,.5)',
+   accent:'#e0e6ed', accent2:'#3a6a8f', label:'#a9c4de', badgeTxt:'#0d1b2a', txt:'#fff', ctaA:'#1b3a55', ctaB:'#08141e', feltDot:'#c8d7e6'},
+  {name:'Crimson Casino', bg:['#3a0a0a','#160303'], panel:'rgba(40,8,8,.92)', panelBorder:'rgba(255,180,90,.5)',
+   accent:'#ffb45a', accent2:'#8f1f1f', label:'#ffb45a', badgeTxt:'#2e0e00', txt:'#fff', ctaA:'#5c1414', ctaB:'#1f0505', feltDot:'#ffb45a'},
+  {name:'Emerald Royale', bg:['#013220','#000f08'], panel:'rgba(2,44,28,.93)', panelBorder:'rgba(120,255,190,.4)',
+   accent:'#7cffcb', accent2:'#0e7a4d', label:'#7cffcb', badgeTxt:'#012014', txt:'#fff', ctaA:'#03502f', ctaB:'#001a10', feltDot:'#7cffcb'},
+  {name:'Violet High Roller', bg:['#2a0845','#0d021a'], panel:'rgba(30,8,50,.93)', panelBorder:'rgba(220,170,255,.45)',
+   accent:'#dba8ff', accent2:'#6a1fa0', label:'#dba8ff', badgeTxt:'#1a0330', txt:'#fff', ctaA:'#4a1478', ctaB:'#150228', feltDot:'#dba8ff'}
+];
+const theme=THEMES[Math.floor(Math.random()*THEMES.length)];
+document.body.style.background=`linear-gradient(160deg,${theme.bg[0]},${theme.bg[1]})`;
+const root=document.documentElement.style;
+root.setProperty('--panel',theme.panel);
+root.setProperty('--panelBorder',theme.panelBorder);
+root.setProperty('--accent',theme.accent);
+root.setProperty('--accent2',theme.accent2);
+root.setProperty('--label',theme.label);
+root.setProperty('--badgeTxt',theme.badgeTxt);
+root.setProperty('--txt',theme.txt);
+root.setProperty('--ctaA',theme.ctaA);
+root.setProperty('--ctaB',theme.ctaB);
+
+const feltEl=document.getElementById('felt');
+function makeFeltPattern(){
+  feltEl.innerHTML='';
+  const n=26;
+  for(let i=0;i<n;i++){
+    const d=document.createElement('div');
+    const sz=2+Math.random()*3;
+    d.style.cssText=`position:absolute;width:${sz}px;height:${sz}px;border-radius:50%;
+      background:${theme.feltDot};opacity:${.05+Math.random()*.1};left:${Math.random()*100}%;top:${Math.random()*100}%;`;
+    feltEl.appendChild(d);
+  }
+  // subtle vignette
+  const v=document.createElement('div');
+  v.style.cssText='position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,.45) 100%);';
+  feltEl.appendChild(v);
+}
+makeFeltPattern();
+
+/* ============ AUDIO ============ */
+let AC;
+try{ AC=new(window.AudioContext||window.webkitAudioContext)(); }catch(e){ console.error('AudioContext failed',e); AC=null; }
+let muted=false;
+let _masterGain=null;
+if(AC){ try{ _masterGain=AC.createGain(); _masterGain.gain.value=2.8; _masterGain.connect(AC.destination); }catch(e){ console.error('masterGain failed',e); } }
+
+function tone(freq,type,dur,vol,delay=0){if(muted||!AC||!_masterGain)return;try{const o=AC.createOscillator(),g=AC.createGain();o.connect(g);g.connect(_masterGain);o.type=type;o.frequency.value=freq;const t=AC.currentTime+(delay||0);g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.001,t+dur);o.start(t);o.stop(t+dur+.01);}catch(e){}}
+function noiseBurst(dur,vol,delay=0){if(muted||!AC||!_masterGain)return;try{const bufSize=AC.sampleRate*dur;const buf=AC.createBuffer(1,bufSize,AC.sampleRate);const data=buf.getChannelData(0);for(let i=0;i<bufSize;i++)data[i]=(Math.random()*2-1)*(1-i/bufSize);const src=AC.createBufferSource();src.buffer=buf;const g=AC.createGain();const t=AC.currentTime+(delay||0);g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.001,t+dur);src.connect(g);g.connect(_masterGain);src.start(t);}catch(e){}}
+
+const SFX_CACHE={};
+const SFX_FILES={
+  cardflip:['sfx/cardflip.mp3','sfx/card.mp3','sfx/flip.mp3'],
+  chip:['sfx/chip.mp3','sfx/chips.mp3','sfx/clink.mp3'],
+  tick:['sfx/tick.mp3','sfx/click.mp3'],
+  tap:['sfx/tap.mp3','sfx/select.mp3'],
+  correct:['sfx/correct.mp3','sfx/success.mp3','sfx/win.mp3'],
+  wrong:['sfx/wrong.mp3','sfx/fail.mp3','sfx/error.mp3'],
+  cta:['sfx/cta.mp3','sfx/whoosh.mp3','sfx/swoosh.mp3'],
+  reveal:['sfx/reveal.mp3','sfx/chime.mp3','sfx/ding.mp3']
+};
+function tryLoadSfxPath(name,path){return new Promise(resolve=>{if(!AC)return resolve(false);fetch(path).then(r=>{if(!r.ok)return resolve(false);return r.arrayBuffer();}).then(ab=>{if(!ab)return resolve(false);return AC.decodeAudioData(ab);}).then(buf=>{SFX_CACHE[name]=buf;resolve(true);}).catch(()=>resolve(false));});}
+async function tryLoadSfx(name,paths){for(const p of paths){try{if(await tryLoadSfxPath(name,p))return;}catch{}}}
+function playSfxFile(name,vol=1){if(muted||!SFX_CACHE[name]||!AC||!_masterGain)return false;try{const src=AC.createBufferSource(),g=AC.createGain();src.buffer=SFX_CACHE[name];g.gain.value=vol;src.connect(g);g.connect(_masterGain);src.start();}catch{}return true;}
+Object.entries(SFX_FILES).forEach(([k,v])=>tryLoadSfx(k,v));
+
+const sfxCardFlip=()=>{if(!playSfxFile('cardflip',.7)){noiseBurst(.06,.12);tone(1400,'square',.03,.06,.02);}};
+const sfxChip=()=>{if(!playSfxFile('chip',.7)){tone(2200,'triangle',.05,.1);tone(1800,'triangle',.05,.08,.03);}};
+const sfxTick=()=>{if(!playSfxFile('tick',.5))tone(1000,'square',.04,.1);};
+const sfxTap=()=>{if(!playSfxFile('tap',.6))tone(440,'triangle',.06,.18);};
+const sfxCorrect=()=>{if(!playSfxFile('correct',.9))[523,659,784,1047].forEach((f,i)=>tone(f,'sine',.16,.26,i*.06));};
+const sfxWrong=()=>{if(!playSfxFile('wrong',.7)){tone(220,'sawtooth',.16,.2);tone(160,'sawtooth',.18,.15,.08);}};
+const sfxCta=()=>{if(!playSfxFile('cta',.8)){tone(600,'sine',.08,.15);tone(900,'sine',.1,.14,.07);tone(1200,'sine',.12,.12,.15);}};
+const sfxReveal=()=>{if(!playSfxFile('reveal',.85)){tone(880,'sine',.14,.22);tone(1174,'sine',.16,.18,.08);}};
+
+let bgMusic=null,bgMusicSearching=false;
+const BG_NAMES=['bgmusic/1.mp3','bgmusic/2.mp3','bgmusic/3.mp3','bgmusic/4.mp3','bgmusic/5.mp3','bgmusic/music1.mp3','bgmusic/music2.mp3','bgmusic/theme.mp3','bgmusic/bg.mp3','bgmusic/background.mp3','bgmusic/track1.mp3','bgmusic/track2.mp3','bgmusic/game.mp3'];
+function tryPlayBg(path){return new Promise((resolve,reject)=>{const a=new Audio(path);a.loop=true;a.volume=0.18;let settled=false,timeoutId=null;function cleanup(){a.removeEventListener('playing',onOk);a.removeEventListener('error',onErr);if(timeoutId)clearTimeout(timeoutId);}function onOk(){if(settled)return;settled=true;cleanup();resolve(a);}function onErr(){if(settled)return;settled=true;cleanup();try{a.pause();}catch{}reject();}a.addEventListener('playing',onOk);a.addEventListener('error',onErr);timeoutId=setTimeout(()=>{if(settled)return;settled=true;cleanup();try{a.pause();}catch{}reject();},4000);const promise=a.play();if(promise&&typeof promise.catch==='function'){promise.catch(()=>{if(settled)return;settled=true;cleanup();try{a.pause();}catch{}reject();});}});}
+async function startBgMusic(){if(muted||bgMusic||bgMusicSearching)return;bgMusicSearching=true;const paths=[...BG_NAMES].sort(()=>Math.random()-.5);for(const p of paths){if(muted||bgMusic){bgMusicSearching=false;return;}try{const audio=await tryPlayBg(p);if(muted){try{audio.pause();}catch{}bgMusicSearching=false;return;}bgMusic=audio;audio.addEventListener('ended',()=>{if(bgMusic===audio)bgMusic=null;bgMusicSearching=false;startBgMusic();});bgMusicSearching=false;return;}catch{}}bgMusicSearching=false;}
+function stopBgMusic(){if(bgMusic){try{bgMusic.pause();bgMusic.src='';}catch{}bgMusic=null;bgMusicSearching=false;}}
+
+/* ============ PARTICLES ============ */
+const pcv=document.getElementById('pcv'),pctx=pcv.getContext('2d');
+let P=[];
+const resizeP=()=>{pcv.width=window.innerWidth;pcv.height=window.innerHeight;};
+resizeP();window.addEventListener('resize',resizeP);
+function burst(x,y,col,n=18){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,sp=2.5+Math.random()*7;P.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1.5,life:1,decay:.016+Math.random()*.025,sz:4+Math.random()*10,col});}}
+function tickP(){pctx.clearRect(0,0,pcv.width,pcv.height);P=P.filter(p=>p.life>.01);for(const p of P){p.x+=p.vx;p.y+=p.vy;p.vy+=.13;p.life-=p.decay;p.vx*=.97;pctx.save();pctx.globalAlpha=p.life;pctx.fillStyle=p.col;pctx.beginPath();pctx.arc(p.x,p.y,p.sz,0,Math.PI*2);pctx.fill();pctx.restore();}}
+
+/* ============ POKER ENGINE ============ */
+const RANKS=['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+const RANK_VAL={'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'T':10,'J':11,'Q':12,'K':13,'A':14};
+const SUITS=[{s:'♠',c:'black'},{s:'♥',c:'red'},{s:'♦',c:'red'},{s:'♣',c:'black'}];
+const POSITIONS=['Under the Gun','Middle Position','Hijack','Cutoff','Button','Small Blind','Big Blind'];
+const ACTIONS=[
+  {label:'Folded to you, you can open', pf:true},
+  {label:'One player raised before you', pf:false},
+  {label:'One player raised, one called', pf:false},
+  {label:'Player 3-bet before you', pf:false},
+  {label:'Checked to you', pf:false, postflop:true},
+  {label:'Player bet half pot', pf:false, postflop:true},
+  {label:'Player bet full pot', pf:false, postflop:true}
+];
+
+function freshDeck(){
+  const d=[];
+  for(const r of RANKS) for(const su of SUITS) d.push({r,su});
+  return d;
+}
+function shuffle(arr){
+  const a=arr.slice();
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+function drawCards(deck,n){return deck.splice(0,n);}
+
+function cardHTML(card,hidden){
+  if(hidden) return `<div class="pcard back in"></div>`;
+  return `<div class="pcard ${card.su.c} in"><div class="rk">${card.r}</div><div class="st">${card.su.s}</div></div>`;
+}
+
+// Very lightweight 5/6/7-card hand ranking (enough to grade our own generated spots)
+function handRank(cards){
+  // cards: array of {r,su}
+  const vals=cards.map(c=>RANK_VAL[c.r]).sort((a,b)=>b-a);
+  const suitsArr=cards.map(c=>c.su.s);
+  const counts={};
+  vals.forEach(v=>counts[v]=(counts[v]||0)+1);
+  const countPairs=Object.entries(counts).map(([v,c])=>({v:+v,c})).sort((a,b)=>b.c-a.c||b.v-a.v);
+  const suitCounts={};
+  suitsArr.forEach(s=>suitCounts[s]=(suitCounts[s]||0)+1);
+  const flushSuit=Object.entries(suitCounts).find(([s,c])=>c>=5);
+  const uniqVals=[...new Set(vals)];
+  let straightHigh=0;
+  for(let i=0;i<=uniqVals.length-5;i++){
+    if(uniqVals[i]-uniqVals[i+4]===4){straightHigh=uniqVals[i];break;}
+  }
+  if(!straightHigh && uniqVals.includes(14) && [5,4,3,2].every(v=>uniqVals.includes(v))) straightHigh=5;
+
+  let score=0,name='High Card';
+  if(flushSuit && straightHigh){score=8;name='Straight Flush';}
+  else if(countPairs[0].c===4){score=7;name='Four of a Kind';}
+  else if(countPairs[0].c===3 && countPairs[1] && countPairs[1].c>=2){score=6;name='Full House';}
+  else if(flushSuit){score=5;name='Flush';}
+  else if(straightHigh){score=4;name='Straight';}
+  else if(countPairs[0].c===3){score=3;name='Three of a Kind';}
+  else if(countPairs[0].c===2 && countPairs[1] && countPairs[1].c===2){score=2;name='Two Pair';}
+  else if(countPairs[0].c===2){score=1;name='Pair';}
+  else{score=0;name='High Card';}
+  return {score,name,topVal:countPairs[0].v};
+}
+
+function countOuts(hand,board){
+  // Monte-carlo-free exact out count: for each remaining card, does adding it improve hand category or top pair rank?
+  const used=[...hand,...board];
+  const usedKey=c=>c.r+c.su.s;
+  const usedSet=new Set(used.map(usedKey));
+  const deck=freshDeck().filter(c=>!usedSet.has(usedKey(c)));
+  const baseRank=board.length>=3?handRank([...hand,...board]):null;
+  let outs=0;
+  for(const c of deck){
+    const newBoard=[...board,c];
+    const newRank=handRank([...hand,...newBoard]);
+    if(!baseRank || newRank.score>baseRank.score || (newRank.score===baseRank.score && newRank.topVal>baseRank.topVal)){
+      outs++;
+    }
+  }
+  return Math.min(outs,20); // sanity cap
+}
+
+function genSpot(){
+  const deck=shuffle(freshDeck());
+  const hand=drawCards(deck,2);
+  const streetRoll=Math.random();
+  let boardCount=3;
+  if(streetRoll<0.4) boardCount=3;      // flop
+  else if(streetRoll<0.75) boardCount=4; // turn
+  else boardCount=5;                     // river
+  const board=drawCards(deck,boardCount);
+  const position=POSITIONS[Math.floor(Math.random()*POSITIONS.length)];
+  const postflopActions=ACTIONS.filter(a=>a.postflop);
+  const preflopActions=ACTIONS.filter(a=>!a.postflop);
+  const action=postflopActions[Math.floor(Math.random()*postflopActions.length)];
+  const potSize=[20,40,60,80,120,150][Math.floor(Math.random()*6)];
+  const betMult=action.label.includes('half')?0.5:(action.label.includes('full')?1:0);
+  const betSize=Math.round(potSize*betMult/5)*5;
+  const stackSize=potSize*(4+Math.floor(Math.random()*8));
+
+  const outs=countOuts(hand,board);
+  const rankNow=handRank([...hand,...board]);
+  let outsPct;
+  if(board.length===3) outsPct=Math.min(outs*4,95);      // rule of 4 (2 cards to come... approx)
+  else if(board.length===4) outsPct=Math.min(outs*2,95); // rule of 2
+  else outsPct=0; // river, no more cards
+
+  const potOddsPct = betSize>0 ? (betSize/(potSize+betSize*2))*100 : 0; // amount to call vs total pot after call
+  const callAmount=betSize;
+  const totalPotIfCall=potSize+betSize; // pot before our call
+  const breakEvenPct = betSize>0 ? (callAmount/(totalPotIfCall+callAmount))*100 : 0;
+
+  const evWin = board.length<5 ? outsPct/100 : (rankNow.score>=1?0.6:0.3);
+  const amountWon = totalPotIfCall;
+  const amountLost = callAmount;
+  const ev = betSize>0 ? (evWin*amountWon)-((1-evWin)*amountLost) : null;
+
+  // Decide correct action: simple, explainable heuristic (this is a content game, not a solver)
+  let correct='B'; // default Call
+  let explanation='';
+  if(betSize===0){
+    // checked to us
+    if(rankNow.score>=1){correct='C';explanation=`You've made ${rankNow.name.toLowerCase()}. Bet to build the pot and charge worse hands for the right to draw or catch up.`;}
+    else {correct='A';explanation=`No made hand and nothing was bet at you. Checking back keeps the pot small until you have something to bet on.`;}
+  } else {
+    if(rankNow.score>=3){correct='D';explanation=`You've got ${rankNow.name.toLowerCase()} — a very strong hand here. Getting stacks in is the play; you're rarely behind.`;}
+    else if(rankNow.score>=1 && breakEvenPct<40){correct='B';explanation=`You have ${rankNow.name.toLowerCase()} and the pot odds are good enough to continue. You need ${breakEvenPct.toFixed(0)}% equity to break even — this is close.`;}
+    else if(rankNow.score===0 && outsPct>=breakEvenPct && outsPct>0){correct='B';explanation=`You have a draw giving you roughly ${outsPct.toFixed(0)}% to improve, and you only need ${breakEvenPct.toFixed(0)}% to break even. The math says call.`;}
+    else {correct='A';explanation=`Your equity here (about ${(rankNow.score>=1?55:outsPct).toFixed(0)}%) doesn't clear the ${breakEvenPct.toFixed(0)}% you need to break even. Folding saves chips for a better spot.`;}
+  }
+
+  return {
+    hand,board,position,action,potSize,betSize,stackSize,
+    outs,outsPct,potOddsPct,breakEvenPct,ev,rankNow,correct,explanation,
+    street: board.length===3?'Flop':board.length===4?'Turn':'River'
+  };
+}
+
+/* ============ POST TYPES ============ */
+const POST_TYPES=['spot','spotmath','math15','cheatsheet','equity','evgame','beginner'];
+let currentType='spot';
+let spot=null;
+
+const OPTION_SETS={
+  default:['Fold','Call','Raise','All-In'],
+};
+
+const CAPTIONS={
+  spot:[
+    "What's YOUR move here? Comment below 👇 #Poker #PokerStrategy #TexasHoldem #PokerTips #WhatsYourMove",
+    "Most people get this spot wrong. Do you know the play? #Poker #PokerQuiz #TexasHoldem #PokerTips",
+    "Fold, call, raise, or all-in? Drop your answer below. #Poker #PokerStrategy #PokerTips #HoldemPoker",
+    "Real spot. Real decision. What do you do? #Poker #PokerCommunity #TexasHoldem #PokerTips",
+  ],
+  spotmath:[
+    "The math AND the spot in one post. Can you solve it? #Poker #PokerMath #PokerStrategy #PokerTips",
+    "Outs, odds, and one big decision. What's the move? #Poker #PokerMath #TexasHoldem #PokerTips",
+    "This is how winning players think. Follow the numbers. #Poker #PokerStrategy #PokerMath #PokerTips",
+  ],
+  math15:[
+    "Poker math in 15 seconds. Save this. #Poker #PokerMath #PokerTips #TexasHoldem #PokerStrategy",
+    "Learn this and you'll never misplay a draw again. #Poker #PokerMath #PokerTips #PokerStrategy",
+    "The math that separates winners from losers. #Poker #PokerMath #PokerTips #HoldemPoker",
+  ],
+  cheatsheet:[
+    "Save this. You'll use it every session. #Poker #PokerTips #PokerMath #PokerStrategy #TexasHoldem",
+    "Screenshot this poker math cheat sheet. #Poker #PokerTips #PokerMath #PokerStrategy",
+    "Every poker player needs to know this. #Poker #PokerTips #PokerMath #PokerCommunity",
+  ],
+  equity:[
+    "What's your equity here? Most people guess wrong. #Poker #PokerMath #PokerQuiz #PokerTips",
+    "Guess the equity before you scroll past. #Poker #PokerStrategy #PokerMath #PokerTips",
+  ],
+  evgame:[
+    "Is this call +EV or -EV? The math doesn't lie. #Poker #PokerMath #PokerStrategy #PokerTips",
+    "The single most important poker concept. +EV or -EV? #Poker #PokerMath #PokerTips #TexasHoldem",
+  ],
+  beginner:[
+    "90% of beginners get this wrong. Don't be one of them. #Poker #PokerTips #PokerStrategy #TexasHoldem",
+    "The common mistake that's costing you money. #Poker #PokerTips #PokerStrategy #PokerMath",
+  ],
+};
+
+const CTAS=[
+  {icon:"♠",text:"Follow for daily spots!",sub:"New poker quiz every day"},
+  {icon:"💬",text:"Comment your answer!",sub:"Let's see who gets it right"},
+  {icon:"🔁",text:"Share with your poker group!",sub:"Spread the strategy"},
+  {icon:"🔥",text:"Tag someone who folds too much!",sub:"Time to call them out"},
+  {icon:"👑",text:"Follow for daily poker math!",sub:"Level up your game"},
+];
+
+const MATH_FACTS=[
+  {title:"Rule of 4 & 2", lines:[["After the flop","Outs × 4"],["After the turn","Outs × 2"],["Flush draw","9 outs ≈ 36%"],["Open-ended straight","8 outs ≈ 32%"]]},
+  {title:"Pot Odds", lines:[["Formula","(Pot + Bet) ÷ Bet"],["Example","$100 pot + $20 bet"],["Pot odds","6 : 1"],["Meaning","Need 14% equity to call"]]},
+  {title:"Break-Even %", lines:[["Formula","1 ÷ (Pot Odds + 1)"],["Example","1 ÷ (6+1)"],["Break-even","14.3%"],["Meaning","Call if your equity beats this"]]},
+  {title:"Expected Value", lines:[["Formula","(Win% × Win$) − (Lose% × Lose$)"],["Example","(36% × $120) − (64% × $20)"],["Result","+$30.40"],["Meaning","Positive EV = profitable call"]]},
+  {title:"Common Outs", lines:[["Flush draw","9 outs"],["Open-ended straight","8 outs"],["Gutshot straight","4 outs"],["Two overcards","6 outs"]]},
+];
+
+/* ============ DOM refs ============ */
+const eyebrow=document.getElementById('eyebrow');
+const modeBadge=document.getElementById('mode-badge');
+const tableCard=document.getElementById('table-card');
+const handLabel=document.getElementById('hand-label');
+const handRow=document.getElementById('hand-row');
+const boardLabel=document.getElementById('board-label');
+const boardRow=document.getElementById('board-row');
+const infoGrid=document.getElementById('info-grid');
+const mathRow=document.getElementById('math-row');
+const questionEl=document.getElementById('question');
+const optsEl=document.getElementById('opts');
+const timerWrap=document.getElementById('timer-wrap');
+const timerFill=document.getElementById('timer-fill');
+const timerNum=document.getElementById('timer-num');
+const revealBanner=document.getElementById('reveal-banner');
+const tapHint=document.getElementById('tap-hint');
+const ctaOverlay=document.getElementById('cta-overlay');
+const ctaIcon=document.getElementById('cta-icon');
+const ctaText=document.getElementById('cta-text');
+const ctaSub=document.getElementById('cta-sub');
+const floatPts=document.getElementById('float-pts');
+const staticPanel=document.getElementById('static-panel');
+const staticTitle=document.getElementById('static-title');
+const staticBody=document.getElementById('static-body');
+const tblWrap=document.getElementById('tbl-wrap');
+
+let phase="idle";
+let countLeft=6;
+let countTimerId=null;
+let narrationText="";
+
+function fmtMoney(n){return '$'+n;}
+
+function buildInfoGrid(s){
+  infoGrid.innerHTML='';
+  const cells=[
+    ['Position',s.position],
+    ['Street',s.street],
+    ['Pot',fmtMoney(s.potSize)],
+    ['Stack',fmtMoney(s.stackSize)],
+  ];
+  cells.forEach(([k,v])=>{
+    const d=document.createElement('div');
+    d.className='info-cell';
+    d.innerHTML=`<div class="info-k">${k}</div><div class="info-v">${v}</div>`;
+    infoGrid.appendChild(d);
+  });
+}
+
+function buildOpts(labels,correctLetter,onDone){
+  optsEl.innerHTML='';
+  const letters=['A','B','C','D'];
+  labels.forEach((opt,i)=>{
+    const btn=document.createElement('button');
+    btn.className='opt-btn pop';
+    btn.dataset.letter=letters[i];
+    btn.innerHTML=`<span class="opt-letter">${letters[i]}</span><span class="opt-label">${opt}</span><span class="check"></span>`;
+    btn.onclick=()=>selectOption(letters[i],correctLetter,btn);
+    optsEl.appendChild(btn);
+  });
+}
+
+function newRound(){
+  try{ newRoundInner(); }catch(e){ console.error('newRound failed',e); }
+}
+
+function narrate(txt){
+  narrationText=txt;
+  window._narrationLog=window._narrationLog||[];
+  window._narrationLog.push(txt);
+}
+
+function newRoundInner(){
+  clearInterval(countTimerId);
+  phase="showing";
+  currentType=POST_TYPES[Math.floor(Math.random()*POST_TYPES.length)];
+  window._lastPostType=currentType;
+  narrationText="";
+  window._narrationLog=[];
+
+  tableCard.classList.remove('pop');
+  handRow.innerHTML='';boardRow.innerHTML='';
+  optsEl.innerHTML='';
+  mathRow.style.display='none';
+  boardLabel.style.display='none';
+  revealBanner.classList.remove('show');
+  tapHint.classList.remove('show');
+  timerWrap.style.opacity='1';
+  staticPanel.style.display='none';
+  tblWrap.style.display='flex';
+
+  if(currentType==='cheatsheet'){
+    tblWrap.style.display='none';
+    staticPanel.style.display='block';
+    modeBadge.textContent='Cheat Sheet';
+    eyebrow.textContent='Save & Study';
+    const fact=MATH_FACTS[Math.floor(Math.random()*MATH_FACTS.length)];
+    staticTitle.textContent=fact.title;
+    staticBody.innerHTML=fact.lines.map(([k,v])=>`<div class="sheet-line"><span>${k}</span><b>${v}</b></div>`).join('');
+    narrate(`Here's your poker math cheat sheet: ${fact.title}. ${fact.lines.map(l=>l.join(': ')).join('. ')}. Save this, you'll use it every session.`);
+    timerWrap.style.opacity='0';
+    void staticPanel.offsetWidth;
+    staticPanel.style.animation='none';
+    burst(window.innerWidth/2,window.innerHeight*0.4,theme.accent,14);
+    sfxReveal();
+    setTimeout(()=>{ phase="done"; tapHint.classList.add('show'); },1800);
+    return;
+  }
+
+  spot=genSpot();
+  const s=spot;
+
+  if(currentType==='math15'){
+    modeBadge.textContent='Poker Math';
+    eyebrow.textContent='15-Second Lesson';
+  } else if(currentType==='equity'){
+    modeBadge.textContent='Guess Equity';
+    eyebrow.textContent="What's Your Equity?";
+  } else if(currentType==='evgame'){
+    modeBadge.textContent='EV Check';
+    eyebrow.textContent='+EV or -EV?';
+  } else if(currentType==='beginner'){
+    modeBadge.textContent='Beginner Mistake';
+    eyebrow.textContent='Most People Get This Wrong';
+  } else if(currentType==='spotmath'){
+    modeBadge.textContent='Spot + Math';
+    eyebrow.textContent='Think In Numbers';
+  } else {
+    modeBadge.textContent='Poker Spot';
+    eyebrow.textContent="What's Your Move?";
+  }
+
+  handLabel.textContent='Your Hand';
+  handRow.innerHTML=s.hand.map(c=>cardHTML(c)).join('');
+  buildInfoGrid(s);
+
+  boardLabel.style.display='block';
+  boardRow.innerHTML=s.board.map(c=>cardHTML(c)).join('');
+
+  let narrationParts=[];
+  narrationParts.push(`You're in the ${s.position}.`);
+  narrationParts.push(`Your hand: ${s.hand.map(c=>c.r+' of '+suitName(c.su.s)).join(' and ')}.`);
+  narrationParts.push(`The board shows ${s.board.map(c=>c.r+' of '+suitName(c.su.s)).join(', ')}.`);
+  narrationParts.push(`${s.action.label}. Pot is ${s.potSize} dollars, your stack is ${s.stackSize} dollars.`);
+
+  if(currentType==='spotmath' || currentType==='evgame'){
+    mathRow.style.display='flex';
+    mathRow.innerHTML='';
+    const lines=[];
+    lines.push(['Outs', s.outs]);
+    if(s.board.length<5) lines.push(['Equity (Rule of '+(s.board.length===3?4:2)+')', s.outsPct.toFixed(0)+'%']);
+    if(s.betSize>0){
+      lines.push(['Pot Odds', s.potOddsPct.toFixed(0)+'% to call']);
+      lines.push(['Break-Even', s.breakEvenPct.toFixed(0)+'%']);
+    }
+    if(s.ev!==null) lines.push(['Expected Value', (s.ev>=0?'+':'')+'$'+s.ev.toFixed(2)]);
+    lines.forEach(([k,v])=>{
+      const d=document.createElement('div');
+      d.className='math-line';
+      d.innerHTML=`<span>${k}</span><b>${v}</b>`;
+      mathRow.appendChild(d);
+    });
+    narrationParts.push(`You have ${s.outs} outs.`);
+    if(s.ev!==null) narrationParts.push(`Expected value works out to ${s.ev>=0?'positive':'negative'} ${Math.abs(s.ev).toFixed(2)} dollars.`);
+  }
+
+  let question="What's your move?";
+  let optionLabels=['Fold','Call','Raise','All-In'];
+  let correctLetter=spot.correct;
+
+  if(currentType==='equity'){
+    question="What's your equity right now?";
+    const real=Math.round(s.board.length<5?s.outsPct:(s.rankNow.score>=1?60:25));
+    const pool=[real,Math.max(0,real-15),Math.min(100,real+15),Math.max(0,real-28)];
+    const shuffled=shuffle(pool.map((v,i)=>({v,correct:v===real})));
+    optionLabels=shuffled.map(o=>o.v+'%');
+    correctLetter=['A','B','C','D'][shuffled.findIndex(o=>o.correct)];
+    narrationParts.push(`What's your equity? The answer is about ${real} percent.`);
+  } else if(currentType==='evgame'){
+    question="Is this call +EV or -EV?";
+    optionLabels=['+EV, easy call','+EV, close spot','-EV, close spot','-EV, easy fold'];
+    const isPos=s.ev!==null && s.ev>=0;
+    const margin=s.ev!==null?Math.abs(s.ev):0;
+    if(isPos) correctLetter = margin>15?'A':'B';
+    else correctLetter = margin>15?'D':'C';
+  } else if(currentType==='beginner'){
+    question="Most beginners get this wrong. What's the move?";
+  } else if(currentType==='math15'){
+    question="Call or fold based on the math?";
+    optionLabels=['Fold','Call'];
+    correctLetter = (spot.correct==='A')?'A':'B';
+  }
+
+  questionEl.textContent=question;
+  buildOpts(optionLabels,correctLetter);
+  narrate(narrationParts.join(' '));
+
+  tableCard.classList.remove('pop');
+  void tableCard.offsetWidth;
+  tableCard.classList.add('pop');
+  sfxCardFlip();
+  const rc=tableCard.getBoundingClientRect();
+  burst(rc.left+rc.width/2,rc.top+20,theme.accent,8);
+  setTimeout(()=>sfxChip(),250);
+
+  countLeft=6;
+  timerFill.style.width='100%';
+  timerFill.style.background='linear-gradient(90deg,#43e97b,#38f9d7)';
+  timerNum.textContent=countLeft;
+  setTimeout(()=>startCountdown(),500);
+}
+
+function suitName(s){return s==='♠'?'Spades':s==='♥'?'Hearts':s==='♦'?'Diamonds':'Clubs';}
+
+function startCountdown(){
+  phase="counting";
+  countTimerId=setInterval(()=>{
+    countLeft--;
+    const pct=Math.max(0,(countLeft/6)*100);
+    timerFill.style.width=pct+'%';
+    if(countLeft<=2)timerFill.style.background='linear-gradient(90deg,#ff9a3c,#ff5e7e)';
+    timerNum.textContent=Math.max(0,countLeft);
+    if(countLeft>0)sfxTick();
+    if(countLeft<=0){
+      clearInterval(countTimerId);
+      autoSelectCorrect();
+    }
+  },1000);
+}
+
+function autoSelectCorrect(){
+  if(phase!=="counting")return;
+  const btn=optsEl.querySelector(`[data-letter]`);
+  const correctBtn=Array.from(optsEl.children).find(b=>b.dataset.letter===currentCorrectLetter());
+  if(correctBtn)selectOption(correctBtn.dataset.letter,correctBtn.dataset.letter,correctBtn);
+}
+function currentCorrectLetter(){
+  return Array.from(optsEl.children).find(b=>b.classList.contains('__correct_marker'))?.dataset.letter || optsEl.dataset.correct;
+}
+
+function selectOption(letter,correctLetter,btnEl){
+  if(phase!=="counting")return;
+  clearInterval(countTimerId);
+  phase="selected";
+  sfxTap();
+  btnEl.classList.add('press');
+  setTimeout(()=>btnEl.classList.remove('press'),140);
+  Array.from(optsEl.children).forEach(b=>{ if(b.dataset.letter!==letter) b.classList.add('dim'); });
+  setTimeout(()=>showCta(letter,correctLetter),380);
+}
+
+function showCta(letter,correctLetter){
+  phase="cta";
+  const c=CTAS[Math.floor(Math.random()*CTAS.length)];
+  ctaIcon.textContent=c.icon;
+  ctaText.textContent=c.text;
+  ctaSub.textContent=c.sub;
+  ctaOverlay.classList.add('show');
+  sfxCta();
+  setTimeout(()=>{
+    ctaOverlay.classList.remove('show');
+    setTimeout(()=>revealAnswer(letter,correctLetter),250);
+  },1600);
+}
+
+function revealAnswer(letter,correctLetter){
+  phase="reveal";
+  Array.from(optsEl.children).forEach(b=>b.classList.remove('dim'));
+  const correctBtn=optsEl.querySelector(`[data-letter="${correctLetter}"]`);
+  const pickedBtn=optsEl.querySelector(`[data-letter="${letter}"]`);
+  const isRight=letter===correctLetter;
+  if(correctBtn){correctBtn.classList.add('correct');correctBtn.querySelector('.check').textContent='✓';}
+  if(!isRight&&pickedBtn){pickedBtn.classList.add('wrong');pickedBtn.querySelector('.check').textContent='✗';}
+
+  const rc=(correctBtn||tableCard).getBoundingClientRect();
+  if(isRight){
+    sfxCorrect();
+    burst(rc.left+rc.width/2,rc.top+rc.height/2,'#43e97b',24);
+    revealBanner.textContent="✓ Correct!";
+    revealBanner.style.background='linear-gradient(135deg,#43e97b,#2fd66a)';
+    showFloatPts('+10');
+  } else {
+    sfxWrong();
+    burst(rc.left+rc.width/2,rc.top+rc.height/2,'#ff6b6b',16);
+    revealBanner.textContent="✗ Nice try!";
+    revealBanner.style.background='linear-gradient(135deg,#ff6b6b,#e84545)';
+  }
+  sfxReveal();
+  revealBanner.classList.add('show');
+  if(spot && spot.explanation) narrate((narrationText?narrationText+' ':'')+spot.explanation);
+  setTimeout(()=>{
+    phase="done";
+    tapHint.classList.add('show');
+  },700);
+}
+
+function showFloatPts(txt){
+  floatPts.textContent=txt;
+  floatPts.classList.remove('pop');
+  void floatPts.offsetWidth;
+  floatPts.classList.add('pop');
+}
+
+function advance(){
+  if(phase!=="done")return;
+  newRound();
+}
+document.addEventListener('click',()=>{ if(phase==="done") advance(); });
+
+/* patch buildOpts to store correct letter for autoSelect lookup */
+const _origBuildOpts=buildOpts;
+buildOpts=function(labels,correctLetter,onDone){
+  _origBuildOpts(labels,correctLetter,onDone);
+  optsEl.dataset.correct=correctLetter;
+  const cb=optsEl.querySelector(`[data-letter="${correctLetter}"]`);
+  if(cb)cb.classList.add('__correct_marker');
+};
+
+/* ============ AUTOSTART / BOT / EXTERNAL CONTROL ============ */
+window._autoStartGame=function(forceType){
+  console.log('_autoStartGame called', forceType||'');
+  try{ if(AC && AC.state==='suspended') AC.resume(); }catch(e){ console.error('AC.resume failed',e); }
+  startBgMusic();
+  if(forceType && POST_TYPES.includes(forceType)){
+    window._forcedType=forceType;
+  }
+  newRound();
+  console.log('_autoStartGame done, phase=',phase,'type=',currentType);
+};
+
+// allow forcing a specific post type from outside (Selenium sets window._forcedType before calling autostart)
+const _origNewRoundInner=newRoundInner;
+
+let botActive=false;
+window._startBot=function(){ botActive=true; };
+window._stopBot=function(){ botActive=false; };
+window._botTick=function(dt){
+  if(!botActive)return;
+  if(phase==="counting" && countLeft<=3 && Math.random()<0.35){
+    autoSelectCorrect();
+  }
+  if(phase==="done"){
+    if(!window._botAdvTimer){
+      window._botAdvTimer=setTimeout(()=>{ window._botAdvTimer=null; if(phase==="done")advance(); },700+Math.random()*500);
+    }
+  }
+};
+
+window._getNarration=function(){ return narrationText || ''; };
+window._getPostType=function(){ return currentType; };
+window._getCaption=function(){
+  const pool=CAPTIONS[currentType]||CAPTIONS.spot;
+  return pool[Math.floor(Math.random()*pool.length)];
+};
+window._getLayoutInfo=function(){
+  const hdr=document.getElementById('hdr');
+  return {
+    bodyW:document.body.offsetWidth||window.innerWidth,
+    bodyH:document.body.offsetHeight||window.innerHeight,
+    innerW:window.innerWidth,
+    innerH:window.innerHeight,
+    headerH: hdr?hdr.getBoundingClientRect().bottom:60,
+  };
+};
+
+/* ============ MAIN LOOP ============ */
+function loop(){
+  try{
+    tickP();
+    if(typeof window._botTick==='function')window._botTick(16);
+  }catch(e){ console.error('loop error',e); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* honor forced type on first round */
+const _reallyNewRoundInner=newRoundInner;
+newRoundInner=function(){
+  if(window._forcedType){
+    currentType=window._forcedType;
+    window._forcedType=null;
+    // run inner logic but skip the random pick line by temporarily overriding Math.random pick
+    // simplest: just call original then override currentType back if it got randomized
+  }
+  _reallyNewRoundInner();
+};
+
+/* ============ RECORDING API ============ */
+window._recordingDone=false;
+window._recordingBlob=null;
+
+window.startRecording=function(fps=30){
+  const RW=window.innerWidth,RH=window.innerHeight;
+
+  let audioTracks=[];
+  if(AC && _masterGain){
+    try{
+      const audioRecDest=AC.createMediaStreamDestination();
+      _masterGain.connect(audioRecDest);
+      audioTracks=audioRecDest.stream.getAudioTracks();
+    }catch(e){ console.error('audio record dest failed',e); }
+  }
+
+  // Capture the actual rendered DOM using a display media style trick is not available headlessly,
+  // so we composite: real app is drawn to canvas each frame via a lightweight re-draw pass.
+  const merged=document.createElement('canvas');
+  merged.width=RW;merged.height=RH;
+  const mctx=merged.getContext('2d');
+
+  function roundRect(c,x,y,w,h,r){
+    c.beginPath();
+    c.moveTo(x+r,y);
+    c.lineTo(x+w-r,y);c.arcTo(x+w,y,x+w,y+r,r);
+    c.lineTo(x+w,y+h-r);c.arcTo(x+w,y+h,x+w-r,y+h,r);
+    c.lineTo(x+r,y+h);c.arcTo(x,y+h,x,y+h-r,r);
+    c.lineTo(x+r,y);c.arcTo(x,y,x+r,y,r);
+    c.closePath();
+  }
+
+  function drawMerged(){
+    mctx.clearRect(0,0,RW,RH);
+    const bgGrad=mctx.createLinearGradient(0,0,RW*0.3,RH);
+    bgGrad.addColorStop(0,theme.bg[0]);
+    bgGrad.addColorStop(1,theme.bg[1]);
+    mctx.fillStyle=bgGrad;
+    mctx.fillRect(0,0,RW,RH);
+    _drawUI(mctx,RW,RH);
+    mctx.drawImage(pcv,0,0,RW,RH);
+    window._mergeRAF=requestAnimationFrame(drawMerged);
+  }
+
+  function drawCardImg(c,x,y,w,h,cardData,hidden){
+    c.save();
+    roundRect(c,x,y,w,h,8);
+    c.fillStyle=hidden?'#0d1f33':'#fff';
+    c.shadowColor='rgba(0,0,0,.35)';c.shadowBlur=6;c.shadowOffsetY=4;
+    c.fill();
+    c.shadowBlur=0;c.shadowOffsetY=0;
+    if(!hidden && cardData){
+      c.fillStyle=cardData.su.c==='red'?'#d7263d':'#1a1a2e';
+      c.textAlign='center';c.textBaseline='middle';
+      c.font="800 20px 'Baloo 2',Arial";
+      c.fillText(cardData.r, x+w/2, y+h*0.38);
+      c.font="24px Arial";
+      c.fillText(cardData.su.s, x+w/2, y+h*0.72);
+    }
+    c.restore();
+  }
+
+  function wrapText(c,text,x,y,maxW,lineH){
+    const words=text.split(' ');
+    let line='',lines=[];
+    for(const w of words){
+      const test=line+w+' ';
+      if(c.measureText(test).width>maxW && line){lines.push(line);line=w+' ';}
+      else line=test;
+    }
+    lines.push(line);
+    lines.forEach((l,i)=>c.fillText(l.trim(),x,y+i*lineH));
+    return lines.length;
+  }
+
+  function _drawUI(c,RW,RH){
+    // header
+    c.save();
+    c.font="800 19px 'Baloo 2',Arial";
+    c.fillStyle=theme.txt;
+    c.textAlign='left';c.textBaseline='middle';
+    c.fillText("♠ What's Your Move?", 16, 34);
+    const badgeTxt=modeBadge.textContent;
+    c.font="700 11px Arial";
+    const bw=c.measureText(badgeTxt).width+22;
+    roundRect(c,RW-bw-14,20,bw,24,12);
+    c.fillStyle=theme.accent;c.fill();
+    c.fillStyle=theme.badgeTxt;c.textAlign='center';
+    c.fillText(badgeTxt,RW-bw/2-14,32);
+    c.restore();
+
+    if(staticPanel.style.display==='block'){
+      const px=RW*0.08,pw=RW*0.84,py=RH*0.22,ph=RH*0.5;
+      c.save();
+      roundRect(c,px,py,pw,ph,24);
+      c.fillStyle=theme.panel;c.fill();
+      c.strokeStyle=theme.panelBorder;c.lineWidth=3;c.stroke();
+      c.restore();
+      c.save();
+      c.textAlign='center';
+      c.fillStyle=theme.accent;
+      c.font="800 22px 'Baloo 2',Arial";
+      c.fillText(staticTitle.textContent, RW/2, py+34);
+      const lines=Array.from(staticBody.children);
+      c.font="600 15px Fredoka, Arial";
+      lines.forEach((ln,i)=>{
+        const k=ln.querySelector('span').textContent;
+        const v=ln.querySelector('b').textContent;
+        const ly=py+70+i*32;
+        c.textAlign='left';c.fillStyle='rgba(255,255,255,.8)';
+        c.fillText(k, px+18, ly);
+        c.textAlign='right';c.fillStyle='#fff';c.font="800 15px 'Baloo 2',Arial";
+        c.fillText(v, px+pw-18, ly);
+        c.font="600 15px Fredoka, Arial";
+      });
+      c.font="600 13px Fredoka, Arial";
+      c.fillStyle='rgba(255,255,255,.65)';
+      c.textAlign='center';
+      c.fillText("Save this. You'll use it every session.", RW/2, py+ph-16);
+      c.restore();
+      return;
+    }
+
+    // table card
+    const cardX=RW*0.06,cardW=RW*0.88,cardY=RH*0.16,cardH=RH*0.5;
+    c.save();
+    c.shadowColor='rgba(0,0,0,.35)';c.shadowBlur=20;c.shadowOffsetY=8;
+    roundRect(c,cardX,cardY,cardW,cardH,22);
+    c.fillStyle=theme.panel;c.fill();
+    c.shadowBlur=0;c.shadowOffsetY=0;
+    c.strokeStyle=theme.panelBorder;c.lineWidth=3;c.stroke();
+    c.restore();
+
+    let cy=cardY+22;
+    c.save();
+    c.textAlign='center';
+    c.font="700 11px Fredoka, Arial";
+    c.fillStyle=theme.label;
+    c.fillText('YOUR HAND', RW/2, cy);
+    cy+=16;
+    const cw=44,ch=62,gap=10;
+    const hand=spot?spot.hand:[];
+    const totalHandW=hand.length*cw+(hand.length-1)*gap;
+    let hx=RW/2-totalHandW/2;
+    hand.forEach(card=>{ drawCardImg(c,hx,cy,cw,ch,card,false); hx+=cw+gap; });
+    cy+=ch+14;
+
+    if(spot && spot.board && spot.board.length){
+      c.font="700 11px Fredoka, Arial";
+      c.fillStyle=theme.label;
+      c.fillText('THE BOARD', RW/2, cy);
+      cy+=16;
+      const board=spot.board;
+      const totalBoardW=board.length*cw+(board.length-1)*gap;
+      let bx=RW/2-totalBoardW/2;
+      board.forEach(card=>{ drawCardImg(c,bx,cy,cw,ch,card,false); bx+=cw+gap; });
+      cy+=ch+14;
+    }
+
+    // info grid
+    if(spot){
+      const info=[['Position',spot.position],['Street',spot.street],['Pot','$'+spot.potSize],['Stack','$'+spot.stackSize]];
+      const gw=(cardW-24)/2, gh=34;
+      info.forEach((pair,i)=>{
+        const gx=cardX+12+(i%2)*(gw+8);
+        const gy=cy+Math.floor(i/2)*(gh+6);
+        roundRect(c,gx,gy,gw,gh,10);
+        c.fillStyle='rgba(0,0,0,.22)';c.fill();
+        c.textAlign='center';
+        c.font="600 9px Fredoka, Arial";
+        c.fillStyle='rgba(255,255,255,.6)';
+        c.fillText(pair[0].toUpperCase(), gx+gw/2, gy+13);
+        c.font="800 13px 'Baloo 2',Arial";
+        c.fillStyle='#fff';
+        c.fillText(String(pair[1]), gx+gw/2, gy+27);
+      });
+      cy+=2*(gh+6)+8;
+    }
+
+    // math row
+    if(mathRow.style.display==='flex' && mathRow.children.length){
+      c.save();
+      const mh=mathRow.children.length*20+12;
+      roundRect(c,cardX+12,cy,cardW-24,mh,10);
+      c.fillStyle='rgba(0,0,0,.18)';c.fill();
+      let my=cy+18;
+      Array.from(mathRow.children).forEach(ln=>{
+        const k=ln.querySelector('span').textContent;
+        const v=ln.querySelector('b').textContent;
+        c.textAlign='left';c.font="600 12px Fredoka, Arial";c.fillStyle='#fff';
+        c.fillText(k, cardX+22, my);
+        c.textAlign='right';c.font="800 12px 'Baloo 2',Arial";c.fillStyle=theme.accent;
+        c.fillText(v, cardX+cardW-22, my);
+        my+=20;
+      });
+      c.restore();
+      cy+=mh+10;
+    }
+
+    // question
+    c.textAlign='center';
+    c.font="800 17px 'Baloo 2',Arial";
+    c.fillStyle='#fff';
+    c.fillText(questionEl.textContent, RW/2, cardY+cardH-14);
+    c.restore();
+
+    // options
+    const btns=Array.from(optsEl.children);
+    const optY0=cardY+cardH+16;
+    const optH=48, ogap=10;
+    btns.forEach((b,i)=>{
+      const oy=optY0+i*(optH+ogap);
+      const label=b.querySelector('.opt-label')?.textContent||'';
+      const isCorrect=b.classList.contains('correct');
+      const isWrong=b.classList.contains('wrong');
+      const isDim=b.classList.contains('dim');
+      c.save();
+      roundRect(c,cardX,oy,cardW,optH,16);
+      if(isCorrect){c.fillStyle='#2fd66a';}
+      else if(isWrong){c.fillStyle='#e84545';}
+      else{c.fillStyle='#fff';}
+      c.globalAlpha=isDim?.4:1;
+      c.fill();
+      c.globalAlpha=1;
+      c.beginPath();
+      c.arc(cardX+26,oy+optH/2,13,0,Math.PI*2);
+      c.fillStyle=isCorrect?'#00612e':(isWrong?'#6b0000':theme.accent2);
+      c.fill();
+      c.fillStyle='#fff';
+      c.font="800 12px Arial";
+      c.textAlign='center';c.textBaseline='middle';
+      c.fillText(b.dataset.letter||'', cardX+26, oy+optH/2+1);
+      c.fillStyle=isCorrect?'#003818':(isWrong?'#4a0000':'#0b3d24');
+      c.font="700 14px 'Baloo 2',Arial";
+      c.textAlign='left';
+      c.fillText(label, cardX+48, oy+optH/2+1, cardW-76);
+      c.restore();
+    });
+
+    // timer
+    if(timerWrap.style.opacity!=='0'){
+      const twY=optY0+btns.length*(optH+ogap)+8;
+      const twX=cardX,twW=cardW*0.86;
+      c.save();
+      roundRect(c,twX,twY,twW,12,6);
+      c.fillStyle='rgba(255,255,255,.22)';c.fill();
+      const pct=parseFloat(timerFill.style.width)/100||1;
+      roundRect(c,twX,twY,twW*pct,12,6);
+      c.fillStyle=pct<=0.34?'#ff5e7e':'#43e97b';
+      c.fill();
+      c.fillStyle='#fff';
+      c.font="800 14px 'Baloo 2',Arial";
+      c.textAlign='left';c.textBaseline='middle';
+      c.fillText(timerNum.textContent, twX+twW+10, twY+6);
+      c.restore();
+    }
+
+    // reveal banner
+    if(revealBanner.classList.contains('show')){
+      c.save();
+      const txt=revealBanner.textContent;
+      c.font="800 20px 'Baloo 2',Arial";
+      const tw=c.measureText(txt).width+46;
+      const bx=RW/2-tw/2, by=RH*0.1;
+      roundRect(c,bx,by,tw,46,20);
+      c.fillStyle=revealBanner.style.background.includes('43e97b')?'#3ad86a':'#ff6b6b';
+      c.fill();
+      c.fillStyle='#fff';
+      c.textAlign='center';c.textBaseline='middle';
+      c.fillText(txt, RW/2, by+24);
+      c.restore();
+    }
+
+    // CTA overlay
+    if(ctaOverlay.classList.contains('show')){
+      c.save();
+      c.fillStyle='rgba(0,20,10,.5)';
+      c.fillRect(0,0,RW,RH);
+      const cw2=RW*0.72,ch2=170,ccx=RW/2-cw2/2,ccy=RH/2-ch2/2;
+      roundRect(c,ccx,ccy,cw2,ch2,26);
+      const g=c.createLinearGradient(ccx,ccy,ccx,ccy+ch2);
+      g.addColorStop(0,theme.ctaA);g.addColorStop(1,theme.ctaB);
+      c.fillStyle=g;c.fill();
+      c.strokeStyle=theme.accent;c.lineWidth=3;c.stroke();
+      c.font="38px Arial";c.textAlign='center';c.textBaseline='middle';
+      c.fillStyle='#fff';
+      c.fillText(ctaIcon.textContent, RW/2, ccy+50);
+      c.font="800 18px 'Baloo 2',Arial";
+      c.fillText(ctaText.textContent, RW/2, ccy+94);
+      c.font="600 12px Arial";
+      c.fillStyle='rgba(255,255,255,.85)';
+      c.fillText(ctaSub.textContent, RW/2, ccy+118);
+      c.restore();
+    }
+
+    // tap hint
+    if(tapHint.classList.contains('show')){
+      c.save();
+      const txt='👉 Tap to continue';
+      c.font="700 13px Arial";
+      const tw=c.measureText(txt).width+32;
+      const bx=RW/2-tw/2, by=RH-64;
+      roundRect(c,bx,by,tw,32,16);
+      c.fillStyle='rgba(0,0,0,.35)';c.fill();
+      c.fillStyle='rgba(255,255,255,.85)';
+      c.textAlign='center';c.textBaseline='middle';
+      c.fillText(txt, RW/2, by+16);
+      c.restore();
+    }
+  }
+
+  drawMerged();
+
+  const canvasStream=merged.captureStream(fps);
+  const combined=new MediaStream([
+    ...canvasStream.getVideoTracks(),
+    ...audioTracks
+  ]);
+  window._recorder=new MediaRecorder(combined,{
+    mimeType:'video/webm;codecs=vp8,opus',
+    videoBitsPerSecond:8000000,
+    audioBitsPerSecond:192000,
+  });
+  window._chunks=[];
+  window._recorder.ondataavailable=e=>{ if(e.data&&e.data.size>0) window._chunks.push(e.data); };
+  window._recorder.onstop=()=>{
+    cancelAnimationFrame(window._mergeRAF);
+    window._recordingBlob=new Blob(window._chunks,{type:'video/webm'});
+    window._recordingDone=true;
+    console.log('Recording done, size:',window._recordingBlob.size);
+  };
+  window._recorder.start(100);
+  console.log('Recording started');
+};
+
+window.stopRecording=function(){
+  if(window._recorder&&window._recorder.state!=='inactive')window._recorder.stop();
+};
+
+window.getRecordingBase64=function(){
+  return new Promise((resolve,reject)=>{
+    if(!window._recordingBlob)return reject('No recording');
+    const reader=new FileReader();
+    reader.onloadend=()=>resolve(reader.result.split(',')[1]);
+    reader.onerror=reject;
+    reader.readAsDataURL(window._recordingBlob);
+  });
+};
+</script>
+</body>
+</html>
