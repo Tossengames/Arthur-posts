@@ -106,6 +106,34 @@ canvas{display:block;}
   background:var(--accent2,#2a9d5c);width:26px;height:26px;border-radius:50%;display:flex;align-items:center;
   justify-content:center;flex-shrink:0;box-shadow:0 2px 0 rgba(0,0,0,.25);}
 
+/* TIMER (appears only after narration ends, right before the reveal) */
+#timer-wrap{width:100%;max-width:420px;display:flex;align-items:center;gap:10px;margin-top:4px;
+  opacity:0;transform:translateY(6px);transition:opacity .35s,transform .35s;}
+#timer-wrap.in{opacity:1;transform:translateY(0);}
+#timer-track{flex:1;height:12px;background:rgba(255,255,255,.2);border-radius:50px;overflow:hidden;
+  border:2px solid rgba(255,255,255,.28);}
+#timer-fill{height:100%;border-radius:50px;background:linear-gradient(90deg,#43e97b,#38f9d7);
+  width:100%;transition:width 1s linear,background .3s;}
+#timer-num{font-family:'Baloo 2',cursive;font-weight:800;color:#fff;font-size:1rem;
+  text-shadow:0 2px 0 rgba(0,0,0,.3);min-width:18px;text-align:center;}
+
+/* Answer highlight states on the already-rendered option rows */
+.opt-btn.correct{background:linear-gradient(135deg,#43e97b,#2fd66a);color:#003818;
+  box-shadow:0 5px 0 #1a8a45;}
+.opt-btn.correct .opt-letter{background:#00612e;}
+.opt-btn .check{margin-left:auto;font-size:1.05rem;opacity:0;transform:scale(0);
+  transition:transform .3s cubic-bezier(.34,1.7,.5,1),opacity .2s;}
+.opt-btn.correct .check{opacity:1;transform:scale(1);}
+
+#answer-banner{width:100%;max-width:420px;margin-top:4px;text-align:center;
+  font-family:'Baloo 2',cursive;font-weight:800;font-size:1.05rem;color:#fff;
+  background:linear-gradient(135deg,#43e97b,#2fd66a);padding:10px 16px;border-radius:18px;
+  box-shadow:0 5px 0 rgba(0,0,0,.22);opacity:0;transform:scale(.9);
+  transition:opacity .35s,transform .35s;}
+#answer-banner.in{opacity:1;transform:scale(1);}
+#answer-sub{font-family:'Fredoka',sans-serif;font-weight:600;font-size:.78rem;
+  color:rgba(0,30,15,.75);margin-top:3px;line-height:1.3;}
+
 /* CTA BANNER (persistent hook, not a modal) */
 #cta-banner{width:100%;max-width:420px;margin-top:4px;display:flex;align-items:center;gap:10px;
   background:linear-gradient(135deg,var(--ctaA,#1a5c3a),var(--ctaB,#0d3320));
@@ -174,9 +202,19 @@ canvas{display:block;}
       <div id="cta-banner">
         <div id="cta-icon-inline">💬</div>
         <div>
-          <div id="cta-text-inline">Comment your move below!</div>
-          <div id="cta-sub-inline">Let's see who's got the best move</div>
+          <div id="cta-text-inline">What would you do here?</div>
+          <div id="cta-sub-inline">Comment your move</div>
         </div>
+      </div>
+
+      <div id="timer-wrap">
+        <div id="timer-track"><div id="timer-fill"></div></div>
+        <div id="timer-num">3</div>
+      </div>
+
+      <div id="answer-banner">
+        <div id="answer-main">✓ Correct play: Call</div>
+        <div id="answer-sub"></div>
       </div>
     </div>
 
@@ -383,9 +421,23 @@ function genSpot(){
   const amountLost = callAmount;
   const ev = betSize>0 ? (evWin*amountWon)-((1-evWin)*amountLost) : null;
 
+  // Explainable heuristic for the "correct" move — not a solver, built for
+  // social content where the goal is teaching a concept clearly.
+  let correct='B'; // default Call
+  let explanation='';
+  if(betSize===0){
+    if(rankNow.score>=1){correct='C';explanation=`${rankNow.name} is a made hand here. Betting builds the pot and charges worse hands for the right to draw out.`;}
+    else {correct='A';explanation=`No made hand and nothing was bet at you. Checking back keeps the pot small until you have something to bet on.`;}
+  } else {
+    if(rankNow.score>=3){correct='D';explanation=`${rankNow.name} is very strong in this spot. Getting stacks in is the play — you're rarely behind here.`;}
+    else if(rankNow.score>=1 && breakEvenPct<40){correct='B';explanation=`You have ${rankNow.name.toLowerCase()} and the pot odds are good enough to continue. You need about ${breakEvenPct.toFixed(0)}% equity to break even — this is close enough to call.`;}
+    else if(rankNow.score===0 && outsPct>=breakEvenPct && outsPct>0){correct='B';explanation=`You have a draw giving you roughly ${outsPct.toFixed(0)}% to improve, and you only need ${breakEvenPct.toFixed(0)}% to break even. The math says call.`;}
+    else {correct='A';explanation=`Your equity here doesn't clear the ${breakEvenPct.toFixed(0)}% you need to break even. Folding saves chips for a better spot.`;}
+  }
+
   return {
     hand,board,position,action,potSize,betSize,stackSize,
-    outs,outsPct,potOddsPct,breakEvenPct,ev,rankNow,
+    outs,outsPct,potOddsPct,breakEvenPct,ev,rankNow,correct,explanation,
     street: board.length===3?'Flop':board.length===4?'Turn':'River'
   };
 }
@@ -465,6 +517,12 @@ const staticTitle=document.getElementById('static-title');
 const staticBody=document.getElementById('static-body');
 const staticFoot=document.getElementById('static-foot');
 const tblWrap=document.getElementById('tbl-wrap');
+const timerWrap=document.getElementById('timer-wrap');
+const timerFill=document.getElementById('timer-fill');
+const timerNum=document.getElementById('timer-num');
+const answerBanner=document.getElementById('answer-banner');
+const answerMain=document.getElementById('answer-main');
+const answerSub=document.getElementById('answer-sub');
 
 let phase="idle"; // idle -> revealing -> locked (final state, holds forever, no auto-advance)
 let sequenceTimers=[];
@@ -487,10 +545,10 @@ function narrate(txt){
 }
 
 const CTA_HOOKS=[
-  {icon:"💬",text:"Comment your move below!",sub:"Let's see who's got the best play"},
-  {icon:"🔥",text:"What's YOUR move? Comment it!",sub:"Prove you know this spot"},
-  {icon:"♠",text:"Drop your answer in the comments!",sub:"Fold, call, or raise?"},
-  {icon:"👑",text:"Comment below — let's settle this!",sub:"Who's got the best move?"},
+  {icon:"💬",text:"What would you do here?",sub:"Comment your move"},
+  {icon:"♠",text:"Comment your move below",sub:"Fold, call, or raise?"},
+  {icon:"🤔",text:"What's your move?",sub:"Let us know in the comments"},
+  {icon:"💬",text:"Take a second — what do you do?",sub:"Comment below"},
 ];
 
 /* ============ SINGLE-PASS REVEAL SEQUENCE ============ */
@@ -519,6 +577,8 @@ function startSequenceInner(forceType){
   mathRow.classList.remove('in'); mathRow.innerHTML=''; mathRow.style.display='none';
   optsEl.innerHTML='';
   ctaBanner.classList.remove('in');
+  timerWrap.classList.remove('in');
+  answerBanner.classList.remove('in');
   staticPanel.classList.remove('in'); staticPanel.style.display='none';
   tblWrap.style.display='flex';
 
@@ -596,9 +656,12 @@ function startSequenceInner(forceType){
   narrate(narrationParts.join(' '));
 
   // ---- TIMELINE (staggered reveal, social-media pacing) ----
-  // Recording should start at t=0 with the very first hand card, so keep
-  // the intro (header/eyebrow/panel) fast and tight.
-  let t=150;
+  // Deliberate hold at the very start: screen shows only the felt background
+  // for a beat before anything appears. The workflow starts the recorder
+  // BEFORE calling _autoStartGame, so this hold guarantees the recording is
+  // already rolling well before the first card is dealt — no race condition
+  // between Selenium's script call and the animation starting.
+  let t=1200;
 
   seq(()=>{ eyebrow.classList.add('in'); },t); t+=150;
   seq(()=>{ tableCard.classList.add('in'); sfxWhoosh(); },t); t+=300;
@@ -688,6 +751,24 @@ function startSequenceInner(forceType){
   },t);
   t+=550;
 
+  // figure out which option letter is "correct" so we can tag it now and
+  // reveal it later without re-deriving anything
+  let correctLetter='B';
+  if(currentType==='equity'){
+    // correct letter was baked into optionLabels order via shuffle above;
+    // recompute which shuffled slot holds the real value
+    const real=Math.round(s.board.length<5?s.outsPct:(s.rankNow.score>=1?60:25));
+    correctLetter=['A','B','C','D'][optionLabels.findIndex(l=>parseInt(l)===real)] || 'A';
+  } else if(currentType==='evgame'){
+    const isPos=s.ev!==null && s.ev>=0;
+    const margin=s.ev!==null?Math.abs(s.ev):0;
+    correctLetter = isPos ? (margin>15?'A':'B') : (margin>15?'D':'C');
+  } else if(currentType==='math15'){
+    correctLetter = (spot.correct==='A') ? 'A' : 'B';
+  } else {
+    correctLetter = spot.correct;
+  }
+
   // options pop in one by one, right after the question lands
   seq(()=>{
     optsEl.innerHTML='';
@@ -695,7 +776,8 @@ function startSequenceInner(forceType){
     optionLabels.forEach((opt,i)=>{
       const btn=document.createElement('div');
       btn.className='opt-btn';
-      btn.innerHTML=`<span class="opt-letter">${letters[i]}</span><span class="opt-label">${opt}</span>`;
+      btn.dataset.letter=letters[i];
+      btn.innerHTML=`<span class="opt-letter">${letters[i]}</span><span class="opt-label">${opt}</span><span class="check"></span>`;
       optsEl.appendChild(btn);
       seq(()=>btn.classList.add('in'), i*130);
     });
@@ -715,7 +797,49 @@ function startSequenceInner(forceType){
   },t);
   t+=500;
 
-  // LOCKED: nothing more happens. No timer, no reveal, no auto-advance.
+  // SILENT HOLD: question + options + CTA sit on screen with nothing moving.
+  // This is the window for the viewer to actually think and comment before
+  // the timer starts. Narration (scenario + question + hook) has finished
+  // speaking by roughly this point, so the hold begins right after TTS ends.
+  t += 2600;
+
+  // TIMER: only starts counting down after the silent hold, giving a clear
+  // "thinking window" first, then a short visible countdown before reveal.
+  const COUNT_FROM=3;
+  seq(()=>{
+    timerWrap.classList.add('in');
+  },t);
+  t+=200;
+  for(let i=COUNT_FROM;i>=0;i--){
+    seq(()=>{
+      const pct=(i/COUNT_FROM)*100;
+      timerFill.style.width=pct+'%';
+      if(i<=1)timerFill.style.background='linear-gradient(90deg,#ff9a3c,#ff5e7e)';
+      timerNum.textContent=i;
+      if(i>0)sfxChip();
+    },t);
+    t+=1000;
+  }
+
+  // ANSWER REVEAL: highlight the correct option, show explanation banner.
+  seq(()=>{
+    const correctBtn=optsEl.querySelector(`[data-letter="${correctLetter}"]`);
+    if(correctBtn){
+      correctBtn.classList.add('correct');
+      const chk=correctBtn.querySelector('.check');
+      if(chk)chk.textContent='✓';
+      const rc=correctBtn.getBoundingClientRect();
+      burst(rc.left+rc.width/2,rc.top+rc.height/2,'#43e97b',20);
+    }
+    const label=correctBtn?correctBtn.querySelector('.opt-label').textContent:'';
+    answerMain.textContent='✓ Correct play: '+label;
+    answerSub.textContent = spot.explanation || '';
+    answerBanner.classList.add('in');
+    sfxCta();
+  },t);
+  t+=700;
+
+  // LOCKED: nothing more happens after the reveal. No auto-advance.
   seq(()=>{ phase="locked"; },t);
 }
 
@@ -1054,7 +1178,7 @@ window.startRecording=function(fps=30){
       cy+=mh+8;
     }
 
-    // options
+    // options (highlight correct one once the reveal has fired)
     const btns=Array.from(optsEl.children);
     const optY0=cardY+cardH+14;
     const optH=46, ogap=9;
@@ -1064,22 +1188,28 @@ window.startRecording=function(fps=30){
       const oy=optY0+i*(optH+ogap);
       const label=b.querySelector('.opt-label')?.textContent||'';
       const letter=b.querySelector('.opt-letter')?.textContent||'';
+      const isCorrect=b.classList.contains('correct');
       c.save();c.globalAlpha=bOp;
       roundRect(c,cardX,oy,cardW,optH,16);
-      c.fillStyle='#fff';
+      c.fillStyle=isCorrect?'#2fd66a':'#fff';
       c.fill();
       c.beginPath();
       c.arc(cardX+25,oy+optH/2,12,0,Math.PI*2);
-      c.fillStyle=theme.accent2;
+      c.fillStyle=isCorrect?'#00612e':theme.accent2;
       c.fill();
       c.fillStyle='#fff';
       c.font="800 11px Arial";
       c.textAlign='center';c.textBaseline='middle';
       c.fillText(letter, cardX+25, oy+optH/2+1);
-      c.fillStyle='#0b3d24';
+      c.fillStyle=isCorrect?'#003818':'#0b3d24';
       c.font="700 13px 'Baloo 2',Arial";
       c.textAlign='left';
-      c.fillText(label, cardX+46, oy+optH/2+1, cardW-70);
+      c.fillText(label, cardX+46, oy+optH/2+1, cardW-90);
+      if(isCorrect){
+        c.font="700 15px Arial";
+        c.textAlign='right';
+        c.fillText('✓', cardX+cardW-14, oy+optH/2+1);
+      }
       c.restore();
     });
 
@@ -1103,6 +1233,49 @@ window.startRecording=function(fps=30){
       c.font="600 10px Fredoka, Arial";
       c.fillStyle='rgba(255,255,255,.85)';
       c.fillText(ctaSubInline.textContent, cardX+46, ctaY+ctaH*0.72, cardW-64);
+      c.restore();
+    }
+
+    const lastOptYForTimer = optY0 + btns.length*(optH+ogap);
+    const ctaOpForLayout = opacityOf(ctaBanner);
+    const belowCtaY = lastOptYForTimer + (ctaOpForLayout>0.01 ? 4+58+10 : 6);
+
+    // timer bar (only appears after the silent thinking window)
+    const timerOp=opacityOf(timerWrap);
+    if(timerOp>0.01){
+      const twY=belowCtaY;
+      const twX=cardX,twW=cardW*0.82;
+      c.save();c.globalAlpha=timerOp;
+      roundRect(c,twX,twY,twW,12,6);
+      c.fillStyle='rgba(255,255,255,.2)';c.fill();
+      const pct=parseFloat(timerFill.style.width)/100||1;
+      roundRect(c,twX,twY,twW*pct,12,6);
+      c.fillStyle=pct<=0.34?'#ff5e7e':'#43e97b';
+      c.fill();
+      c.fillStyle='#fff';
+      c.font="800 13px 'Baloo 2',Arial";
+      c.textAlign='left';c.textBaseline='middle';
+      c.fillText(timerNum.textContent, twX+twW+10, twY+6);
+      c.restore();
+    }
+
+    // answer reveal banner
+    const ansOp=opacityOf(answerBanner);
+    if(ansOp>0.01){
+      const abY=belowCtaY + (timerOp>0.01?12+18:4);
+      const abH = answerSub.textContent ? 56 : 38;
+      c.save();c.globalAlpha=ansOp;
+      roundRect(c,cardX,abY,cardW,abH,16);
+      c.fillStyle='#2fd66a';c.fill();
+      c.fillStyle='#003818';
+      c.font="800 14px 'Baloo 2',Arial";
+      c.textAlign='center';c.textBaseline='middle';
+      c.fillText(answerMain.textContent, cardX+cardW/2, abY+18);
+      if(answerSub.textContent){
+        c.font="600 10px Fredoka, Arial";
+        c.fillStyle='rgba(0,30,15,.8)';
+        wrapText(c, answerSub.textContent, cardX+cardW/2, abY+36, cardW-30, 13);
+      }
       c.restore();
     }
   }
