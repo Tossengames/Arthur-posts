@@ -1,0 +1,360 @@
+name: 🃏 Post Poker Spot to YouTube
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  post:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache apt
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ubuntu22-pokermove-yt-v1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            xvfb chromium-browser libnss3 libgbm1 libasound2 ffmpeg pulseaudio espeak-ng
+
+      - name: Cache pip, ChromeDriver, and Piper voice
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.wdm
+            ~/.cache/piper
+          key: pip-wdm-piper-pokermove-yt-v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install selenium webdriver-manager requests piper-tts google-auth google-auth-oauthlib google-api-python-client
+
+      - name: Download Piper voice model (cached after first run)
+        run: |
+          mkdir -p ~/.cache/piper
+          cd ~/.cache/piper
+          if [ ! -f en_US-lessac-medium.onnx ]; then
+            curl -L -o en_US-lessac-medium.onnx \
+              "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
+            curl -L -o en_US-lessac-medium.onnx.json \
+              "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
+          fi
+
+      - name: Set timestamp
+        run: echo "TS=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
+
+      - name: Start virtual display and audio
+        run: |
+          Xvfb :99 -screen 0 540x960x24 -ac &
+          pulseaudio --start --exit-idle-time=-1 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+          sleep 3
+
+      - name: Record poker spot
+        run: |
+          python3 << 'PYEOF'
+          import os, time, subprocess, base64
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.chrome.service import Service
+          from webdriver_manager.chrome import ChromeDriverManager
+
+          ts        = os.environ.get("TS", "test")
+          webm_file = f"/tmp/poker_{ts}.webm"
+          mp4_file  = f"/tmp/poker_{ts}.mp4"
+          html_path = os.path.abspath("poker_move.html")
+
+          opts = Options()
+          opts.add_argument("--no-sandbox")
+          opts.add_argument("--disable-dev-shm-usage")
+          opts.add_argument("--disable-gpu")
+          opts.add_argument("--window-size=540,960")
+          opts.add_argument("--window-position=0,0")
+          opts.add_argument("--force-device-scale-factor=1")
+          opts.add_argument("--autoplay-policy=no-user-gesture-required")
+          opts.add_argument("--disable-background-timer-throttling")
+          opts.add_argument("--disable-renderer-backgrounding")
+          opts.add_argument("--disable-backgrounding-occluded-windows")
+          opts.add_argument("--no-first-run")
+          opts.add_argument("--disable-infobars")
+          opts.add_argument("--disable-notifications")
+          opts.add_argument("--use-fake-ui-for-media-stream")
+          opts.add_argument("--use-fake-device-for-media-stream")
+          opts.add_argument("--allow-file-access-from-files")
+          opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+          opts.add_experimental_option("useAutomationExtension", False)
+          opts.add_experimental_option("mobileEmulation", {
+            "deviceMetrics": {"width": 540, "height": 960, "pixelRatio": 1.0},
+            "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+          })
+
+          print("Starting Chrome...")
+          driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
+          driver.set_window_size(540, 960)
+          driver.set_script_timeout(120)
+
+          print(f"Loading file://{html_path}")
+          driver.get(f"file://{html_path}")
+          time.sleep(2)
+
+          driver.execute_script("if(typeof AC !== 'undefined') AC.resume();")
+          time.sleep(0.3)
+
+          driver.execute_script("window.startRecording(30);")
+          driver.execute_script("window._autoStartGame();")
+          print("Recording started, sequence triggered...")
+
+          time.sleep(1.0)
+          post_type = driver.execute_script("return window._getPostType();")
+          narration = driver.execute_script("return window._getNarration();")
+          print(f"Post type: {post_type}")
+          print(f"Narration: {narration}")
+
+          with open("/tmp/narration.txt", "w") as f: f.write(narration or "")
+          with open("/tmp/post_type.txt", "w") as f: f.write(post_type or "spot")
+
+          duration = 12 if post_type == "cheatsheet" else 20
+          print(f"Letting it play for {duration}s total...")
+          time.sleep(duration)
+
+          driver.execute_script("window.stopRecording();")
+          for _ in range(40):
+            if driver.execute_script("return window._recordingDone;"): break
+            time.sleep(0.5)
+
+          b64 = driver.execute_async_script("""
+            var done = arguments[0];
+            window.getRecordingBase64().then(done).catch(function(e){ done(null); });
+          """)
+          driver.quit()
+          print("Browser closed")
+
+          if not b64:
+            raise RuntimeError("Failed to get recording from browser")
+
+          with open(webm_file, 'wb') as f:
+            f.write(base64.b64decode(b64))
+          print(f"Webm saved: {os.path.getsize(webm_file)/1024/1024:.1f} MB")
+
+          result = subprocess.run([
+            "ffmpeg", "-y", "-i", webm_file,
+            "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+            "-pix_fmt", "yuv420p", "-vf", "scale=1080:1920:flags=lanczos",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+            "-movflags", "+faststart", mp4_file
+          ], capture_output=True, text=True)
+
+          if not os.path.exists(mp4_file) or os.path.getsize(mp4_file) < 50000:
+            print("ffmpeg stderr:", result.stderr[-2000:])
+            raise RuntimeError("mp4 conversion failed")
+
+          os.remove(webm_file)
+          print(f"mp4 ready: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
+
+          with open("/tmp/video_duration.txt", "w") as f: f.write(str(duration))
+          with open("/tmp/base_video_path.txt", "w") as f: f.write(mp4_file)
+          PYEOF
+
+      - name: Generate TTS narration (Piper, fallback to espeak)
+        run: |
+          python3 << 'PYEOF'
+          import subprocess, os
+
+          with open("/tmp/narration.txt") as f:
+            text = f.read().strip()
+          narration_wav = "/tmp/narration.wav"
+          if not text:
+            text = "What's your move? Check the board and make your decision."
+
+          voice_model = os.path.expanduser("~/.cache/piper/en_US-lessac-medium.onnx")
+          used_piper = False
+          if os.path.exists(voice_model):
+            try:
+              proc = subprocess.run(
+                ["python3", "-m", "piper", "-m", voice_model, "-f", narration_wav],
+                input=text, text=True, capture_output=True, timeout=60
+              )
+              if os.path.exists(narration_wav) and os.path.getsize(narration_wav) > 1000:
+                used_piper = True
+              else:
+                print("Piper produced no usable output:", proc.stderr[-1000:])
+            except Exception as e:
+              print("Piper failed:", e)
+
+          if not used_piper:
+            print("Falling back to espeak-ng...")
+            subprocess.run([
+              "espeak-ng", "-v", "en-us+f3", "-s", "165", "-p", "40",
+              "-w", narration_wav, text
+            ], check=True)
+
+          print(f"Narration file: {os.path.getsize(narration_wav)/1024:.0f} KB")
+          PYEOF
+
+      - name: Mix narration + music into final video
+        run: |
+          python3 << 'PYEOF'
+          import subprocess, os, random, glob
+
+          MUSIC_FOLDERS = ["bgmusic", "bgmusic3", "Bgmusic3"]
+          MUSIC_EXTENSIONS = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac"]
+
+          with open("/tmp/base_video_path.txt") as f: mp4_file = f.read().strip()
+          with open("/tmp/video_duration.txt") as f: duration = float(f.read().strip())
+
+          ts = os.environ.get("TS", "test")
+          final_file = f"/tmp/poker_{ts}_final.mp4"
+          narration_wav = "/tmp/narration.wav"
+
+          def pick_music_file(folders):
+            for folder in folders:
+              if not os.path.isdir(folder): continue
+              candidates = []
+              for ext in MUSIC_EXTENSIONS:
+                candidates.extend(glob.glob(os.path.join(folder, f"*.{ext}")))
+              if candidates: return random.choice(candidates)
+            return None
+
+          music_file = pick_music_file(MUSIC_FOLDERS)
+          has_narration = os.path.exists(narration_wav) and os.path.getsize(narration_wav) > 1000
+
+          if music_file and has_narration:
+            probe = subprocess.run(
+              ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music_file],
+              capture_output=True, text=True
+            )
+            try: mdur = float(probe.stdout.strip())
+            except Exception: mdur = 0
+            mstart = random.uniform(0, max(0, mdur - duration - 1)) if mdur > duration + 5 else 0
+
+            result = subprocess.run([
+              "ffmpeg", "-y",
+              "-i", mp4_file,
+              "-i", narration_wav,
+              "-ss", str(mstart), "-t", str(duration), "-i", music_file,
+              "-filter_complex",
+              "[0:a]volume=0.5[game];"
+              "[1:a]volume=1.1[narr];"
+              "[2:a]volume=0.22,afade=t=in:st=0:d=1,afade=t=out:st=" + str(max(0,duration-1.5)) + ":d=1.5[music];"
+              "[game][narr][music]amix=inputs=3:duration=first:dropout_transition=2[aout]",
+              "-map", "0:v", "-map", "[aout]",
+              "-c:v", "copy", "-c:a", "aac", "-b:a", "256k",
+              "-movflags", "+faststart",
+              final_file
+            ], capture_output=True, text=True)
+          elif has_narration:
+            result = subprocess.run([
+              "ffmpeg", "-y",
+              "-i", mp4_file,
+              "-i", narration_wav,
+              "-filter_complex",
+              "[0:a]volume=0.5[game];[1:a]volume=1.1[narr];[game][narr]amix=inputs=2:duration=first[aout]",
+              "-map", "0:v", "-map", "[aout]",
+              "-c:v", "copy", "-c:a", "aac", "-b:a", "256k",
+              "-movflags", "+faststart",
+              final_file
+            ], capture_output=True, text=True)
+          else:
+            final_file = mp4_file
+
+          if final_file != mp4_file:
+            if os.path.exists(final_file) and os.path.getsize(final_file) > 50000:
+              os.remove(mp4_file)
+            else:
+              print("Mixing failed, falling back:", result.stderr[-1500:])
+              final_file = mp4_file
+
+          print(f"Final video: {os.path.getsize(final_file)/1024/1024:.1f} MB")
+          with open("/tmp/final_video_path.txt", "w") as f: f.write(final_file)
+          PYEOF
+
+      - name: Upload to YouTube
+        run: |
+          python3 << 'PYEOF'
+          import os, random
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+          from google.oauth2.credentials import Credentials
+
+          with open("/tmp/final_video_path.txt") as f:
+            video_path = f.read().strip()
+          with open("/tmp/post_type.txt") as f:
+            post_type = f.read().strip()
+
+          TITLE_TEMPLATES = {
+            "spot":       ["What's your move? 🃏 #PokerShorts", "Real hand, real decision ♠️ #Poker", "Fold, call, or raise? #PokerShorts"],
+            "spotmath":   ["The math says something — do you agree? #PokerMath", "Think in numbers ♠️ #PokerShorts"],
+            "math15":     ["Poker math in 15 seconds #PokerMath", "Call or fold based on the math? #PokerShorts"],
+            "cheatsheet": ["Save this poker math cheat sheet 📌 #PokerTips", "Poker math you need to know #PokerShorts"],
+            "equity":     ["What's your equity here? #PokerQuiz", "Guess the equity ♠️ #PokerShorts"],
+            "evgame":     ["+EV or -EV? #PokerMath", "Is this call profitable? #PokerShorts"],
+            "beginner":   ["Most beginners get this wrong #PokerTips", "The common mistake costing you money #PokerShorts"],
+          }
+          title = random.choice(TITLE_TEMPLATES.get(post_type, TITLE_TEMPLATES["spot"]))
+
+          DESC_TEMPLATES = [
+            "New poker spots every day! Comment your move below 👇\n\nSubscribe for daily poker strategy, math breakdowns, and quizzes.\n\n#poker #pokerstrategy #texasholdem #pokertips #pokermath #shorts",
+            "Think you know this one? Drop your answer in the comments!\n\nFollow for daily poker content 🔔\n\n#poker #shorts #pokerstrategy #texasholdem #pokertips",
+            "Tag a friend who needs to see this hand 🃏\n\nNew spot every day — Subscribe so you don't miss one!\n\n#poker #pokerstrategy #texasholdem #pokermath #shorts",
+          ]
+          description = random.choice(DESC_TEMPLATES)
+
+          tags = ["poker", "pokerstrategy", "texasholdem", "pokertips", "pokermath",
+                  "shorts", "pokerquiz", "holdem", "pokerlessons", "cardgame"]
+
+          creds = Credentials(
+            token=os.environ.get("YT_ACCESS_TOKEN"),
+            refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.environ.get("YT_CLIENT_ID"),
+            client_secret=os.environ.get("YT_CLIENT_SECRET"),
+          )
+          youtube = build("youtube", "v3", credentials=creds)
+
+          request = youtube.videos().insert(
+            part="snippet,status",
+            body={
+              "snippet": {
+                "title": title,
+                "description": description,
+                "tags": tags,
+                "categoryId": "27",
+                "defaultLanguage": "en"
+              },
+              "status": {
+                "privacyStatus": "public",
+                "madeForKids": False,
+                "selfDeclaredMadeForKids": False
+              }
+            },
+            media_body=MediaFileUpload(video_path, mimetype="video/mp4", resumable=True)
+          )
+
+          response = None
+          while response is None:
+            status, response = request.next_chunk()
+            if status:
+              print(f"Upload progress: {int(status.progress()*100)}%")
+
+          video_id = response.get("id", "")
+          print(f"Uploaded: https://youtube.com/shorts/{video_id}")
+
+          os.remove(video_path)
+          PYEOF
+        env:
+          YT_ACCESS_TOKEN:  ${{ secrets.YT_ACCESS_TOKEN }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_CLIENT_ID:     ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
