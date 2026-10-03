@@ -8,7 +8,6 @@ on:
 jobs:
   post:
     runs-on: ubuntu-22.04
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,18 +41,15 @@ jobs:
       - name: Install Python deps
         run: pip install selenium webdriver-manager requests piper-tts
 
-      - name: Download Piper voice model (lightweight, cached after first run)
+      - name: Download Piper voice model (cached after first run)
         run: |
           mkdir -p ~/.cache/piper
           cd ~/.cache/piper
           if [ ! -f en_US-lessac-medium.onnx ]; then
-            echo "Downloading Piper voice (one-time, ~60MB)..."
             curl -L -o en_US-lessac-medium.onnx \
               "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
             curl -L -o en_US-lessac-medium.onnx.json \
               "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
-          else
-            echo "Piper voice already cached."
           fi
 
       - name: Set timestamp
@@ -69,18 +65,16 @@ jobs:
       - name: Record poker spot
         run: |
           python3 << 'PYEOF'
-          import os, time, subprocess, random, base64, glob, json
+          import os, time, subprocess, base64
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
           from selenium.webdriver.chrome.service import Service
           from webdriver_manager.chrome import ChromeDriverManager
 
-          MUSIC_FOLDERS = ["bgmusic", "bgmusic3", "Bgmusic3"]
-          MUSIC_EXTENSIONS = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac"]
-
           ts        = os.environ.get("TS", "test")
           webm_file = f"/tmp/poker_{ts}.webm"
           mp4_file  = f"/tmp/poker_{ts}.mp4"
+          png_file  = f"/tmp/poker_{ts}.png"
           html_path = os.path.abspath("poker_move.html")
 
           opts = Options()
@@ -108,22 +102,25 @@ jobs:
           })
 
           print("Starting Chrome...")
-          driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()), options=opts
-          )
+          driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
           driver.set_window_size(540, 960)
           driver.set_script_timeout(120)
 
           print(f"Loading file://{html_path}")
           driver.get(f"file://{html_path}")
-          time.sleep(3)
+          time.sleep(2)
 
           driver.execute_script("if(typeof AC !== 'undefined') AC.resume();")
-          time.sleep(0.5)
+          time.sleep(0.3)
 
+          # Start recording BEFORE triggering the sequence — the HTML holds
+          # on a blank felt screen for ~1.2s before the first card, so
+          # recording is already rolling well before anything happens.
+          driver.execute_script("window.startRecording(30);")
           driver.execute_script("window._autoStartGame();")
-          time.sleep(1.5)
+          print("Recording started, sequence triggered...")
 
+          time.sleep(1.0)
           post_type = driver.execute_script("return window._getPostType();")
           narration = driver.execute_script("return window._getNarration();")
           caption   = driver.execute_script("return window._getCaption();")
@@ -131,31 +128,41 @@ jobs:
           print(f"Narration: {narration}")
           print(f"Caption: {caption}")
 
-          with open("/tmp/narration.txt", "w") as f:
-            f.write(narration or "")
-          with open("/tmp/caption.txt", "w") as f:
-            f.write(caption or "")
-          with open("/tmp/post_type.txt", "w") as f:
-            f.write(post_type or "spot")
+          with open("/tmp/narration.txt", "w") as f: f.write(narration or "")
+          with open("/tmp/caption.txt", "w") as f: f.write(caption or "")
+          with open("/tmp/post_type.txt", "w") as f: f.write(post_type or "spot")
 
-          driver.execute_script("window._startBot();")
-          time.sleep(1)
-
-          duration = 14 if post_type == "cheatsheet" else 22
-
-          driver.execute_script("window.startRecording(30);")
-          print(f"Recording for {duration}s...")
-          time.sleep(duration)
-
-          driver.execute_script("window.stopRecording();")
-          print("Waiting for recording to finalize...")
-          for _ in range(40):
-            done = driver.execute_script("return window._recordingDone;")
-            if done:
+          # Poll until the sequence hits its final locked state (deal, hold,
+          # timer, reveal all done) instead of guessing a fixed sleep. This
+          # auto-adjusts to narration length since the timer start is itself
+          # based on an estimated TTS duration inside the page.
+          MAX_WAIT = 45       # hard ceiling so a stuck page can't hang forever
+          SETTLE_PAD = 1.5    # extra seconds held after lock, before cutting
+          waited = 1.0        # already slept 1.0s above
+          locked = False
+          while waited < MAX_WAIT:
+            locked = driver.execute_script("return window._isLocked ? window._isLocked() : false;")
+            if locked:
+              print(f"Sequence locked at ~{waited:.1f}s, holding {SETTLE_PAD}s more...")
+              time.sleep(SETTLE_PAD)
+              waited += SETTLE_PAD
               break
             time.sleep(0.5)
+            waited += 0.5
+          if not locked:
+            print(f"WARNING: sequence never locked within {MAX_WAIT}s, cutting recording anyway.")
+          duration = round(waited, 1)
+          print(f"Total recorded duration: {duration}s")
 
-          print("Extracting video from browser...")
+          # Grab a frame of the final locked/revealed state for the image post
+          driver.save_screenshot(png_file)
+          print(f"Screenshot saved: {os.path.getsize(png_file)/1024:.0f} KB")
+
+          driver.execute_script("window.stopRecording();")
+          for _ in range(40):
+            if driver.execute_script("return window._recordingDone;"): break
+            time.sleep(0.5)
+
           b64 = driver.execute_async_script("""
             var done = arguments[0];
             window.getRecordingBase64().then(done).catch(function(e){ done(null); });
@@ -170,7 +177,6 @@ jobs:
             f.write(base64.b64decode(b64))
           print(f"Webm saved: {os.path.getsize(webm_file)/1024/1024:.1f} MB")
 
-          print("Converting to mp4...")
           result = subprocess.run([
             "ffmpeg", "-y", "-i", webm_file,
             "-c:v", "libx264", "-preset", "slow", "-crf", "16",
@@ -186,10 +192,9 @@ jobs:
           os.remove(webm_file)
           print(f"mp4 ready: {os.path.getsize(mp4_file)/1024/1024:.1f} MB")
 
-          with open("/tmp/video_duration.txt", "w") as f:
-            f.write(str(duration))
-          with open("/tmp/base_video_path.txt", "w") as f:
-            f.write(mp4_file)
+          with open("/tmp/video_duration.txt", "w") as f: f.write(str(duration))
+          with open("/tmp/base_video_path.txt", "w") as f: f.write(mp4_file)
+          with open("/tmp/screenshot_path.txt", "w") as f: f.write(png_file)
           PYEOF
 
       - name: Generate TTS narration (Piper, fallback to espeak)
@@ -199,25 +204,20 @@ jobs:
 
           with open("/tmp/narration.txt") as f:
             text = f.read().strip()
-
           narration_wav = "/tmp/narration.wav"
-
           if not text:
             text = "What's your move? Check the board and make your decision."
 
           voice_model = os.path.expanduser("~/.cache/piper/en_US-lessac-medium.onnx")
           used_piper = False
-
           if os.path.exists(voice_model):
             try:
-              print("Generating narration with Piper TTS...")
               proc = subprocess.run(
                 ["python3", "-m", "piper", "-m", voice_model, "-f", narration_wav],
                 input=text, text=True, capture_output=True, timeout=60
               )
               if os.path.exists(narration_wav) and os.path.getsize(narration_wav) > 1000:
                 used_piper = True
-                print("Piper narration generated successfully.")
               else:
                 print("Piper produced no usable output:", proc.stderr[-1000:])
             except Exception as e:
@@ -229,7 +229,6 @@ jobs:
               "espeak-ng", "-v", "en-us+f3", "-s", "165", "-p", "40",
               "-w", narration_wav, text
             ], check=True)
-            print("espeak-ng narration generated.")
 
           print(f"Narration file: {os.path.getsize(narration_wav)/1024:.0f} KB")
           PYEOF
@@ -242,10 +241,8 @@ jobs:
           MUSIC_FOLDERS = ["bgmusic", "bgmusic3", "Bgmusic3"]
           MUSIC_EXTENSIONS = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac"]
 
-          with open("/tmp/base_video_path.txt") as f:
-            mp4_file = f.read().strip()
-          with open("/tmp/video_duration.txt") as f:
-            duration = float(f.read().strip())
+          with open("/tmp/base_video_path.txt") as f: mp4_file = f.read().strip()
+          with open("/tmp/video_duration.txt") as f: duration = float(f.read().strip())
 
           ts = os.environ.get("TS", "test")
           final_file = f"/tmp/poker_{ts}_final.mp4"
@@ -253,15 +250,11 @@ jobs:
 
           def pick_music_file(folders):
             for folder in folders:
-              if not os.path.isdir(folder):
-                continue
+              if not os.path.isdir(folder): continue
               candidates = []
               for ext in MUSIC_EXTENSIONS:
                 candidates.extend(glob.glob(os.path.join(folder, f"*.{ext}")))
-              if candidates:
-                print(f"Using music folder '{folder}'.")
-                return random.choice(candidates)
-            print(f"No music folder found among {folders} — skipping background music.")
+              if candidates: return random.choice(candidates)
             return None
 
           music_file = pick_music_file(MUSIC_FOLDERS)
@@ -272,10 +265,8 @@ jobs:
               ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music_file],
               capture_output=True, text=True
             )
-            try:
-              mdur = float(probe.stdout.strip())
-            except Exception:
-              mdur = 0
+            try: mdur = float(probe.stdout.strip())
+            except Exception: mdur = 0
             mstart = random.uniform(0, max(0, mdur - duration - 1)) if mdur > duration + 5 else 0
 
             result = subprocess.run([
@@ -306,61 +297,81 @@ jobs:
               final_file
             ], capture_output=True, text=True)
           else:
-            print("No narration available, keeping original audio.")
             final_file = mp4_file
 
           if final_file != mp4_file:
             if os.path.exists(final_file) and os.path.getsize(final_file) > 50000:
               os.remove(mp4_file)
-              print("Audio mixed successfully.")
             else:
-              print("Mixing failed, falling back to base video:", result.stderr[-1500:])
+              print("Mixing failed, falling back:", result.stderr[-1500:])
               final_file = mp4_file
 
           print(f"Final video: {os.path.getsize(final_file)/1024/1024:.1f} MB")
-          with open("/tmp/final_video_path.txt", "w") as f:
-            f.write(final_file)
+          with open("/tmp/final_video_path.txt", "w") as f: f.write(final_file)
           PYEOF
 
-      - name: Post to Facebook
+      - name: Post video to Facebook
         run: |
           python3 << 'PYEOF'
           import os, requests
 
-          with open("/tmp/final_video_path.txt") as f:
-            video_path = f.read().strip()
-          with open("/tmp/caption.txt") as f:
-            caption = f.read().strip()
+          with open("/tmp/final_video_path.txt") as f: video_path = f.read().strip()
+          with open("/tmp/caption.txt") as f: caption = f.read().strip()
 
           fb_token   = os.environ.get("FB_PAGE_TOKEN")
           fb_page_id = os.environ.get("FB_PAGE_ID")
-
           if not fb_token or not fb_page_id:
-            raise RuntimeError("FB_PAGE_TOKEN or FB_PAGE_ID secret is missing/empty — check repo Settings > Secrets and variables > Actions")
-
+            raise RuntimeError("FB_PAGE_TOKEN or FB_PAGE_ID secret missing")
           if not caption:
-            caption = "What's your move? Comment below! #Poker #PokerStrategy #TexasHoldem"
+            caption = "What would you do here? Comment your move. #Poker #PokerStrategy #TexasHoldem"
 
-          print("Posting to Facebook...")
           with open(video_path, 'rb') as f:
             response = requests.post(
               f"https://graph-video.facebook.com/v18.0/{fb_page_id}/videos",
               data={"description": caption, "access_token": fb_token},
               files={"source": (os.path.basename(video_path), f, "video/mp4")}
             )
-
-          print(f"Facebook response: {response.status_code}")
+          print(f"Facebook video response: {response.status_code}")
           print(response.text)
           if response.status_code == 200:
-            print(f"Posted! Video ID: {response.json().get('id')}")
+            print(f"Posted video! ID: {response.json().get('id')}")
           else:
-            raise RuntimeError(f"Post failed: {response.text}")
+            raise RuntimeError(f"Video post failed: {response.text}")
 
           os.remove(video_path)
-          print("Done!")
           PYEOF
         env:
-          TS:            ${{ env.TS }}
-          DISPLAY:       ":99"
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID:    ${{ secrets.FB_PAGE_ID }}
+
+      - name: Post image to Facebook
+        run: |
+          python3 << 'PYEOF'
+          import os, requests
+
+          with open("/tmp/screenshot_path.txt") as f: png_path = f.read().strip()
+          with open("/tmp/caption.txt") as f: caption = f.read().strip()
+
+          fb_token   = os.environ.get("FB_PAGE_TOKEN")
+          fb_page_id = os.environ.get("FB_PAGE_ID")
+
+          if not os.path.exists(png_path):
+            print("No screenshot found, skipping image post.")
+          else:
+            with open(png_path, 'rb') as f:
+              response = requests.post(
+                f"https://graph.facebook.com/v18.0/{fb_page_id}/photos",
+                data={"caption": caption, "access_token": fb_token},
+                files={"source": (os.path.basename(png_path), f, "image/png")}
+              )
+            print(f"Facebook photo response: {response.status_code}")
+            print(response.text)
+            if response.status_code == 200:
+              print(f"Posted photo! ID: {response.json().get('id')}")
+            else:
+              print(f"Photo post failed (non-fatal): {response.text}")
+            os.remove(png_path)
+          PYEOF
+        env:
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           FB_PAGE_ID:    ${{ secrets.FB_PAGE_ID }}
