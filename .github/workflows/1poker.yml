@@ -3,7 +3,7 @@ name: 🃏 Post Poker Spot to Facebook
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 15 * * *"
+  #  - cron: "0 15 * * *"
 
 jobs:
   post:
