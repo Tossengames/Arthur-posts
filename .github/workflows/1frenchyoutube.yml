@@ -1,4 +1,4 @@
-name: french-words-post
+name: french-words-post x1
 
 "on":
   workflow_dispatch:
