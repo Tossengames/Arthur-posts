@@ -18,8 +18,32 @@ jobs:
         timeout-minutes: 3
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg bc jq python3 python3-pip python3-pil espeak-ng fonts-noto-core fonts-liberation
-          pip install --quiet --break-system-packages Pillow edge-tts google-auth google-auth-oauthlib google-api-python-client || pip install --quiet Pillow edge-tts google-auth google-auth-oauthlib google-api-python-client
+          sudo apt-get install -y ffmpeg bc jq python3 python3-pip python3-pil fonts-noto-core fonts-liberation
+          pip install --quiet --break-system-packages -U Pillow edge-tts piper-tts google-auth google-auth-oauthlib google-api-python-client || pip install --quiet -U Pillow edge-tts piper-tts google-auth google-auth-oauthlib google-api-python-client
+
+      - name: cache-piper-model
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/piper-voices
+          key: piper-en-fr-voices-v1
+
+      - name: setup-piper
+        id: piper_setup
+        timeout-minutes: 3
+        continue-on-error: true
+        run: |
+          set -e
+          mkdir -p /home/runner/piper-voices
+          cd /home/runner/piper-voices
+          BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main"
+          dl() { [ -f "$2" ] || timeout 90 curl -sfL -o "$2" "$BASE/$1/$2"; }
+          dl en/en_US/lessac/medium en_US-lessac-medium.onnx
+          dl en/en_US/lessac/medium en_US-lessac-medium.onnx.json
+          dl fr/fr_FR/siwis/medium fr_FR-siwis-medium.onnx
+          dl fr/fr_FR/siwis/medium fr_FR-siwis-medium.onnx.json
+          echo "test" | python3 -m piper --model en_US-lessac-medium.onnx --output_file /tmp/piper_test.wav
+          test -s /tmp/piper_test.wav
+          echo "piper_ready=true" >> "$GITHUB_OUTPUT"
 
       - name: pick-music
         id: music
@@ -90,67 +114,70 @@ jobs:
 
       - name: synthesize-speech
         id: tts
-        timeout-minutes: 2
+        timeout-minutes: 3
         continue-on-error: true
         env:
           WORD: ${{ steps.content.outputs.word }}
+          PIPER_READY: ${{ steps.piper_setup.outputs.piper_ready }}
         run: |
           EN_VOICE="en-US-AriaNeural"
           FR_VOICE="fr-FR-DeniseNeural"
-
-          echo "Synthesizing speech parts for: $WORD"
+          PDIR="/home/runner/piper-voices"
+          PARTS="opening intro word1 repeat word2 closing"
 
           synth_edge() {
-            local voice="$1"
-            local text="$2"
-            local out="$3"
+            local voice="$1" text="$2" out="$3"
             local mp3="${out%.wav}.mp3"
-            timeout 30 python3 -m edge_tts --voice "$voice" --text "$text" --write-media "$mp3" 2>/tmp/edge_err.log || return 1
-            timeout 15 ffmpeg -hide_banner -loglevel error -y -i "$mp3" "$out" || return 1
+            for try in 1 2; do
+              if timeout 30 python3 -m edge_tts --voice "$voice" --text "$text" --write-media "$mp3" 2>/tmp/edge_err.log && [ -s "$mp3" ]; then
+                timeout 15 ffmpeg -hide_banner -loglevel error -y -i "$mp3" "$out" && return 0
+              fi
+              echo "edge-tts try $try failed: $(tail -n 3 /tmp/edge_err.log)"
+              sleep 2
+            done
+            return 1
           }
 
-          synth_espeak() {
-            local lang="$1"
-            local text="$2"
-            local out="$3"
-            timeout 15 espeak-ng -v "$lang" -s 150 -w "$out" "$text" 2>/tmp/espeak_err.log
+          synth_piper() {
+            local lang="$1" text="$2" out="$3"
+            local model="$PDIR/en_US-lessac-medium.onnx"
+            [ "$lang" = "fr" ] && model="$PDIR/fr_FR-siwis-medium.onnx"
+            echo "$text" | timeout 30 python3 -m piper --model "$model" --output_file "$out" 2>/tmp/piper_err.log || {
+              echo "piper failed: $(tail -n 3 /tmp/piper_err.log)"; return 1; }
           }
 
           all_ok() {
-            [ -s opening_raw.wav ] && [ -s intro_raw.wav ] && [ -s word1_raw.wav ] && [ -s repeat_raw.wav ] && [ -s word2_raw.wav ] && [ -s closing_raw.wav ]
+            for p in $PARTS; do [ -s "${p}_raw.wav" ] || return 1; done
+            return 0
+          }
+
+          run_engine() {
+            local fn="$1" en="$2" fr="$3"
+            rm -f *_raw.wav
+            $fn "$en" "Let's learn how to pronounce French words." opening_raw.wav || true
+            $fn "$en" "The word is." intro_raw.wav || true
+            $fn "$fr" "$WORD." word1_raw.wav || true
+            $fn "$en" "Let's repeat." repeat_raw.wav || true
+            $fn "$fr" "$WORD." word2_raw.wav || true
+            $fn "$en" "Follow us and leave a comment." closing_raw.wav || true
+            all_ok
           }
 
           SUCCESS=0
-
-          echo "Attempting edge-tts for all parts..."
-          synth_edge "$EN_VOICE" "Let's learn how to pronounce French words." opening_raw.wav || true
-          synth_edge "$EN_VOICE" "The word is." intro_raw.wav || true
-          synth_edge "$FR_VOICE" "$WORD." word1_raw.wav || true
-          synth_edge "$EN_VOICE" "Let's repeat." repeat_raw.wav || true
-          synth_edge "$FR_VOICE" "$WORD." word2_raw.wav || true
-          synth_edge "$EN_VOICE" "Follow us and leave a comment." closing_raw.wav || true
-          if all_ok; then
-            SUCCESS=1
-            echo "edge-tts succeeded for all parts."
-          fi
-
-          if [ "$SUCCESS" -eq 0 ]; then
-            echo "Falling back to espeak-ng for all parts..."
-            rm -f opening_raw.wav intro_raw.wav word1_raw.wav repeat_raw.wav word2_raw.wav closing_raw.wav
-            synth_espeak en-us "Let's learn how to pronounce French words." opening_raw.wav || true
-            synth_espeak en-us "The word is." intro_raw.wav || true
-            synth_espeak fr "$WORD." word1_raw.wav || true
-            synth_espeak en-us "Let's repeat." repeat_raw.wav || true
-            synth_espeak fr "$WORD." word2_raw.wav || true
-            synth_espeak en-us "Follow us and leave a comment." closing_raw.wav || true
-            if all_ok; then
-              SUCCESS=1
-              echo "espeak-ng succeeded for all parts."
+          echo "Trying edge-tts..."
+          if run_engine synth_edge "$EN_VOICE" "$FR_VOICE"; then
+            SUCCESS=1; echo "edge-tts OK"
+          elif [ "$PIPER_READY" = "true" ]; then
+            echo "edge-tts failed, trying Piper..."
+            if run_engine synth_piper en fr; then
+              SUCCESS=1; echo "Piper OK"
             fi
+          else
+            echo "edge-tts failed and Piper is not available."
           fi
 
           if [ "$SUCCESS" -eq 0 ]; then
-            echo "All TTS methods failed."
+            echo "No TTS available, video will use music only."
             echo "tts_available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -163,21 +190,12 @@ jobs:
             ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" 2>/dev/null
           }
 
-          OPENING_DUR=$(get_dur opening_raw_norm.wav)
-          INTRO_DUR=$(get_dur intro_raw_norm.wav)
-          WORD1_DUR=$(get_dur word1_raw_norm.wav)
-          REPEAT_DUR=$(get_dur repeat_raw_norm.wav)
-          WORD2_DUR=$(get_dur word2_raw_norm.wav)
-          CLOSING_DUR=$(get_dur closing_raw_norm.wav)
-
-          echo "opening_dur=$OPENING_DUR" >> "$GITHUB_OUTPUT"
-          echo "intro_dur=$INTRO_DUR" >> "$GITHUB_OUTPUT"
-          echo "word1_dur=$WORD1_DUR" >> "$GITHUB_OUTPUT"
-          echo "repeat_dur=$REPEAT_DUR" >> "$GITHUB_OUTPUT"
-          echo "word2_dur=$WORD2_DUR" >> "$GITHUB_OUTPUT"
-          echo "closing_dur=$CLOSING_DUR" >> "$GITHUB_OUTPUT"
-
-          echo "Durations: opening=$OPENING_DUR intro=$INTRO_DUR word1=$WORD1_DUR repeat=$REPEAT_DUR word2=$WORD2_DUR closing=$CLOSING_DUR"
+          echo "opening_dur=$(get_dur opening_raw_norm.wav)" >> "$GITHUB_OUTPUT"
+          echo "intro_dur=$(get_dur intro_raw_norm.wav)" >> "$GITHUB_OUTPUT"
+          echo "word1_dur=$(get_dur word1_raw_norm.wav)" >> "$GITHUB_OUTPUT"
+          echo "repeat_dur=$(get_dur repeat_raw_norm.wav)" >> "$GITHUB_OUTPUT"
+          echo "word2_dur=$(get_dur word2_raw_norm.wav)" >> "$GITHUB_OUTPUT"
+          echo "closing_dur=$(get_dur closing_raw_norm.wav)" >> "$GITHUB_OUTPUT"
 
           timeout 10 ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 0.3 silence_short.wav
           timeout 10 ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 1.2 silence_long.wav
@@ -316,7 +334,7 @@ jobs:
 
           layouts = {
               "A": {"word_y": 420, "word_size": 110, "word_color": "white", "pron_y": 650, "pron_size": 60, "pron_color": "#ffe066", "meaning_y": 870, "meaning_size": 56},
-              "B": {"word_y": 360, "word_size": 120, "word_color": "#fff3b0", "pron_y": 600, "pron_size": 58, "pron_color": "white", "pron_ar_y": 0, "meaning_y": 820, "meaning_size": 54},
+              "B": {"word_y": 360, "word_size": 120, "word_color": "#fff3b0", "pron_y": 600, "pron_size": 58, "pron_color": "white", "meaning_y": 820, "meaning_size": 54},
               "C": {"word_y": 460, "word_size": 104, "word_color": "white", "pron_y": 690, "pron_size": 62, "pron_color": "#ffd6a5", "meaning_y": 910, "meaning_size": 58},
           }
           L = layouts.get(layout, layouts["A"])
