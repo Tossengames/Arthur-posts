@@ -1,0 +1,1113 @@
+name: bible-shorts-post
+
+"on":
+  workflow_dispatch:
+    inputs:
+      game:
+        description: "Format"
+        required: false
+        default: "auto"
+        type: choice
+        options: [auto, fill_verse, unscramble, true_false, order_events, guess_book, names_of_jesus, parable]
+      theme:
+        description: "Look"
+        required: false
+        default: "auto"
+        type: choice
+        options: [auto, sunrise_gold, midnight_stars, stained_glass, parchment, watercolor, minimal_dark, dawn_sky]
+  schedule:
+    - cron: "0 13,22 * * *"   # 2 per day (9 AM and 6 PM EST). Adjust as you like.
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bible-shorts-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install-deps
+        timeout-minutes: 6
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg jq python3-pip fonts-noto-core fonts-dejavu-core fonts-liberation
+          for p in fonts-ebgaramond fonts-lora fonts-playfair-display fonts-cinzel fonts-merriweather; do
+            sudo apt-get install -y "$p" || true
+          done
+          pip install --quiet --break-system-packages pillow numpy edge-tts google-auth google-auth-oauthlib google-api-python-client || pip install --quiet pillow numpy edge-tts google-auth google-auth-oauthlib google-api-python-client
+
+      - name: build-video
+        id: build
+        timeout-minutes: 14
+        env:
+          GAME: ${{ github.event.inputs.game }}
+          THEME: ${{ github.event.inputs.theme }}
+        run: |
+          cat > bible.py << 'PYEOF'
+          import os, re, json, random, math, subprocess, glob, wave, sys
+          import numpy as np
+          from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+          W, H, FPS, SR = 1080, 1920, 24, 44100
+          BH = H + 120
+          VOICES = ["en-US-AndrewNeural", "en-US-GuyNeural", "en-US-AriaNeural"]
+
+          # ================================================================== FONTS
+          ALL_FONTS = glob.glob("/usr/share/fonts/**/*.[ot]tf", recursive=True)
+
+
+          def pick(*cands, ital=False):
+              for toks in cands:
+                  for f in sorted(ALL_FONTS):
+                      n = os.path.basename(f).lower()
+                      if all(t in n for t in toks) and (("italic" in n) == ital):
+                          return f
+              return None
+
+
+          SANS_B = pick(("notosans-bold",), ("liberationsans-bold",), ("dejavusans-bold",))
+          SERIF_B = pick(("notoserif-bold",), ("liberationserif-bold",), ("dejavuserif-bold",))
+          GAR_B = pick(("garamond", "bold"), ("lora", "bold"), ("cormorant", "bold")) or SERIF_B
+          PLAY_B = pick(("playfair", "bold"), ("cinzel", "bold"), ("merriweather", "bold")) or SERIF_B
+          SERIF_I = pick(("notoserif-bold",), ("dejavuserif-bold",), ("liberationserif-bold",), ital=True) or SERIF_B
+          print("Fonts:", SANS_B, SERIF_B, GAR_B, PLAY_B, SERIF_I)
+
+          _fc = {}
+
+
+          def font(p, s):
+              k = (p, s)
+              if k not in _fc:
+                  _fc[k] = ImageFont.truetype(p, s)
+              return _fc[k]
+
+
+          M = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+
+
+          def hexrgb(h):
+              h = h.lstrip("#")
+              return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+          def rgba(c, a=255):
+              if isinstance(c, str):
+                  return hexrgb(c) + (a,)
+              return tuple(c) if len(c) == 4 else tuple(c) + (a,)
+
+
+          # ================================================================== CONTENT (KJV, public domain)
+          # (ref, verse, answer word, [2 wrong options])
+          FV = [
+              ("John 3:16", "For God so loved the world, that he gave his only begotten Son.", "loved", ["saw", "knew"]),
+              ("Psalm 23:1", "The LORD is my shepherd; I shall not want.", "shepherd", ["king", "rock"]),
+              ("Philippians 4:13", "I can do all things through Christ which strengtheneth me.", "Christ", ["God", "Him"]),
+              ("Proverbs 3:5", "Trust in the LORD with all thine heart; and lean not unto thine own understanding.", "Trust", ["Hope", "Rest"]),
+              ("Isaiah 41:10", "Fear thou not; for I am with thee: be not dismayed; for I am thy God: I will strengthen thee; yea, I will help thee.", "dismayed", ["afraid", "alone"]),
+              ("Matthew 11:28", "Come unto me, all ye that labour and are heavy laden, and I will give you rest.", "rest", ["peace", "joy"]),
+              ("Jeremiah 29:11", "For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.", "peace", ["joy", "hope"]),
+              ("Joshua 1:9", "Have not I commanded thee? Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.", "courage", ["heart", "faith"]),
+              ("Psalm 119:105", "Thy word is a lamp unto my feet, and a light unto my path.", "lamp", ["sword", "staff"]),
+              ("Genesis 1:1", "In the beginning God created the heaven and the earth.", "created", ["blessed", "spoke"]),
+              ("Psalm 27:1", "The LORD is my light and my salvation; whom shall I fear?", "light", ["rock", "shield"]),
+              ("1 Corinthians 13:13", "And now abideth faith, hope, charity, these three; but the greatest of these is charity.", "charity", ["mercy", "grace"]),
+              ("Ephesians 2:8", "For by grace are ye saved through faith; and that not of yourselves: it is the gift of God.", "grace", ["works", "mercy"]),
+              ("Matthew 7:7", "Ask, and it shall be given you; seek, and ye shall find; knock, and it shall be opened unto you.", "knock", ["pray", "call"]),
+              ("Psalm 118:24", "This is the day which the LORD hath made; we will rejoice and be glad in it.", "rejoice", ["sing", "kneel"]),
+              ("2 Timothy 1:7", "For God hath not given us the spirit of fear; but of power, and of love, and of a sound mind.", "fear", ["doubt", "pride"]),
+              ("Hebrews 11:1", "Now faith is the substance of things hoped for, the evidence of things not seen.", "faith", ["hope", "love"]),
+              ("Luke 1:37", "For with God nothing shall be impossible.", "impossible", ["hidden", "difficult"]),
+              ("Proverbs 15:1", "A soft answer turneth away wrath: but grievous words stir up anger.", "soft", ["loud", "quick"]),
+              ("John 14:6", "Jesus saith unto him, I am the way, the truth, and the life: no man cometh unto the Father, but by me.", "truth", ["light", "door"]),
+              ("Matthew 6:33", "But seek ye first the kingdom of God, and his righteousness; and all these things shall be added unto you.", "first", ["only", "daily"]),
+              ("1 John 4:8", "He that loveth not knoweth not God; for God is love.", "love", ["peace", "joy"]),
+              ("Psalm 46:1", "God is our refuge and strength, a very present help in trouble.", "refuge", ["king", "judge"]),
+              ("Romans 8:31", "What shall we then say to these things? If God be for us, who can be against us?", "against", ["beside", "before"]),
+              ("Psalm 34:8", "O taste and see that the LORD is good: blessed is the man that trusteth in him.", "taste", ["touch", "hear"]),
+              ("Isaiah 40:31", "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles; they shall run, and not be weary; and they shall walk, and not faint.", "eagles", ["doves", "angels"]),
+              ("Matthew 5:14", "Ye are the light of the world. A city that is set on an hill cannot be hid.", "hill", ["rock", "tower"]),
+              ("Galatians 6:9", "And let us not be weary in well doing: for in due season we shall reap, if we faint not.", "reap", ["rest", "win"]),
+          ]
+
+          # (ref, verse) for unscramble
+          UV = [
+              ("Psalm 23:1", "The LORD is my shepherd; I shall not want."),
+              ("Genesis 1:1", "In the beginning God created the heaven and the earth."),
+              ("Luke 1:37", "For with God nothing shall be impossible."),
+              ("Philippians 4:13", "I can do all things through Christ which strengtheneth me."),
+              ("John 14:6", "I am the way, the truth, and the life."),
+              ("Psalm 46:1", "God is our refuge and strength, a very present help in trouble."),
+              ("Psalm 119:105", "Thy word is a lamp unto my feet, and a light unto my path."),
+              ("Joshua 1:9", "Be strong and of a good courage; be not afraid, neither be thou dismayed."),
+              ("Psalm 27:1", "The LORD is my light and my salvation; whom shall I fear?"),
+              ("Proverbs 15:1", "A soft answer turneth away wrath: but grievous words stir up anger."),
+              ("Psalm 118:24", "This is the day which the LORD hath made; we will rejoice and be glad in it."),
+              ("Matthew 11:28", "Come unto me, all ye that labour and are heavy laden, and I will give you rest."),
+              ("Hebrews 11:1", "Now faith is the substance of things hoped for, the evidence of things not seen."),
+              ("Proverbs 3:5", "Trust in the LORD with all thine heart; and lean not unto thine own understanding."),
+              ("John 3:16", "For God so loved the world, that he gave his only begotten Son."),
+              ("2 Timothy 1:7", "For God hath not given us the spirit of fear; but of power, and of love, and of a sound mind."),
+              ("Matthew 7:7", "Ask, and it shall be given you; seek, and ye shall find."),
+              ("Romans 8:31", "If God be for us, who can be against us?"),
+              ("Ephesians 4:32", "And be ye kind one to another, tenderhearted, forgiving one another."),
+              ("Psalm 34:8", "O taste and see that the LORD is good."),
+              ("1 John 4:8", "He that loveth not knoweth not God; for God is love."),
+              ("Matthew 6:33", "But seek ye first the kingdom of God, and his righteousness."),
+              ("Galatians 6:9", "And let us not be weary in well doing."),
+          ]
+
+          # (statement, True/False, explanation, ref)
+          TF = [
+              ("The shortest verse in the Bible is \"Jesus wept.\"", True, "It's found in John 11:35, when Jesus wept at the tomb of his friend Lazarus.", "John 11:35"),
+              ("Noah's ark came to rest on Mount Sinai.", False, "The ark rested on the mountains of Ararat.", "Genesis 8:4"),
+              ("Jesus' first miracle was turning water into wine.", True, "He did it at a wedding in Cana of Galilee.", "John 2:1-11"),
+              ("Moses led the Israelites into the Promised Land.", False, "Moses died before they crossed the Jordan. Joshua led them in.", "Deuteronomy 34:5"),
+              ("David defeated Goliath with a sword.", False, "David prevailed with a sling and a single stone.", "1 Samuel 17:50"),
+              ("Jonah spent three days and three nights inside a great fish.", True, "The LORD prepared a great fish to swallow Jonah.", "Jonah 1:17"),
+              ("Jesus was born in Nazareth.", False, "Jesus was born in Bethlehem. He grew up in Nazareth.", "Matthew 2:1"),
+              ("Methuselah is the oldest person recorded in the Bible.", True, "He lived 969 years.", "Genesis 5:27"),
+              ("The Sermon on the Mount is found in the Gospel of Mark.", False, "It is in the Gospel of Matthew, chapters 5 to 7.", "Matthew 5:1"),
+              ("Peter walked on water toward Jesus.", True, "Peter stepped out of the boat, but began to sink when he looked at the wind.", "Matthew 14:29"),
+              ("Joseph's brothers sold him for twenty pieces of silver.", True, "They sold him to merchants who took him to Egypt.", "Genesis 37:28"),
+              ("Jesus was baptized by the apostle Peter.", False, "John the Baptist baptized Jesus in the Jordan River.", "Matthew 3:13"),
+              ("Daniel was thrown into a den of lions.", True, "God shut the lions' mouths, and Daniel was unharmed.", "Daniel 6:22"),
+              ("Judas betrayed Jesus for thirty pieces of silver.", True, "The chief priests paid him thirty pieces of silver.", "Matthew 26:15"),
+              ("Abraham's wife was named Rebekah.", False, "Abraham's wife was Sarah. Rebekah married his son Isaac.", "Genesis 17:15"),
+              ("Elijah went up to heaven in a whirlwind.", True, "A chariot of fire and horses of fire appeared, and Elijah went up by a whirlwind.", "2 Kings 2:11"),
+              ("Lazarus had been dead four days when Jesus raised him.", True, "Jesus called him out of the tomb, and he came out alive.", "John 11:39"),
+              ("Jesus fed five thousand men with five loaves and two fish.", True, "Twelve baskets of leftovers were gathered afterward.", "Matthew 14:17"),
+              ("The wise men came to Jerusalem from the west.", False, "The wise men came from the east.", "Matthew 2:1"),
+              ("Genesis says God rested on the seventh day.", True, "After six days of creation, God rested from his work.", "Genesis 2:2"),
+              ("The apostle Paul wrote the Gospel of John.", False, "Tradition credits the apostle John. Paul wrote letters like Romans.", "John 21:24"),
+              ("King Solomon asked God for wisdom.", True, "God was pleased and gave him a wise and understanding heart.", "1 Kings 3:9"),
+              ("The Israelites crossed the Red Sea on dry ground.", True, "The waters stood like a wall on their right and left.", "Exodus 14:22"),
+              ("Zacchaeus climbed a fig tree to see Jesus.", False, "He climbed a sycamore tree.", "Luke 19:4"),
+              ("Golgotha means the place of a skull.", True, "Jesus was crucified at this place.", "Matthew 27:33"),
+              ("Esther became the queen of Egypt.", False, "Esther became queen of Persia.", "Esther 2:17"),
+              ("The Gospel of Luke was written by a physician.", True, "Paul called Luke the beloved physician.", "Colossians 4:14"),
+              ("Samson's strength was tied to his uncut hair.", True, "He told Delilah his strength would leave him if he was shaven.", "Judges 16:17"),
+          ]
+
+          # (topic, [events in correct order])
+          OE = [
+              ("Holy Week", ["Jesus enters Jerusalem on a donkey", "The Last Supper", "The crucifixion", "The resurrection"]),
+              ("Moses", ["The burning bush", "The ten plagues of Egypt", "Crossing the Red Sea", "The Ten Commandments at Sinai"]),
+              ("The Life of Jesus", ["Birth in Bethlehem", "Baptism in the Jordan", "The Sermon on the Mount", "The ascension"]),
+              ("Genesis", ["Adam and Eve in Eden", "Cain and Abel", "Noah's flood", "The Tower of Babel"]),
+              ("David", ["Anointed by Samuel", "Defeats Goliath", "Becomes king of Israel", "Solomon is crowned"]),
+              ("Joseph", ["Sold by his brothers", "Thrown into prison in Egypt", "Interprets Pharaoh's dream", "Forgives his brothers"]),
+              ("The Early Church", ["Pentecost", "Stephen is stoned", "Paul meets Jesus on the road", "Paul's first missionary journey"]),
+              ("Jonah", ["God calls Jonah to Nineveh", "Jonah boards a ship to Tarshish", "Swallowed by a great fish", "Jonah preaches in Nineveh"]),
+              ("Abraham", ["God calls Abram to leave Haran", "Isaac is born", "Abraham is tested on Mount Moriah", "Sarah dies"]),
+          ]
+
+          # (verse, book, ref, [2 wrong books])
+          GB = [
+              ("In the beginning God created the heaven and the earth.", "Genesis", "Genesis 1:1", ["Exodus", "Psalms"]),
+              ("The LORD is my shepherd; I shall not want.", "Psalms", "Psalm 23:1", ["Proverbs", "Isaiah"]),
+              ("For God so loved the world, that he gave his only begotten Son.", "John", "John 3:16", ["Romans", "Matthew"]),
+              ("Trust in the LORD with all thine heart; and lean not unto thine own understanding.", "Proverbs", "Proverbs 3:5", ["Psalms", "Isaiah"]),
+              ("I can do all things through Christ which strengtheneth me.", "Philippians", "Philippians 4:13", ["Romans", "Ephesians"]),
+              ("For by grace are ye saved through faith; and that not of yourselves: it is the gift of God.", "Ephesians", "Ephesians 2:8", ["Romans", "Galatians"]),
+              ("Now faith is the substance of things hoped for, the evidence of things not seen.", "Hebrews", "Hebrews 11:1", ["James", "Romans"]),
+              ("Be strong and of a good courage; be not afraid, neither be thou dismayed.", "Joshua", "Joshua 1:9", ["Judges", "Ruth"]),
+              ("Blessed are the poor in spirit: for theirs is the kingdom of heaven.", "Matthew", "Matthew 5:3", ["Mark", "Acts"]),
+              ("Charity suffereth long, and is kind; charity envieth not.", "1 Corinthians", "1 Corinthians 13:4", ["Romans", "Galatians"]),
+              ("Fear thou not; for I am with thee: be not dismayed; for I am thy God.", "Isaiah", "Isaiah 41:10", ["Jeremiah", "Psalms"]),
+              ("But the fruit of the Spirit is love, joy, peace, longsuffering, gentleness, goodness, faith.", "Galatians", "Galatians 5:22", ["Ephesians", "Colossians"]),
+              ("Jesus wept.", "John", "John 11:35", ["Luke", "Mark"]),
+              ("And the Word was made flesh, and dwelt among us.", "John", "John 1:14", ["Luke", "Acts"]),
+              ("Vanity of vanities, saith the Preacher, all is vanity.", "Ecclesiastes", "Ecclesiastes 1:2", ["Proverbs", "Job"]),
+              ("To every thing there is a season, and a time to every purpose under the heaven.", "Ecclesiastes", "Ecclesiastes 3:1", ["Psalms", "Proverbs"]),
+              ("Thy word is a lamp unto my feet, and a light unto my path.", "Psalms", "Psalm 119:105", ["Proverbs", "Job"]),
+              ("Behold, I stand at the door, and knock: if any man hear my voice, and open the door, I will come in to him.", "Revelation", "Revelation 3:20", ["Acts", "Hebrews"]),
+              ("Rejoice evermore. Pray without ceasing.", "1 Thessalonians", "1 Thessalonians 5:16-17", ["Philippians", "Colossians"]),
+              ("Even so faith, if it hath not works, is dead, being alone.", "James", "James 2:17", ["1 Peter", "Romans"]),
+              ("Let your light so shine before men, that they may see your good works.", "Matthew", "Matthew 5:16", ["Luke", "Mark"]),
+              ("The LORD is my light and my salvation; whom shall I fear?", "Psalms", "Psalm 27:1", ["Isaiah", "Proverbs"]),
+              ("Come unto me, all ye that labour and are heavy laden, and I will give you rest.", "Matthew", "Matthew 11:28", ["John", "Luke"]),
+              ("Be still, and know that I am God.", "Psalms", "Psalm 46:10", ["Isaiah", "Job"]),
+              ("Create in me a clean heart, O God; and renew a right spirit within me.", "Psalms", "Psalm 51:10", ["Proverbs", "Isaiah"]),
+          ]
+
+          # (name, meaning, KJV verse, ref)
+          NJ = [
+              ("Prince of Peace", "He brings peace with God, and peace to troubled hearts.", "And his name shall be called Wonderful, Counsellor, The mighty God, The everlasting Father, The Prince of Peace.", "Isaiah 9:6"),
+              ("The Good Shepherd", "He knows his sheep, leads them, and lays down his life for them.", "I am the good shepherd: the good shepherd giveth his life for the sheep.", "John 10:11"),
+              ("Light of the World", "He brings truth and hope into the darkness.", "I am the light of the world: he that followeth me shall not walk in darkness, but shall have the light of life.", "John 8:12"),
+              ("Bread of Life", "He satisfies the deepest hunger of the soul.", "I am the bread of life: he that cometh to me shall never hunger; and he that believeth on me shall never thirst.", "John 6:35"),
+              ("Emmanuel", "The name means God with us.", "They shall call his name Emmanuel, which being interpreted is, God with us.", "Matthew 1:23"),
+              ("Alpha and Omega", "These are the first and last letters of the Greek alphabet. He is the beginning and the end.", "I am Alpha and Omega, the beginning and the end, the first and the last.", "Revelation 22:13"),
+              ("The Way, the Truth, and the Life", "He is the path to God, the source of truth, and the giver of life.", "I am the way, the truth, and the life: no man cometh unto the Father, but by me.", "John 14:6"),
+              ("Lamb of God", "He gave his life to take away the sin of the world.", "Behold the Lamb of God, which taketh away the sin of the world.", "John 1:29"),
+              ("The Resurrection and the Life", "He has power over death.", "I am the resurrection, and the life: he that believeth in me, though he were dead, yet shall he live.", "John 11:25"),
+              ("King of Kings", "He reigns above every ruler.", "And he hath on his vesture and on his thigh a name written, KING OF KINGS, AND LORD OF LORDS.", "Revelation 19:16"),
+              ("The True Vine", "We stay connected to him to bear fruit.", "I am the vine, ye are the branches: He that abideth in me, and I in him, the same bringeth forth much fruit.", "John 15:5"),
+              ("The Door", "He is the way into safety and life.", "I am the door: by me if any man enter in, he shall be saved.", "John 10:9"),
+          ]
+
+          # (title, ref, summary, lesson)
+          PB = [
+              ("The Good Samaritan", "Luke 10:25-37", "A man is beaten and left on the road. A priest and a Levite walk past him. A Samaritan stops, cares for him, and pays for his recovery.", "Love your neighbor by showing mercy to anyone in need."),
+              ("The Prodigal Son", "Luke 15:11-32", "A younger son wastes his inheritance and returns home in shame. His father runs to meet him and welcomes him with a celebration.", "God's love welcomes us home, no matter how far we have wandered."),
+              ("The Lost Sheep", "Luke 15:1-7", "A shepherd has one hundred sheep. When one goes missing, he leaves the ninety-nine to search until he finds it, then celebrates.", "Every single person matters to God."),
+              ("The Sower", "Matthew 13:3-9", "A farmer scatters seed on the path, on rocks, among thorns, and on good soil. Only the seed in good soil grows and bears fruit.", "Keep your heart open so God's word can take root and grow."),
+              ("The Mustard Seed", "Matthew 13:31-32", "The kingdom of heaven is like a tiny mustard seed. It grows into a great plant where birds come to rest.", "Small beginnings can grow into something great in God's hands."),
+              ("The Wise and Foolish Builders", "Matthew 7:24-27", "One man builds his house on rock, and it stands through the storm. Another builds on sand, and it falls.", "Build your life on the words of Jesus."),
+              ("The Persistent Widow", "Luke 18:1-8", "A widow keeps asking an unjust judge for justice until he finally helps her.", "Pray always and never give up."),
+              ("The Pearl of Great Price", "Matthew 13:45-46", "A merchant finds one perfect pearl and sells everything he owns to buy it.", "The kingdom of God is worth more than anything else."),
+              ("The Rich Fool", "Luke 12:16-21", "A rich man builds bigger barns to store his harvest and plans to relax. That very night, his life is required of him.", "Real wealth is being rich toward God, not just storing up for yourself."),
+              ("The Talents", "Matthew 25:14-30", "A master gives his servants money before a trip. Two invest it and earn more. One buries it out of fear.", "Use the gifts God gave you faithfully."),
+              ("The Lost Coin", "Luke 15:8-10", "A woman loses one of her ten silver coins. She lights a lamp and searches the whole house until she finds it.", "Heaven rejoices over every person who is found."),
+          ]
+
+          # ================================================================== PICK FORMAT / THEME
+          USED_FILE = "used.json"
+          used = json.load(open(USED_FILE)) if os.path.exists(USED_FILE) else {}
+
+          FORMATS = ["fill_verse", "unscramble", "true_false", "order_events", "guess_book", "names_of_jesus", "parable"]
+          WEIGHTS = [3, 2, 3, 2, 3, 2, 1]
+          fmt = os.environ.get("GAME", "auto")
+          if fmt not in FORMATS:
+              last = used.get("_last_fmt")
+              ch = [(f, w) for f, w in zip(FORMATS, WEIGHTS) if f != last]
+              fmt = random.choices([c[0] for c in ch], [c[1] for c in ch])[0]
+
+          SERIES = {"fill_verse": ("quiz", "BIBLE QUIZ"), "unscramble": ("quiz", "BIBLE QUIZ"), "true_false": ("quiz", "BIBLE QUIZ"),
+                    "order_events": ("quiz", "BIBLE QUIZ"), "guess_book": ("quiz", "BIBLE QUIZ"),
+                    "names_of_jesus": ("names", "NAMES OF JESUS"), "parable": ("parable", "PARABLES OF JESUS")}
+          ck, label = SERIES[fmt]
+          eps = used.setdefault("_ep", {})
+          eps[ck] = eps.get(ck, 0) + 1
+          EP = eps[ck]
+          series = f"{label} #{EP}"
+
+
+          def pick_item(pool, kid):
+              ug = used.get(fmt, [])
+              c = [p for p in pool if kid(p) not in ug]
+              if not c:
+                  ug = []
+                  c = pool
+              p = random.choice(c)
+              used[fmt] = ug + [kid(p)]
+              return p
+
+
+          # ================================================================== THEMES
+          THEMES = {
+              "sunrise_gold": dict(bg="sunrise", tx="#FFFFFF", sh=True, panel=(255, 250, 238, 238), pink="#3A1D08",
+                                   acc="#C2570C", acc_ink="#FFFFFF", chips=["#E0662A", "#C98A1C", "#B5532A", "#C77D1E"], chip_ink="#FFFFFF",
+                                   fh=PLAY_B, fb=SERIF_B, part=("#FFF2C2", 26, "mote"), mood="warm"),
+              "midnight_stars": dict(bg="midnight", tx="#FFFFFF", sh=True, panel=(12, 18, 54, 218), pink="#F4F1E8",
+                                     acc="#F5C84C", acc_ink="#14183A", chips=["#2E4A9E", "#5B3FA0", "#1F6F8B", "#3B5BCF"], chip_ink="#FFFFFF",
+                                     fh=SERIF_B, fb=SANS_B, part=("#FFF6D6", 60, "twinkle"), mood="night"),
+              "stained_glass": dict(bg="glass", tx="#FFFFFF", sh=True, panel=(18, 10, 34, 222), pink="#FFFFFF",
+                                    acc="#FFD36B", acc_ink="#2A1740", chips=["#8E1B3A", "#1B4F9C", "#1E7A4A", "#6A2C91"], chip_ink="#FFFFFF",
+                                    fh=GAR_B, fb=SERIF_B, part=("#FFFFFF", 0, "mote"), mood="choir"),
+              "parchment": dict(bg="parchment", tx="#4A2E12", sh=False, panel=(255, 248, 230, 242), pink="#3B2410",
+                                acc="#8B2E1A", acc_ink="#FFF4DC", chips=["#7A4A22", "#8B2E1A", "#5B6B2E", "#3E5C76"], chip_ink="#FFF4DC",
+                                fh=GAR_B, fb=GAR_B, part=("#8A6A3A", 14, "mote"), mood="classic"),
+              "watercolor": dict(bg="watercolor", tx="#2F3E55", sh=False, panel=(255, 255, 255, 228), pink="#2F3E55",
+                                 acc="#D2628A", acc_ink="#FFFFFF", chips=["#5E8FC9", "#D2728F", "#5FAE86", "#D79A52"], chip_ink="#FFFFFF",
+                                 fh=SANS_B, fb=SANS_B, part=("#FFFFFF", 16, "mote"), mood="soft"),
+              "minimal_dark": dict(bg="minimal", tx="#E8E2D0", sh=True, panel=(24, 24, 26, 238), pink="#F2EEE3",
+                                   acc="#D4AF37", acc_ink="#141414", chips=["#2B2B2E", "#34343A", "#2B2B2E", "#34343A"], chip_ink="#F2EEE3",
+                                   fh=SERIF_B, fb=SANS_B, part=("#D4AF37", 14, "mote"), mood="modern"),
+              "dawn_sky": dict(bg="dawn", tx="#FFFFFF", sh=True, panel=(44, 26, 74, 214), pink="#FFFFFF",
+                               acc="#FFD7A0", acc_ink="#3B2257", chips=["#7B4FA6", "#C0587E", "#E08A5C", "#5A6CC0"], chip_ink="#FFFFFF",
+                               fh=PLAY_B, fb=SANS_B, part=("#FFFFFF", 22, "mote"), mood="warm"),
+          }
+          tname = os.environ.get("THEME", "auto")
+          if tname not in THEMES:
+              tname = random.choice([k for k in THEMES if k != used.get("_last_theme")])
+          th = THEMES[tname]
+          print("Format:", fmt, "| Theme:", tname, "| Episode:", EP)
+
+
+          # ================================================================== BACKGROUNDS
+          def vgrad(stops, h):
+              ys = np.linspace(0, 1, h)[:, None]
+              n = len(stops) - 1
+              pos = ys * n
+              idx = np.minimum(pos.astype(int), n - 1)
+              fr = pos - idx
+              c = np.array(stops, dtype=np.float32)
+              g = c[idx[:, 0]] * (1 - fr) + c[idx[:, 0] + 1] * fr
+              return np.repeat(g[:, None, :], W, axis=1)
+
+
+          def glow(a, cx, cy, r, col, s=0.6):
+              yy, xx = np.mgrid[0:a.shape[0], 0:a.shape[1]]
+              d = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) / r
+              m = (np.clip(1 - d, 0, 1) ** 2 * s)[..., None]
+              a += m * (np.array(col, dtype=np.float32) - a)
+
+
+          def to_img(a):
+              return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+
+
+          def bg_sunrise():
+              a = vgrad([(226, 92, 48), (247, 150, 58), (255, 205, 105), (255, 236, 170)], BH)
+              glow(a, W / 2, BH * 0.78, 900, (255, 244, 200), 0.75)
+              return to_img(a)
+
+
+          def bg_midnight():
+              a = vgrad([(5, 8, 30), (14, 22, 66), (30, 42, 102), (46, 58, 128)], BH)
+              glow(a, W * 0.8, 260, 420, (200, 210, 255), 0.35)
+              im = to_img(a)
+              d = ImageDraw.Draw(im)
+              r = random.Random(3)
+              for _ in range(230):
+                  x, y, s = r.randint(0, W), r.randint(0, BH), r.choice([1, 1, 2, 2, 3])
+                  v = r.randint(150, 255)
+                  d.ellipse([x, y, x + s, y + s], fill=(v, v, min(255, v + 10)))
+              return im
+
+
+          def bg_glass():
+              w, h = W // 2, BH // 2
+              rng = np.random.RandomState(random.randint(0, 10 ** 6))
+              n = 46
+              sx, sy = rng.uniform(0, w, n), rng.uniform(0, h, n)
+              yy, xx = np.mgrid[0:h, 0:w]
+              d1 = np.full((h, w), 1e9)
+              d2 = np.full((h, w), 1e9)
+              ix = np.zeros((h, w), dtype=int)
+              for i in range(n):
+                  d = np.sqrt((xx - sx[i]) ** 2 + (yy - sy[i]) ** 2)
+                  m1 = d < d1
+                  d2 = np.where(m1, d1, np.minimum(d2, d))
+                  ix = np.where(m1, i, ix)
+                  d1 = np.where(m1, d, d1)
+              pal = np.array([(155, 20, 40), (20, 70, 150), (25, 120, 70), (110, 40, 140), (210, 140, 20), (20, 120, 140), (180, 70, 30), (60, 40, 120)], dtype=np.float32)
+              cols = pal[rng.randint(0, len(pal), n)]
+              img = cols[ix] * (0.62 + 0.3 * np.clip(1 - d1 / 70, 0, 1))[..., None]
+              img[(d2 - d1) < 2.4] = (22, 16, 26)
+              return Image.fromarray(img.astype(np.uint8)).resize((W, BH), Image.LANCZOS).filter(ImageFilter.GaussianBlur(1))
+
+
+          def bg_parchment():
+              base = np.zeros((BH, W, 3), dtype=np.float32) + np.array((233, 214, 172), dtype=np.float32)
+              for sc, amp in ((90, 24), (24, 10), (6, 5)):
+                  n = np.random.rand(BH // sc + 2, W // sc + 2).astype(np.float32)
+                  n = np.array(Image.fromarray((n * 255).astype(np.uint8)).resize((W, BH), Image.BICUBIC), dtype=np.float32) / 255 - 0.5
+                  base += n[..., None] * amp
+              yy, xx = np.mgrid[0:BH, 0:W]
+              d = np.sqrt(((xx - W / 2) / (W * 0.75)) ** 2 + ((yy - BH / 2) / (BH * 0.7)) ** 2)
+              v = (np.clip(d, 0, 1) ** 2.2)[..., None]
+              base = base * (1 - v * np.array([0.35, 0.5, 0.7], dtype=np.float32))
+              return to_img(base)
+
+
+          def bg_watercolor():
+              im = Image.new("RGB", (W, BH), (250, 245, 235))
+              d = ImageDraw.Draw(im)
+              pal = [(255, 205, 210), (200, 225, 255), (210, 240, 215), (255, 235, 190), (225, 210, 250)]
+              for _ in range(11):
+                  cx, cy = random.randint(0, W), random.randint(0, BH)
+                  rx, ry = random.randint(220, 520), random.randint(260, 600)
+                  d.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=random.choice(pal))
+              im = im.filter(ImageFilter.GaussianBlur(110))
+              a = np.array(im, dtype=np.float32)
+              n = np.random.rand(BH, W).astype(np.float32)
+              a += (n[..., None] - 0.5) * 8
+              return to_img(a)
+
+
+          def bg_dawn():
+              a = vgrad([(58, 44, 110), (128, 76, 150), (214, 112, 140), (255, 172, 120), (255, 214, 160)], BH)
+              base = to_img(a).convert("RGBA")
+              layer = Image.new("RGBA", (W, BH), (0, 0, 0, 0))
+              d = ImageDraw.Draw(layer)
+              for _ in range(14):
+                  cx, cy = random.randint(0, W), random.randint(int(BH * 0.2), int(BH * 0.9))
+                  rw, rh = random.randint(180, 400), random.randint(30, 70)
+                  d.ellipse([cx - rw, cy - rh, cx + rw, cy + rh], fill=(255, 255, 255, 62))
+              layer = layer.filter(ImageFilter.GaussianBlur(30))
+              return Image.alpha_composite(base, layer).convert("RGB")
+
+
+          def bg_minimal():
+              a = vgrad([(10, 10, 12), (22, 20, 20), (12, 12, 14)], BH)
+              glow(a, W / 2, 300, 900, (212, 175, 55), 0.16)
+              im = to_img(a)
+              ImageDraw.Draw(im).rectangle([40, 40, W - 40, BH - 40], outline=(212, 175, 55), width=2)
+              return im
+
+
+          BG = {"sunrise": bg_sunrise, "midnight": bg_midnight, "glass": bg_glass, "parchment": bg_parchment,
+                "watercolor": bg_watercolor, "dawn": bg_dawn, "minimal": bg_minimal}[th["bg"]]()
+
+          # ================================================================== PARTICLES
+          pc, pn, pk = th["part"]
+          prng = random.Random()
+          parts = [dict(x=prng.uniform(0, W), y=prng.uniform(0, H), sp=prng.uniform(14, 40), ph=prng.uniform(0, 6.28),
+                        r=prng.choice([3, 4, 5, 7]) if pk == "twinkle" else prng.choice([5, 8, 12, 18])) for _ in range(pn)]
+          SPR = {}
+
+
+          def sprite(r, lvl):
+              k = (r, lvl)
+              if k not in SPR:
+                  im = Image.new("RGBA", (r * 4, r * 4), (0, 0, 0, 0))
+                  ImageDraw.Draw(im).ellipse([r, r, r * 3, r * 3], fill=hexrgb(pc) + (int(255 * lvl / 6),))
+                  SPR[k] = im.filter(ImageFilter.GaussianBlur(max(1, r * 0.45)))
+              return SPR[k]
+
+
+          def draw_parts(img, t):
+              for p in parts:
+                  if pk == "twinkle":
+                      a = 0.5 + 0.5 * math.sin(t * 1.7 + p["ph"])
+                      x, y = p["x"], p["y"]
+                  else:
+                      a = 0.5 + 0.5 * math.sin(t * 1.1 + p["ph"])
+                      y = (p["y"] - t * p["sp"]) % (H + 100) - 50
+                      x = p["x"] + math.sin(t * 0.5 + p["ph"]) * 28
+                  s = sprite(p["r"], int(a * 5) + 1)
+                  img.paste(s, (int(x - s.width / 2), int(y - s.height / 2)), s)
+
+
+          # ================================================================== IMAGE HELPERS
+          def wrap(text, f, maxw):
+              lines, cur = [], ""
+              for w in text.split():
+                  tr = (cur + " " + w).strip()
+                  if cur and M.textlength(tr, font=f) > maxw:
+                      lines.append(cur)
+                      cur = w
+                  else:
+                      cur = tr
+              if cur:
+                  lines.append(cur)
+              return lines
+
+
+          def text_img(text, fp, size, color, maxw, shadow=True, lh=1.25):
+              f = font(fp, size)
+              lines = wrap(text, f, maxw)
+              wd = int(max(M.textlength(l, font=f) for l in lines)) + 40
+              hd = int(size * lh * len(lines)) + 30
+              im = Image.new("RGBA", (wd, hd), (0, 0, 0, 0))
+              d = ImageDraw.Draw(im)
+              for i, l in enumerate(lines):
+                  cy = 15 + size * lh * (i + 0.5)
+                  if shadow:
+                      d.text((wd / 2 + 3, cy + 4), l, font=f, fill=(0, 0, 0, 110), anchor="mm")
+                  d.text((wd / 2, cy), l, font=f, fill=rgba(color), anchor="mm")
+              return im
+
+
+          def panel_img(text, fp, size, maxw=930, maxh=700, pad=46, fillc=None, ink=None, outline=None, lh=1.3):
+              while True:
+                  f = font(fp, size)
+                  lines = wrap(text, f, maxw - 2 * pad)
+                  h = int(size * lh * len(lines)) + 2 * pad
+                  if h <= maxh or size <= 28:
+                      break
+                  size -= 2
+              wd = int(max(M.textlength(l, font=f) for l in lines)) + 2 * pad
+              m = 14
+              im = Image.new("RGBA", (wd + 2 * m, h + 2 * m), (0, 0, 0, 0))
+              d = ImageDraw.Draw(im)
+              d.rounded_rectangle([m + 4, m + 8, m + wd + 4, m + h + 8], radius=44, fill=(0, 0, 0, 70))
+              d.rounded_rectangle([m, m, m + wd, m + h], radius=44, fill=rgba(fillc or th["panel"]),
+                                  outline=rgba(outline or th["acc"]), width=5)
+              for i, l in enumerate(lines):
+                  d.text((m + wd / 2, m + pad + size * lh * (i + 0.5)), l, font=f, fill=rgba(ink or th["pink"]), anchor="mm")
+              return im
+
+
+          def pill_img(text, fp, size, fill, ink, maxw=940, minw=0, outline="#FFFFFF"):
+              while True:
+                  f = font(fp, size)
+                  tw = int(M.textlength(text, font=f))
+                  w = max(int(tw + size * 1.6), minw)
+                  if w <= maxw or size <= 26:
+                      break
+                  size -= 2
+              h = int(size * 1.85)
+              pad = 16
+              im = Image.new("RGBA", (w + 2 * pad, h + 2 * pad), (0, 0, 0, 0))
+              d = ImageDraw.Draw(im)
+              d.rounded_rectangle([pad + 4, pad + 8, pad + w + 4, pad + h + 8], radius=h // 2, fill=(0, 0, 0, 80))
+              d.rounded_rectangle([pad, pad, pad + w, pad + h], radius=h // 2, fill=rgba(fill), outline=rgba(outline), width=5)
+              d.text((pad + w / 2, pad + h / 2), text, font=f, fill=rgba(ink), anchor="mm")
+              return im
+
+
+          def choice_pill(text, i, state):
+              if state == "ok":
+                  fill, ink = "#2E9E5B", "#FFFFFF"
+              elif state == "no":
+                  fill, ink = "#4B515C", "#AEB3BC"
+              else:
+                  fill, ink = th["chips"][i % 4], th["chip_ink"]
+              return pill_img(text, th["fb"], 54, fill, ink, minw=700)
+
+
+          def num_img(n):
+              s = 200
+              im = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+              d = ImageDraw.Draw(im)
+              d.ellipse([10, 14, s - 6, s - 2], fill=(0, 0, 0, 80))
+              d.ellipse([6, 6, s - 10, s - 10], fill=rgba(th["acc"]), outline=(255, 255, 255, 255), width=6)
+              d.text((s / 2 - 2, s / 2 - 2), str(n), font=font(th["fh"], 110), fill=rgba(th["acc_ink"]), anchor="mm")
+              return im
+
+
+          def E(im, cx, cy, off=0.0, frac=0.0, until=None, fd=0.45, rise=True, tag=None):
+              return dict(im=im, cx=cx, cy=cy, off=off, frac=frac, until=until, fd=max(fd, 0.001), rise=rise, tag=tag, a=0, b=None)
+
+
+          def seg(text=None, dur=None, els=None, gap=0.3, cd=None, cd_y=None, kill=None, sfx=None):
+              return dict(text=text, dur=dur, els=els or [], gap=gap, cd=cd, cd_y=cd_y, kill=kill or [], sfx=sfx)
+
+
+          def header(title):
+              return [E(pill_img(series, th["fh"], 40, th["acc"], th["acc_ink"], outline=th["tx"]), W / 2, 255, fd=0.01, rise=False),
+                      E(text_img(title, th["fh"], 70, th["tx"], 940, shadow=th["sh"]), W / 2, 375, fd=0.01, rise=False)]
+
+
+          # ================================================================== SPEECH HELPERS
+          def spoken_ref(r):
+              r = re.sub(r"^1 ", "First ", r)
+              r = re.sub(r"^2 ", "Second ", r)
+              r = re.sub(r"^3 ", "Third ", r)
+              m = re.search(r"(\d+):(\d+)-(\d+)", r)
+              if m:
+                  return r[:m.start()] + f"chapter {m.group(1)}, verses {m.group(2)} through {m.group(3)}"
+              m = re.search(r"(\d+):(\d+)", r)
+              if m:
+                  return r[:m.start()] + f"chapter {m.group(1)}, verse {m.group(2)}"
+              return r
+
+
+          def tts_clean(s):
+              s = s.replace("_____", "blank").replace("___", "blank").replace("\u201c", "").replace("\u201d", "").replace('"', "")
+              s = re.sub(r"\b[A-Z]{2,}\b", lambda m: m.group(0).capitalize(), s)
+              return re.sub(r"\s+", " ", s).strip()
+
+
+          def load(path):
+              raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-f", "f32le", "-ac", "1", "-ar", str(SR), "-"],
+                                   capture_output=True, check=True).stdout
+              return np.frombuffer(raw, dtype=np.float32).copy()
+
+
+          TTS_DEAD = False
+
+
+          def synth(i, text):
+              global TTS_DEAD
+              if TTS_DEAD:
+                  return None
+              out = f"/tmp/seg{i}.mp3"
+              clean = tts_clean(text)
+              for v in VOICES:
+                  for _ in range(2):
+                      if os.path.exists(out):
+                          os.remove(out)
+                      try:
+                          subprocess.run([sys.executable, "-m", "edge_tts", "--voice", v, "--rate=-6%", "--text", clean, "--write-media", out],
+                                         capture_output=True, timeout=60)
+                      except Exception:
+                          pass
+                      if os.path.exists(out) and os.path.getsize(out) > 0:
+                          try:
+                              return load(out)
+                          except Exception:
+                              pass
+              TTS_DEAD = True
+              return None
+
+
+          # ================================================================== BUILDERS
+          META = {}
+          OUTRO_Q = "Comment your answer below, and follow for a new Bible quiz every day."
+          HASH_Q = ["#BibleQuiz", "#BibleVerse", "#Jesus", "#ChristianShorts", "#KJV", "#Shorts"]
+          TAGS_BASE = ["bible quiz", "bible trivia", "bible verse", "jesus", "christian shorts", "bible study", "kjv", "christian quiz", "faith", "scripture"]
+
+
+          def choice_quiz(title, intro, ptxt, opts, ci, cd, say, outro, ref_label=None, extra=None, mode="keep", psize=58):
+              els = header(title)
+              pim = panel_img(ptxt, th["fb"], psize, maxw=930, maxh=450)
+              els.append(E(pim, W / 2, 500 + pim.height / 2, fd=0.3))
+              y1 = 500 + pim.height + 125
+              ys = [y1 + i * 125 for i in range(len(opts))]
+              ycd = ys[-1] + 195
+              for i, o in enumerate(opts):
+                  els.append(E(choice_pill(o, i, "n"), W / 2, ys[i], frac=0.5 + 0.1 * i, tag=f"opt{i}"))
+              s1 = seg(text=intro, els=els, gap=0.2)
+              s2 = seg(dur=cd, cd=cd, cd_y=ycd)
+              rev = []
+              if mode == "keep":
+                  for i, o in enumerate(opts):
+                      rev.append(E(choice_pill(o, i, "ok" if i == ci else "no"), W / 2, ys[i], fd=0.001, rise=False))
+                  if ref_label:
+                      rev.append(E(pill_img(ref_label, th["fb"], 46, th["acc"], th["acc_ink"]), W / 2, ycd, tag="ref", frac=0.2))
+              else:
+                  col = "#2E9E5B" if opts[ci] == "TRUE" else "#C0392B"
+                  rev.append(E(pill_img(opts[ci], th["fh"], 64, col, "#FFFFFF", minw=520), W / 2, ys[0], fd=0.001, rise=False))
+                  top = ys[0] + 80
+                  eim = panel_img(extra, th["fb"], 44, maxw=930, maxh=1540 - top)
+                  rev.append(E(eim, W / 2, top + eim.height / 2, frac=0.15))
+              s3 = seg(text=say, els=rev, kill=[f"opt{i}" for i in range(len(opts))], sfx="chime")
+              oel = []
+              if mode == "keep":
+                  oel.append(E(pill_img("COMMENT YOUR ANSWER", th["fh"], 44, th["acc"], th["acc_ink"]), W / 2, ycd, fd=0.4))
+              s4 = seg(text=outro, els=oel, kill=["ref"] if mode == "keep" else [])
+              return [s1, s2, s3, s4]
+
+
+          def build_fill():
+              ref, text, ans, dis = pick_item(FV, lambda p: p[0])
+              blank = re.sub(r"\b" + re.escape(ans) + r"\b", "_____", text, flags=re.I)
+              opts = [ans] + dis
+              random.shuffle(opts)
+              ci = opts.index(ans)
+              L = "ABC"
+              disp = [f"{L[i]}) {o}" for i, o in enumerate(opts)]
+              META.update(
+                  title=random.choice([f"Can You Finish This Bible Verse? \U0001F4D6 {ref}", f"Finish the Verse: {ref} | Bible Quiz #{EP}", f"Do You Know This Bible Verse? \u271D\uFE0F ({ref})"]),
+                  hook=f"Can you finish this Bible verse from {ref}? Test your Bible knowledge with this quick Bible quiz about Jesus and Scripture.",
+                  body="Pause the video if you need more time, then comment your answer below. The answer is revealed at the end of the Short.",
+                  cta="Comment A, B, or C and tell us if you got it right!",
+                  comment=f"\u2705 Answer: {disp[ci]}\n{ref} (KJV)\n\n\"{text}\"\n\nDid you get it right? Tell us below \U0001F447 Which verse should we do next?",
+                  hashtags=HASH_Q, tags=["finish the verse", "bible verse quiz", ref.lower()])
+              return choice_quiz("FINISH THE VERSE", "Can you finish this Bible verse? " + blank, blank, disp, ci, 5,
+                                 f"The answer is {ans}. That's from {spoken_ref(ref)}.", OUTRO_Q, ref_label=f"{ref} (KJV)")
+
+
+          def build_guess():
+              verse, book, ref, dis = pick_item(GB, lambda p: p[2])
+              opts = [book] + dis
+              random.shuffle(opts)
+              ci = opts.index(book)
+              L = "ABC"
+              disp = [f"{L[i]}) {o}" for i, o in enumerate(opts)]
+              META.update(
+                  title=random.choice(["Which Book of the Bible Is This From? \U0001F4D6 Bible Quiz", f"Guess the Bible Book \U0001F914 Bible Quiz #{EP}", "Can You Name the Book of This Bible Verse?"]),
+                  hook="Which book of the Bible is this verse from? Take this quick Bible quiz and test your knowledge of Scripture.",
+                  body="Read the verse, pick A, B, or C, and check your answer at the end of the Short.",
+                  cta="Comment A, B, or C!",
+                  comment=f"\u2705 Answer: {disp[ci]}\n{ref} (KJV)\n\n\"{verse}\"\n\nHow many did you get right this week? \U0001F447",
+                  hashtags=HASH_Q, tags=["guess the bible book", "which book of the bible", book.lower()])
+              return choice_quiz("GUESS THE BOOK", "Which book of the Bible is this verse from? " + verse, "\u201c" + verse + "\u201d", disp, ci, 5,
+                                 f"It's {book}. That's {spoken_ref(ref)}.", OUTRO_Q, ref_label=f"{ref} (KJV)", psize=54)
+
+
+          def build_tf():
+              st, ans, expl, ref = pick_item(TF, lambda p: p[0])
+              opts = ["TRUE", "FALSE"]
+              ci = 0 if ans else 1
+              t_opts = [f"True or False? \u271D\uFE0F Bible Fact Challenge #{EP}", "True or False Bible Quiz \u2014 Can You Get It Right?", f"True or False: {st}"]
+              META.update(
+                  title=random.choice(t_opts)[:100],
+                  hook="True or false? Test your Bible knowledge with this quick Bible fact challenge about Jesus and Scripture.",
+                  body="Make your choice before the countdown ends. The answer and the verse are revealed at the end of the Short.",
+                  cta="Comment TRUE or FALSE!",
+                  comment=f"\u2705 {'TRUE' if ans else 'FALSE'}\n{expl} ({ref}, KJV)\n\nDid you get it right? \U0001F447",
+                  hashtags=["#BibleQuiz", "#BibleTrivia", "#Jesus", "#ChristianShorts", "#KJV", "#Shorts"], tags=["true or false bible", "bible facts", "bible fact check"])
+              return choice_quiz("TRUE OR FALSE?", "True or false? " + st, st, opts, ci, 4,
+                                 f"{'True' if ans else 'False'}! {expl} That's {spoken_ref(ref)}.", OUTRO_Q, extra=f"{expl} ({ref})", mode="result", psize=56)
+
+
+          def build_unscramble():
+              ref, text = pick_item(UV, lambda p: p[0])
+              words = text.split()
+              sh = words[:]
+              for _ in range(60):
+                  random.shuffle(sh)
+                  if sh != words:
+                      break
+              cd = int(min(16, max(8, len(words) * 0.9)))
+              els = header("UNSCRAMBLE THE VERSE")
+              sp = [pill_img(w, th["fb"], 50, th["chips"][i % 4], th["chip_ink"], maxw=1000) for i, w in enumerate(sh)]
+              rows, cur = [[]], 0
+              for s in sp:
+                  if rows[-1] and cur + s.width > 1020:
+                      rows.append([])
+                      cur = 0
+                  rows[-1].append(s)
+                  cur += s.width
+              rh = max(s.height for s in sp)
+              y0 = 880 - len(rows) * rh / 2
+              k = 0
+              for r, row in enumerate(rows):
+                  x = W / 2 - sum(s.width for s in row) / 2
+                  for s in row:
+                      els.append(E(s, x + s.width / 2, y0 + r * rh + rh / 2, frac=0.1 + 0.8 * k / len(sp), fd=0.35, tag="chips"))
+                      x += s.width
+                      k += 1
+              ycd = min(1560, max(y0 + len(rows) * rh + 170, 1300))
+              aim = panel_img("\u201c" + text + "\u201d", th["fb"], 56, maxw=930, maxh=560)
+              ay = 540 + aim.height / 2
+              rev = [E(aim, W / 2, ay, frac=0.0), E(pill_img(f"{ref} (KJV)", th["fb"], 46, th["acc"], th["acc_ink"]), W / 2, 540 + aim.height + 90, frac=0.7)]
+              META.update(
+                  title=random.choice([f"Unscramble This Bible Verse \U0001F9E9 Bible Quiz #{EP}", "Can You Rebuild This Bible Verse? \U0001F9E9 Bible Word Puzzle", f"Bible Word Puzzle: Unscramble the Verse #{EP}"]),
+                  hook="Can you unscramble these words to rebuild a famous Bible verse? A fun Bible word puzzle to test your Scripture knowledge.",
+                  body="Rearrange the words in your head, then check the answer at the end of the Short.",
+                  cta="Comment the first word of the verse!",
+                  comment=f"\u2705 {ref} (KJV)\n\n\"{text}\"\n\nHow fast did you get it? \U0001F447",
+                  hashtags=HASH_Q, tags=["bible word puzzle", "unscramble bible verse", ref.lower()])
+              return [seg(text="Unscramble these words to rebuild a Bible verse.", els=els, gap=0.2),
+                      seg(dur=cd, cd=cd, cd_y=ycd),
+                      seg(text=f"{text} {spoken_ref(ref)}.", els=rev, kill=["chips"], sfx="chime"),
+                      seg(text=OUTRO_Q)]
+
+
+          def build_order():
+              topic, evs = pick_item(OE, lambda p: p[0])
+              idx = [0, 1, 2, 3]
+              for _ in range(60):
+                  random.shuffle(idx)
+                  if idx != [0, 1, 2, 3]:
+                      break
+              shown = [evs[i] for i in idx]
+              L = "ABCD"
+              els = header("PUT IT IN ORDER")
+              q = panel_img(f"{topic}: what happened first to last?", th["fb"], 48, maxw=930, maxh=230)
+              els.append(E(q, W / 2, 500 + q.height / 2, fd=0.3))
+              y1 = 500 + q.height + 125
+              ys = [y1 + i * 135 for i in range(4)]
+              ycd = ys[-1] + 195
+              for i in range(4):
+                  els.append(E(choice_pill(f"{L[i]}) {shown[i]}", i, "n"), W / 2, ys[i], frac=0.45 + 0.12 * i, tag=f"opt{i}"))
+              intro = f"Put these Bible events in the right order. {topic}. " + " ".join(f"{L[i]}, {shown[i]}." for i in range(4))
+              rev = [E(choice_pill(f"{i + 1}. {evs[i]}", i, "n"), W / 2, ys[i], frac=0.05 + 0.2 * i, fd=0.35) for i in range(4)]
+              say = f"Here is the correct order. First, {evs[0]}. Second, {evs[1]}. Third, {evs[2]}. And finally, {evs[3]}."
+              META.update(
+                  title=random.choice([f"Put These Bible Events in Order \u23F3 {topic} Quiz", f"Order the Events: {topic} | Bible Quiz #{EP}", f"Can You Order These {topic} Events? \U0001F4D6"]),
+                  hook=f"Can you put these {topic} events from the Bible in the right order? A quick Bible quiz about Jesus and Scripture.",
+                  body="Think it through, then check the correct order at the end of the Short.",
+                  cta="Comment your order, like B A D C!",
+                  comment="\u2705 Correct order:\n" + "\n".join(f"{i + 1}. {evs[i]}" for i in range(4)) + "\n\nHow did you do? \U0001F447",
+                  hashtags=["#BibleQuiz", "#BibleStudy", "#Jesus", "#ChristianShorts", "#KJV", "#Shorts"], tags=["bible events in order", topic.lower(), "bible timeline"])
+              return [seg(text=intro, els=els, gap=0.2), seg(dur=7, cd=7, cd_y=ycd),
+                      seg(text=say, els=rev, kill=[f"opt{i}" for i in range(4)], sfx="chime"), seg(text=OUTRO_Q)]
+
+
+          def build_names():
+              name, meaning, verse, ref = pick_item(NJ, lambda p: p[0])
+              nim = panel_img(name, th["fh"], 80, maxw=930, maxh=330, fillc=th["acc"], ink=th["acc_ink"], outline="#FFFFFF")
+              mim = panel_img(meaning, th["fb"], 46, maxw=930, maxh=300)
+              y = 500
+              ny = y + nim.height / 2
+              y += nim.height + 30
+              my = y + mim.height / 2
+              y += mim.height + 30
+              vim = panel_img("\u201c" + verse + "\u201d", SERIF_I, 42, maxw=930, maxh=max(250, 1520 - y - 120))
+              vy = y + vim.height / 2
+              y += vim.height + 10
+              rim = pill_img(f"{ref} (KJV)", th["fb"], 44, th["acc"], th["acc_ink"])
+              ry = y + rim.height / 2
+              META.update(
+                  title=random.choice([f"{name}: What Does This Name of Jesus Mean? \u271D\uFE0F", f"Why Is Jesus Called {name}?", f"Names of Jesus #{EP}: {name} Meaning"]),
+                  hook=f"{name} is one of the names of Jesus in the Bible. Learn what it means and where it appears in Scripture.",
+                  body=f"{name}: {meaning}\n\n{ref} (KJV): \"{verse}\"",
+                  cta="Comment your favorite name of Jesus!",
+                  comment=f"\u271D\uFE0F {name}\n{meaning}\n{ref} (KJV)\n\nWhat is your favorite name of Jesus? \U0001F447",
+                  hashtags=["#NamesOfJesus", "#Jesus", "#Bible", "#Christian", "#KJV", "#Shorts"], tags=["names of jesus", name.lower(), "who is jesus", ref.lower()])
+              return [seg(text=f"Names of Jesus. Today: {name}.", els=header("NAMES OF JESUS") + [E(nim, W / 2, ny)], sfx="chime"),
+                      seg(text=meaning, els=[E(mim, W / 2, my)]),
+                      seg(text=f"In {spoken_ref(ref)}, we read: {verse}", els=[E(vim, W / 2, vy), E(rim, W / 2, ry, frac=0.5)]),
+                      seg(text="Follow for more names of Jesus, and leave a comment with your favorite.")]
+
+
+          def build_parable():
+              title, ref, summary, lesson = pick_item(PB, lambda p: p[0])
+              tim = panel_img(title, th["fh"], 70, maxw=930, maxh=260, fillc=th["acc"], ink=th["acc_ink"], outline="#FFFFFF")
+              rim = pill_img(f"{ref} (KJV)", th["fb"], 42, th["chips"][0], th["chip_ink"])
+              y = 500
+              ty = y + tim.height / 2
+              y += tim.height + 10
+              ry = y + rim.height / 2
+              y += rim.height + 30
+              sim = panel_img(summary, th["fb"], 44, maxw=930, maxh=520)
+              sy = y + sim.height / 2
+              y += sim.height + 30
+              lim = panel_img("Lesson: " + lesson, th["fb"], 44, maxw=930, maxh=max(200, 1540 - y), outline="#FFFFFF", fillc=th["chips"][1], ink=th["chip_ink"])
+              ly = y + lim.height / 2
+              META.update(
+                  title=random.choice([f"{title} Explained in 1 Minute \u271D\uFE0F Parables of Jesus", f"{title}: Meaning of the Parable ({ref})", f"Parables of Jesus: {title} #{EP}"]),
+                  hook=f"{title} is one of the parables of Jesus in the Bible ({ref}). Here is the story and its meaning in under a minute.",
+                  body=f"The story: {summary}\n\nThe lesson: {lesson}",
+                  cta="Comment your favorite parable of Jesus!",
+                  comment=f"\u271D\uFE0F {title} ({ref})\nLesson: {lesson}\n\nWhat is your favorite parable? \U0001F447",
+                  hashtags=["#ParablesOfJesus", "#Jesus", "#Bible", "#Christian", "#KJV", "#Shorts"], tags=["parables of jesus", title.lower(), "bible stories", ref.lower()])
+              return [seg(text=f"{title}. {spoken_ref(ref)}.", els=header("PARABLES OF JESUS") + [E(tim, W / 2, ty), E(rim, W / 2, ry, frac=0.4)], sfx="chime"),
+                      seg(text=summary, els=[E(sim, W / 2, sy)]),
+                      seg(text="The lesson: " + lesson, els=[E(lim, W / 2, ly)]),
+                      seg(text="Follow for more Bible stories and teachings from Jesus.")]
+
+
+          segs = {"fill_verse": build_fill, "unscramble": build_unscramble, "true_false": build_tf, "order_events": build_order,
+                  "guess_book": build_guess, "names_of_jesus": build_names, "parable": build_parable}[fmt]()
+
+          # ================================================================== TIMELINE
+          t = 0.15
+          for i, s in enumerate(segs):
+              if s["text"]:
+                  a = synth(i, s["text"])
+                  if a is not None and len(a) > 0:
+                      a = a / (float(np.max(np.abs(a))) or 1.0) * 0.9
+                      s["audio"] = a
+                      s["dur"] = len(a) / SR + 0.1
+                  else:
+                      s["audio"] = None
+                      s["dur"] = max(2.0, len(s["text"].split()) * 0.42)
+              s["start"], s["end"] = t, t + s["dur"]
+              t = s["end"] + s["gap"]
+          TOTAL = segs[-1]["end"] + 1.4
+          print(f"Total duration: {TOTAL:.1f}s")
+
+          els_all, sfx, ticks = [], [], []
+          for s in segs:
+              st, en = s["start"], s["end"]
+              for tag in s["kill"]:
+                  for e in els_all:
+                      if e["tag"] == tag and e["b"] is None:
+                          e["b"] = st
+                          e["fdo"] = 0.12
+              for e in s["els"]:
+                  e["a"] = st + e["off"] + e["frac"] * s["dur"]
+                  e["b"] = en if e["until"] == "seg" else None
+                  els_all.append(e)
+              if s["cd"]:
+                  for k in range(s["cd"]):
+                      els_all.append(dict(im=num_img(s["cd"] - k), cx=W / 2, cy=s["cd_y"], a=st + k, b=st + k + 1, fd=0.001,
+                                          rise=False, tag=None, until=None, off=0, frac=0))
+                      ticks.append(st + k)
+              if s["sfx"]:
+                  sfx.append((st, s["sfx"]))
+
+
+          # ================================================================== RENDER FRAMES
+          def fade(im, a):
+              r, g, b, al = im.split()
+              al = al.point(lambda v: int(v * a))
+              return Image.merge("RGBA", (r, g, b, al))
+
+
+          def render(t):
+              off = int(60 + 60 * math.sin(t * 0.25))
+              img = BG.crop((0, off, W, off + H))
+              draw_parts(img, t)
+              for e in els_all:
+                  if t < e["a"]:
+                      continue
+                  if e["b"] is not None and t >= e["b"]:
+                      al = 1 - (t - e["b"]) / e.get("fdo", e["fd"])
+                      if al <= 0:
+                          continue
+                      dy = 0
+                  else:
+                      x = min(1.0, (t - e["a"]) / e["fd"])
+                      al = 1 - (1 - x) ** 3
+                      dy = (1 - al) * 36 if e["rise"] else 0
+                  im = e["im"] if al >= 0.99 else fade(e["im"], al)
+                  img.paste(im, (int(e["cx"] - im.width / 2), int(e["cy"] + dy - im.height / 2)), im)
+              return img
+
+
+          # ================================================================== AUDIO
+          buf = np.zeros(int((TOTAL + 0.5) * SR), dtype=np.float32)
+
+
+          def tone(freq, d_, vol, decay):
+              tt = np.arange(int(SR * d_)) / SR
+              return (np.sin(2 * np.pi * freq * tt) * np.exp(-decay * tt) * vol).astype(np.float32)
+
+
+          SND = {"tick": tone(880, 0.06, 0.22, 60),
+                 "chime": tone(784, 1.4, 0.30, 3.5) + tone(988, 1.4, 0.22, 3.5) + tone(1319, 1.4, 0.16, 3.5)}
+
+
+          def mix(snd, at, gain=1.0):
+              i = int(at * SR)
+              n = min(len(snd), len(buf) - i)
+              if n > 0 and i >= 0:
+                  buf[i:i + n] += snd[:n] * gain
+
+
+          for tk in ticks:
+              mix(SND["tick"], tk)
+          for at, name in sfx:
+              mix(SND[name], at)
+          for s in segs:
+              if s.get("audio") is not None:
+                  mix(s["audio"], s["start"])
+
+
+          def pad_music(total):
+              tt = np.arange(int(total * SR)) / SR
+              root = random.choice([130.81, 146.83, 164.81, 174.61, 196.0])
+              out = np.zeros_like(tt)
+              for r, a in ((1, 1.0), (1.5, 0.7), (2, 0.6), (2.5, 0.4), (3, 0.3)):
+                  out += a * np.sin(2 * np.pi * root * r * tt + random.uniform(0, 6.28)) * (0.7 + 0.3 * np.sin(2 * np.pi * random.uniform(0.07, 0.15) * tt))
+              return (out / (np.max(np.abs(out)) or 1)).astype(np.float32)
+
+
+          EXTS = ("mp3", "wav", "m4a", "aac", "ogg", "flac", "mp4")
+          cands = [p for e in EXTS for p in glob.glob(f"bgmusic/{th['mood']}/*.{e}")] or [p for e in EXTS for p in glob.glob(f"bgmusic/*.{e}")]
+          m = None
+          if cands:
+              try:
+                  mp = random.choice(cands)
+                  dd = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp], capture_output=True, text=True).stdout.strip()
+                  mdur = float(dd) if dd else 0
+                  ms = random.uniform(0, mdur - TOTAL - 2) if mdur > TOTAL + 4 else 0
+                  raw = subprocess.run(["ffmpeg", "-v", "error", "-stream_loop", "-1", "-ss", f"{ms:.1f}", "-t", f"{TOTAL:.1f}", "-i", mp,
+                                        "-f", "f32le", "-ac", "1", "-ar", str(SR), "-"], capture_output=True).stdout
+                  m = np.frombuffer(raw, dtype=np.float32).copy()
+                  m = m / (float(np.max(np.abs(m))) or 1.0)
+                  print("Music:", mp)
+              except Exception as ex:
+                  print("music failed:", ex)
+                  m = None
+          if m is None or len(m) == 0:
+              m = pad_music(TOTAL)
+          n = min(len(m), len(buf))
+          env = np.ones(n, dtype=np.float32)
+          fi, fo = int(SR * 0.6), int(SR * 1.2)
+          if n > fi + fo:
+              env[:fi] = np.linspace(0, 1, fi)
+              env[-fo:] = np.linspace(1, 0, fo)
+          buf[:n] += m[:n] * env * 0.15
+
+          buf = np.clip(buf * 0.92, -1, 1)
+          with wave.open("audio.wav", "wb") as wf:
+              wf.setnchannels(1)
+              wf.setsampwidth(2)
+              wf.setframerate(SR)
+              wf.writeframes((buf * 32767).astype(np.int16).tobytes())
+
+          # ================================================================== ENCODE
+          ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS),
+                                 "-i", "-", "-i", "audio.wav", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+                                 "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-t", f"{TOTAL:.2f}", "-movflags", "+faststart", "final.mp4"],
+                                stdin=subprocess.PIPE)
+          for k in range(int(TOTAL * FPS)):
+              ff.stdin.write(render(k / FPS).tobytes())
+          ff.stdin.close()
+          ff.wait()
+
+          # ================================================================== METADATA (SEO)
+          desc = (f"{META['hook']}\n\n{META['body']}\n\n\U0001F4AC {META['cta']}\n\n"
+                  "\U0001F4D6 Bible translation: King James Version (KJV, public domain).\n"
+                  "\U0001F514 Subscribe for a new Bible quiz, verse, and teaching about Jesus every day.\n\n" + " ".join(META["hashtags"]))
+          tags, total_len = [], 0
+          for tg in TAGS_BASE + META["tags"]:
+              if tg not in tags and total_len + len(tg) + 3 < 480:
+                  tags.append(tg)
+                  total_len += len(tg) + 3
+          json.dump(dict(title=META["title"][:100], description=desc[:4900], tags=tags, comment=META["comment"], fmt=fmt),
+                    open("meta.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+          used["_last_fmt"] = fmt
+          used["_last_theme"] = tname
+          json.dump(used, open(USED_FILE, "w"), ensure_ascii=False, indent=1)
+          print("Title:", META["title"])
+          print("Done.")
+          PYEOF
+
+          python3 bible.py
+          ls -lh final.mp4
+
+      - name: post-to-youtube
+        id: post
+        timeout-minutes: 8
+        env:
+          YT_ACCESS_TOKEN: ${{ secrets.YT_ACCESS_TOKEN }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_PLAYLISTS: ${{ secrets.YT_PLAYLISTS }}
+        run: |
+          python3 << 'PYEOF'
+          import os, json, time
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+          from google.oauth2.credentials import Credentials
+
+          meta = json.load(open("meta.json", encoding="utf-8"))
+
+          creds = Credentials(
+              token=os.environ.get("YT_ACCESS_TOKEN"),
+              refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
+              token_uri="https://oauth2.googleapis.com/token",
+              client_id=os.environ.get("YT_CLIENT_ID"),
+              client_secret=os.environ.get("YT_CLIENT_SECRET"),
+          )
+          youtube = build("youtube", "v3", credentials=creds)
+
+          request = youtube.videos().insert(
+              part="snippet,status",
+              body={
+                  "snippet": {
+                      "title": meta["title"],
+                      "description": meta["description"],
+                      "tags": meta["tags"],
+                      "categoryId": "27",
+                      "defaultLanguage": "en",
+                      "defaultAudioLanguage": "en",
+                  },
+                  "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False},
+              },
+              media_body=MediaFileUpload("final.mp4", mimetype="video/mp4", resumable=True),
+          )
+
+          response = None
+          while response is None:
+              status, response = request.next_chunk()
+              if status:
+                  print(f"Upload progress: {int(status.progress() * 100)}%")
+
+          vid = response.get("id", "")
+          print(f"Uploaded: https://youtube.com/shorts/{vid}")
+
+          # Answer comment (needs the youtube.force-ssl scope; non-fatal if missing)
+          for attempt in range(4):
+              try:
+                  time.sleep(20)
+                  youtube.commentThreads().insert(
+                      part="snippet",
+                      body={"snippet": {"videoId": vid, "topLevelComment": {"snippet": {"textOriginal": meta["comment"]}}}},
+                  ).execute()
+                  print("Comment posted")
+                  break
+              except Exception as ex:
+                  print(f"::warning::Comment attempt {attempt + 1} failed: {ex}")
+
+          # Optional playlist per format: secret YT_PLAYLISTS = {"fill_verse":"PLxxx","true_false":"PLyyy",...}
+          try:
+              pl = json.loads(os.environ.get("YT_PLAYLISTS") or "{}")
+              pid = pl.get(meta["fmt"])
+              if pid:
+                  youtube.playlistItems().insert(
+                      part="snippet",
+                      body={"snippet": {"playlistId": pid, "resourceId": {"kind": "youtube#video", "videoId": vid}}},
+                  ).execute()
+                  print("Added to playlist")
+          except Exception as ex:
+              print(f"::warning::Playlist add failed: {ex}")
+          PYEOF
+
+      - name: save-used
+        if: success()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add used.json
+          git diff --cached --quiet || (git commit -m "update used items [skip ci]" && git pull --rebase && git push)
