@@ -15,7 +15,7 @@ name: bible-story-shorts
         default: "auto"
         type: string
   schedule:
-    - cron: "0 22 * * *"   # once a day, 6 PM EST / 22:00 UTC
+  #  - cron: "0 22 * * *"   # once a day, 6 PM EST / 22:00 UTC
 
 permissions:
   contents: write
