@@ -1,0 +1,1069 @@
+name: bible-story-shorts
+
+"on":
+  workflow_dispatch:
+    inputs:
+      visuals:
+        description: "Visuals"
+        required: false
+        default: "auto"
+        type: choice
+        options: [auto, illustration, stock]
+      story:
+        description: "Story title (optional, leave auto for random)"
+        required: false
+        default: "auto"
+        type: string
+  schedule:
+    - cron: "0 22 * * *"   # once a day, 6 PM EST / 22:00 UTC
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bible-story-shorts
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install-deps
+        timeout-minutes: 6
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg jq python3-pip fonts-noto-core fonts-dejavu-core fonts-liberation
+          for p in fonts-playfair-display fonts-merriweather; do
+            sudo apt-get install -y "$p" || true
+          done
+          pip install --quiet --break-system-packages pillow numpy edge-tts google-auth google-auth-oauthlib google-api-python-client || pip install --quiet pillow numpy edge-tts google-auth google-auth-oauthlib google-api-python-client
+
+      - name: build-video
+        id: build
+        timeout-minutes: 18
+        env:
+          VISUALS: ${{ github.event.inputs.visuals }}
+          STORY: ${{ github.event.inputs.story }}
+          # Scheduled runs use this. Set to "illustration" or "stock" to lock it, or "mix" to alternate randomly.
+          AUTO_VISUALS: mix
+          PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
+        run: |
+          cat > story.py << 'PYEOF'
+          import os, re, json, random, math, subprocess, glob, wave, sys, urllib.request, urllib.parse
+          import numpy as np
+          from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+          W, H, FPS, SR = 1080, 1920, 24, 44100
+          CW, CH = 1188, 2112          # art canvas, 10% larger than the frame so we can zoom and pan
+          HZ = 900                      # horizon line on the canvas
+          VOICES = ["en-US-AndrewNeural", "en-US-GuyNeural", "en-US-AriaNeural"]
+          GOLD, GINK = "#D4AF37", "#1A1208"
+          PANEL = (16, 16, 36, 208)
+
+          # ================================================================== FONTS / HELPERS
+          ALL_FONTS = glob.glob("/usr/share/fonts/**/*.[ot]tf", recursive=True)
+
+
+          def pick(*cands, ital=False):
+              for toks in cands:
+                  for f in sorted(ALL_FONTS):
+                      n = os.path.basename(f).lower()
+                      if all(t in n for t in toks) and (("italic" in n) == ital):
+                          return f
+              return None
+
+
+          SANS_B = pick(("notosans-bold",), ("liberationsans-bold",), ("dejavusans-bold",))
+          SERIF_B = pick(("notoserif-bold",), ("liberationserif-bold",), ("dejavuserif-bold",))
+          PLAY_B = pick(("playfair", "bold"), ("merriweather", "bold")) or SERIF_B
+          SERIF_I = pick(("notoserif-bold",), ("dejavuserif-bold",), ("liberationserif-bold",), ital=True) or SERIF_B
+
+          _fc = {}
+
+
+          def font(p, s):
+              k = (p, s)
+              if k not in _fc:
+                  _fc[k] = ImageFont.truetype(p, s)
+              return _fc[k]
+
+
+          M = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+
+
+          def hexrgb(h):
+              h = h.lstrip("#")
+              return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+          def rgba(c, a=255):
+              if isinstance(c, str):
+                  return hexrgb(c) + (a,)
+              return tuple(c) if len(c) == 4 else tuple(c) + (a,)
+
+
+          def wrap(text, f, maxw):
+              lines, cur = [], ""
+              for w in text.split():
+                  tr = (cur + " " + w).strip()
+                  if cur and M.textlength(tr, font=f) > maxw:
+                      lines.append(cur)
+                      cur = w
+                  else:
+                      cur = tr
+              if cur:
+                  lines.append(cur)
+              return lines
+
+
+          def text_img(text, fp, size, color, maxw, lh=1.25):
+              f = font(fp, size)
+              lines = wrap(text, f, maxw)
+              wd = int(max(M.textlength(l, font=f) for l in lines)) + 40
+              hd = int(size * lh * len(lines)) + 30
+              im = Image.new("RGBA", (wd, hd), (0, 0, 0, 0))
+              d = ImageDraw.Draw(im)
+              for i, l in enumerate(lines):
+                  cy = 15 + size * lh * (i + 0.5)
+                  d.text((wd / 2 + 3, cy + 4), l, font=f, fill=(0, 0, 0, 150), anchor="mm")
+                  d.text((wd / 2, cy), l, font=f, fill=rgba(color), anchor="mm")
+              return im
+
+
+          def panel_img(text, fp, size, maxw=930, maxh=480, pad=44, fillc=PANEL, ink="#FFFFFF", outline=GOLD, lh=1.3):
+              while True:
+                  f = font(fp, size)
+                  lines = wrap(text, f, maxw - 2 * pad)
+                  h = int(size * lh * len(lines)) + 2 * pad
+                  if h <= maxh or size <= 28:
+                      break
+                  size -= 2
+              wd = int(max(M.textlength(l, font=f) for l in lines)) + 2 * pad
+              m = 14
+              im = Image.new("RGBA", (wd + 2 * m, h + 2 * m), (0, 0, 0, 0))
+              d = ImageDraw.Draw(im)
+              d.rounded_rectangle([m + 4, m + 8, m + wd + 4, m + h + 8], radius=44, fill=(0, 0, 0, 70))
+              d.rounded_rectangle([m, m, m + wd, m + h], radius=44, fill=rgba(fillc), outline=rgba(outline), width=5)
+              for i, l in enumerate(lines):
+                  d.text((m + wd / 2, m + pad + size * lh * (i + 0.5)), l, font=f, fill=rgba(ink), anchor="mm")
+              return im
+
+
+          def pill_img(text, fp, size, fill, ink, maxw=940, outline="#FFFFFF"):
+              while True:
+                  f = font(fp, size)
+                  tw = int(M.textlength(text, font=f))
+                  w = int(tw + size * 1.6)
+                  if w <= maxw or size <= 26:
+                      break
+                  size -= 2
+              h = int(size * 1.85)
+              pad = 16
+              im = Image.new("RGBA", (w + 2 * pad, h + 2 * pad), (0, 0, 0, 0))
+              d = ImageDraw.Draw(im)
+              d.rounded_rectangle([pad + 4, pad + 8, pad + w + 4, pad + h + 8], radius=h // 2, fill=(0, 0, 0, 80))
+              d.rounded_rectangle([pad, pad, pad + w, pad + h], radius=h // 2, fill=rgba(fill), outline=rgba(outline), width=5)
+              d.text((pad + w / 2, pad + h / 2), text, font=f, fill=rgba(ink), anchor="mm")
+              return im
+
+
+          def spoken_ref(r):
+              r = re.sub(r"^1 ", "First ", r)
+              r = re.sub(r"^2 ", "Second ", r)
+              r = re.sub(r"^3 ", "Third ", r)
+              m = re.search(r"(\d+):(\d+)-(\d+)", r)
+              if m:
+                  return r[:m.start()] + f"chapter {m.group(1)}, verses {m.group(2)} through {m.group(3)}"
+              m = re.search(r"(\d+):(\d+)", r)
+              if m:
+                  return r[:m.start()] + f"chapter {m.group(1)}, verse {m.group(2)}"
+              return r
+
+
+          def tts_clean(s):
+              s = s.replace("\u2026", ".").replace("\u201c", "").replace("\u201d", "").replace('"', "")
+              s = re.sub(r"\b[A-Z]{2,}\b", lambda m: m.group(0).capitalize(), s)
+              return re.sub(r"\s+", " ", s).strip()
+
+
+          def load(path):
+              raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-f", "f32le", "-ac", "1", "-ar", str(SR), "-"],
+                                   capture_output=True, check=True).stdout
+              return np.frombuffer(raw, dtype=np.float32).copy()
+
+
+          # ================================================================== STORIES (KJV verses)
+          # scenes: (narration + on-screen caption, illustration preset, stock footage search)
+          STORIES = [
+              dict(title="The Good Samaritan", ref="Luke 10:25-37",
+                   scenes=[
+                       ("A man was traveling down a lonely road when robbers attacked him and left him half dead.", "road_alone", "dusty road"),
+                       ("A priest came by, saw the man, and passed by on the other side.", "road_two", "empty road"),
+                       ("A Levite came next, and he also walked past without helping.", "road_two", "walking path"),
+                       ("Then a Samaritan traveler saw him, and his heart was moved with compassion.", "road_alone", "sunrise road"),
+                       ("He bandaged the man's wounds and took him to an inn to recover.", "road_inn", "old village"),
+                       ("He even paid the innkeeper and promised to return and cover any more costs.", "road_inn", "sunset village"),
+                   ],
+                   lesson="Love your neighbor by showing mercy to anyone in need.",
+                   verse="Go, and do thou likewise.", vref="Luke 10:37"),
+              dict(title="The Prodigal Son", ref="Luke 15:11-32",
+                   scenes=[
+                       ("A father had two sons. The younger one asked for his share of the inheritance and left home.", "home_day", "family home field"),
+                       ("In a far country, he wasted everything he had on reckless living.", "far_country", "desert dunes"),
+                       ("A famine came, and he was so hungry that he took a job feeding pigs.", "far_country", "dry field"),
+                       ("At last he came to his senses and decided to go home and ask for forgiveness.", "road_alone", "walking road"),
+                       ("While he was still far away, his father saw him, ran to him, and embraced him.", "home_welcome", "sunset field"),
+                       ("The father called for a feast, saying his son was lost and now was found.", "feast", "candle light"),
+                   ],
+                   lesson="God's love welcomes us home, no matter how far we have wandered.",
+                   verse="For this my son was dead, and is alive again; he was lost, and is found.", vref="Luke 15:24"),
+              dict(title="The Lost Sheep", ref="Luke 15:1-7",
+                   scenes=[
+                       ("A shepherd had one hundred sheep, and he knew every one of them.", "pasture_day", "sheep field"),
+                       ("One day, one sheep wandered off and was lost.", "pasture_day", "green hills"),
+                       ("So he left the ninety-nine and went out to search for the one.", "mountain_search", "mountains fog"),
+                       ("He searched through the hills and valleys until he found it.", "mountain_search", "hills sunrise"),
+                       ("He lifted it onto his shoulders and carried it home, rejoicing.", "pasture_night", "night sky stars"),
+                       ("Then he called his friends and neighbors to celebrate with him.", "feast", "candle flame"),
+                   ],
+                   lesson="Every single person matters to God.",
+                   verse="Rejoice with me; for I have found my sheep which was lost.", vref="Luke 15:6"),
+              dict(title="The Sower", ref="Matthew 13:3-23",
+                   scenes=[
+                       ("A farmer went out to sow his seed.", "field_sower", "wheat field"),
+                       ("Some seed fell on the path, and the birds came and ate it.", "field_sower", "birds sky"),
+                       ("Some fell on rocky ground. It sprang up quickly, but withered in the sun.", "desert_day", "dry rocks"),
+                       ("Some fell among thorns, and the thorns choked it.", "field_sower", "wild bushes"),
+                       ("But some fell on good soil, and it produced a great harvest.", "harvest", "golden wheat"),
+                   ],
+                   lesson="Keep your heart open so God's word can take root and grow.",
+                   verse="But he that received seed into the good ground is he that heareth the word, and understandeth it\u2026", vref="Matthew 13:23"),
+              dict(title="Jonah and the Great Fish", ref="Jonah 1-3",
+                   scenes=[
+                       ("God told Jonah to go to the great city of Nineveh, but Jonah ran the other way.", "city_day", "ancient city"),
+                       ("He boarded a ship, and a terrible storm struck the sea.", "sea_storm", "stormy sea"),
+                       ("Jonah told the sailors to throw him overboard, and the sea became calm.", "sea_calm", "calm ocean"),
+                       ("God sent a great fish to swallow Jonah. For three days and nights, he prayed from inside.", "sea_fish", "deep ocean"),
+                       ("The fish brought Jonah to dry land, and he went to Nineveh to share God's message.", "shore_land", "beach sunrise"),
+                       ("The people turned back to God, and God showed them mercy.", "city_day", "sunrise city"),
+                   ],
+                   lesson="God's mercy reaches everyone, and you can always return to him.",
+                   verse="I cried by reason of mine affliction unto the LORD, and he heard me\u2026", vref="Jonah 2:2"),
+              dict(title="David and Goliath", ref="1 Samuel 17",
+                   scenes=[
+                       ("The giant Goliath mocked Israel's army for forty days, and no one dared to face him.", "giant", "mountain valley"),
+                       ("A young shepherd named David said he would fight the giant.", "pasture_day", "shepherd sheep"),
+                       ("King Saul offered his armor, but David chose his sling and five smooth stones.", "giant", "river stones"),
+                       ("David told Goliath, I come to you in the name of the LORD.", "giant", "clouds sky"),
+                       ("David's stone struck the giant, and Goliath fell.", "giant", "storm clouds"),
+                       ("God gave Israel the victory that day.", "mountain_dawn", "sunrise mountains"),
+                   ],
+                   lesson="With God's help, you can face giants far bigger than you.",
+                   verse="\u2026but I come to thee in the name of the LORD of hosts\u2026", vref="1 Samuel 17:45"),
+              dict(title="Daniel in the Lions' Den", ref="Daniel 6",
+                   scenes=[
+                       ("Daniel was a faithful servant of God who prayed three times every day.", "palace", "ancient city"),
+                       ("Jealous officials tricked the king into signing a law against praying to anyone but the king.", "palace", "candle light"),
+                       ("Daniel kept praying to God, just as he always had.", "palace", "window light"),
+                       ("So he was thrown into a den of lions, and the king could not sleep that night.", "den", "dark cave"),
+                       ("At dawn, the king hurried to the den and called out to Daniel.", "den", "cave sunrise"),
+                       ("Daniel was safe, because God had shut the lions' mouths.", "mountain_dawn", "sunrise light"),
+                   ],
+                   lesson="Stay faithful to God, and trust him even when it is hard.",
+                   verse="My God hath sent his angel, and hath shut the lions' mouths, that they have not hurt me\u2026", vref="Daniel 6:22"),
+              dict(title="Noah and the Ark", ref="Genesis 6-9",
+                   scenes=[
+                       ("The world had become full of violence, but Noah found favor with God.", "ark_build", "forest trees"),
+                       ("God told Noah to build a great ark and bring his family and the animals inside.", "ark_build", "wood forest"),
+                       ("Then the rain fell for forty days and forty nights, and the flood covered the earth.", "ark_flood", "heavy rain"),
+                       ("The ark floated safely until it came to rest on the mountains of Ararat.", "ark_flood", "ocean waves"),
+                       ("When the waters dried, Noah and his family stepped out onto dry ground.", "ark_rainbow", "green valley"),
+                       ("God set a rainbow in the sky as a promise that he would never flood the whole earth again.", "ark_rainbow", "rainbow"),
+                   ],
+                   lesson="God keeps his promises, and he protects those who trust him.",
+                   verse="I do set my bow in the cloud, and it shall be for a token of a covenant between me and the earth.", vref="Genesis 9:13"),
+              dict(title="Jesus Calms the Storm", ref="Mark 4:35-41",
+                   scenes=[
+                       ("One evening, Jesus told his disciples to cross the sea with him.", "sea_calm", "sunset lake"),
+                       ("A fierce storm arose, and waves crashed into the boat.", "sea_storm", "stormy sea"),
+                       ("The disciples were terrified, but Jesus was asleep.", "sea_storm", "dark clouds"),
+                       ("They woke him and cried out, Teacher, do you not care that we are perishing?", "sea_storm", "rain"),
+                       ("Jesus stood up and said to the sea, Peace, be still.", "sea_calm_night", "calm sea night"),
+                       ("The wind stopped, and there was a great calm.", "sea_calm_night", "calm ocean"),
+                   ],
+                   lesson="Jesus is with you in every storm, and he can bring peace.",
+                   verse="And he arose, and rebuked the wind, and said unto the sea, Peace, be still. And the wind ceased, and there was a great calm.", vref="Mark 4:39"),
+              dict(title="The Birth of Jesus", ref="Luke 2:1-20",
+                   scenes=[
+                       ("Mary and Joseph traveled to Bethlehem, because the emperor ordered a census.", "road_alone", "desert road"),
+                       ("There was no room for them at the inn, so Jesus was born in a humble stable.", "stable_night", "stable night"),
+                       ("Nearby, shepherds were watching their flocks at night.", "pasture_night", "night stars"),
+                       ("An angel appeared and told them, Do not be afraid, for a Savior has been born.", "pasture_night", "starry sky"),
+                       ("The shepherds hurried to Bethlehem and found the baby lying in a manger.", "stable_night", "candle light"),
+                       ("They went away glorifying God and telling everyone what they had seen.", "mountain_dawn", "sunrise hills"),
+                   ],
+                   lesson="The greatest gift came quietly, and it is for everyone.",
+                   verse="For unto you is born this day in the city of David a Saviour, which is Christ the Lord.", vref="Luke 2:11"),
+              dict(title="The Wise and Foolish Builders", ref="Matthew 7:24-27",
+                   scenes=[
+                       ("Jesus told a story about two builders.", "house_rock", "building construction"),
+                       ("A wise man built his house on solid rock.", "house_rock", "rock cliff"),
+                       ("A foolish man built his house on sand.", "house_sand", "desert sand"),
+                       ("Then the rain fell, the floods came, and the winds beat against both houses.", "house_storm", "heavy rain"),
+                       ("The house on the rock stood firm, but the house on the sand fell.", "house_rock", "storm clouds"),
+                   ],
+                   lesson="Build your life on the words of Jesus, and it will stand.",
+                   verse="Therefore whosoever heareth these sayings of mine, and doeth them, I will liken him unto a wise man, which built his house upon a rock.", vref="Matthew 7:24"),
+          ]
+
+          # ================================================================== PICK STORY + VISUAL MODE
+          USED_FILE = "used_stories.json"
+          used = json.load(open(USED_FILE)) if os.path.exists(USED_FILE) else {}
+          want = (os.environ.get("STORY") or "auto").strip().lower()
+          st = None
+          if want not in ("", "auto"):
+              st = next((s for s in STORIES if want in s["title"].lower()), None)
+          if st is None:
+              ug = used.get("done", [])
+              pool = [s for s in STORIES if s["title"] not in ug and s["title"] != used.get("_last")]
+              if not pool:
+                  ug = []
+                  pool = [s for s in STORIES if s["title"] != used.get("_last")] or STORIES
+              st = random.choice(pool)
+              used["done"] = ug + [st["title"]]
+          used["_last"] = st["title"]
+          used["_ep"] = used.get("_ep", 0) + 1
+          EP = used["_ep"]
+          series = f"BIBLE STORIES #{EP}"
+
+          PIX = os.environ.get("PIXABAY_KEY", "").strip()
+          vis = (os.environ.get("VISUALS") or "auto").strip()
+          if vis not in ("illustration", "stock"):
+              am = (os.environ.get("AUTO_VISUALS") or "mix").strip()
+              vis = am if am in ("illustration", "stock") else random.choice(["illustration", "stock"])
+          if vis == "stock" and not PIX:
+              print("No PIXABAY_KEY secret found, falling back to illustration.")
+              vis = "illustration"
+          print("Story:", st["title"], "| Visuals:", vis, "| Episode:", EP)
+
+          # ================================================================== ILLUSTRATION ENGINE
+          SKY = {
+              "day": [(86, 160, 214), (150, 200, 235), (235, 243, 250)],
+              "dawn": [(70, 60, 120), (214, 112, 140), (255, 190, 130), (255, 225, 170)],
+              "dusk": [(40, 40, 100), (150, 70, 130), (240, 130, 100), (255, 190, 120)],
+              "night": [(6, 10, 36), (16, 26, 70), (38, 50, 110)],
+              "storm": [(30, 36, 50), (60, 70, 90), (100, 110, 125)],
+              "desert": [(120, 170, 215), (230, 205, 160), (250, 225, 180)],
+          }
+          GR = {"green": [(60, 120, 72), (24, 60, 40)], "sand": [(222, 190, 130), (150, 120, 80)],
+                "dark": [(24, 44, 40), (8, 18, 22)], "dusk": [(70, 70, 60), (30, 30, 34)], "stone": [(110, 100, 90), (60, 56, 52)]}
+
+
+          def vgrad(stops, h, w):
+              ys = np.linspace(0, 1, h)[:, None]
+              n = len(stops) - 1
+              pos = ys * n
+              idx = np.minimum(pos.astype(int), n - 1)
+              fr = pos - idx
+              c = np.array(stops, dtype=np.float32)
+              g = c[idx[:, 0]] * (1 - fr) + c[idx[:, 0] + 1] * fr
+              return np.repeat(g[:, None, :], w, axis=1)
+
+
+          def p_sun(img, x, y, r, col=(255, 244, 200)):
+              layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+              d = ImageDraw.Draw(layer)
+              for k in range(6, 0, -1):
+                  rr = r * (1 + k * 0.7)
+                  d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=col + (18,))
+              d.ellipse([x - r, y - r, x + r, y + r], fill=col + (255,))
+              img.alpha_composite(layer.filter(ImageFilter.GaussianBlur(8)))
+
+
+          def p_moon(img, x, y, r):
+              p_sun(img, x, y, r, (240, 240, 225))
+
+
+          def p_stars(img, n=140, seed=1):
+              d = ImageDraw.Draw(img)
+              r = random.Random(seed)
+              for _ in range(n):
+                  x, y, s, v = r.randint(0, CW), r.randint(0, HZ - 40), r.choice([1, 2, 2, 3]), r.randint(170, 255)
+                  d.ellipse([x, y, x + s, y + s], fill=(v, v, 255, 255))
+
+
+          def p_clouds(img, items, col=(255, 255, 255), a=170):
+              layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+              d = ImageDraw.Draw(layer)
+              for x, y, w in items:
+                  for dx, dy, k in ((0, 0, 1), (-0.35, 0.08, 0.7), (0.35, 0.1, 0.75), (0.1, -0.12, 0.6)):
+                      rw, rh = w * k * 0.5, w * k * 0.22
+                      d.ellipse([x + dx * w - rw, y + dy * w - rh, x + dx * w + rw, y + dy * w + rh], fill=tuple(col) + (a,))
+              img.alpha_composite(layer.filter(ImageFilter.GaussianBlur(10)))
+
+
+          def p_mount(img, base, col, peaks):
+              d = ImageDraw.Draw(img)
+              shade = tuple(int(c * 0.82) for c in col)
+              for x, h, w in peaks:
+                  d.polygon([(x - w, base), (x, base - h), (x + w, base)], fill=col + (255,))
+                  d.polygon([(x, base - h), (x + w, base), (x + w * 0.15, base)], fill=shade + (255,))
+
+
+          def p_hills(img, base, col, amp, freq, ph):
+              d = ImageDraw.Draw(img)
+              pts = [(x, base + amp * math.sin(x * freq + ph) + amp * 0.5 * math.sin(x * freq * 2.3 + ph * 1.7)) for x in range(0, CW + 20, 20)]
+              pts += [(CW, CH), (0, CH)]
+              d.polygon(pts, fill=col + (255,))
+
+
+          def p_ground(img, name, top=None):
+              top = top or HZ
+              arr = vgrad(GR[name], CH - top, CW).astype(np.uint8)
+              img.paste(Image.fromarray(arr).convert("RGBA"), (0, top))
+
+
+          def p_water(img, top, c1, c2, seed=1):
+              arr = vgrad([c1, c2], CH - top, CW).astype(np.uint8)
+              img.paste(Image.fromarray(arr).convert("RGBA"), (0, top))
+              d = ImageDraw.Draw(img)
+              r = random.Random(seed)
+              lt = tuple(min(255, c + 40) for c in c1)
+              for _ in range(40):
+                  x, y, w = r.randint(0, CW), r.randint(top + 20, CH - 100), r.randint(60, 200)
+                  d.arc([x, y, x + w, y + 30], 200, 340, fill=lt + (255,), width=3)
+
+
+          def p_figure(img, x, y, s=1.0, col=(50, 36, 30), staff=False):
+              d = ImageDraw.Draw(img)
+              c = col + (255,)
+              r = int(24 * s)
+              bh, tw, bw = int(150 * s), int(36 * s), int(64 * s)
+              d.polygon([(x - tw // 2, y - bh), (x + tw // 2, y - bh), (x + bw // 2, y), (x - bw // 2, y)], fill=c)
+              d.ellipse([x - r, y - bh - 2 * r + 4, x + r, y - bh + 4], fill=c)
+              if staff:
+                  d.line([(x + int(50 * s), y + 4), (x + int(42 * s), y - int(260 * s))], fill=c, width=max(3, int(6 * s)))
+
+
+          def p_sheep(img, x, y, s=1.0):
+              d = ImageDraw.Draw(img)
+              w, h = int(70 * s), int(46 * s)
+              dk = (50, 40, 36, 255)
+              d.ellipse([x - w // 2, y - h, x + w // 2, y], fill=(245, 245, 240, 255))
+              d.ellipse([x + w // 2 - int(8 * s), y - h + int(2 * s), x + w // 2 + int(26 * s), y - h + int(26 * s)], fill=dk)
+              for dx in (-w // 4, w // 4):
+                  d.rectangle([x + dx - 3, y - 2, x + dx + 3, y + int(18 * s)], fill=dk)
+
+
+          def p_tree(img, x, y, s=1.0, col=(40, 100, 60)):
+              d = ImageDraw.Draw(img)
+              d.rectangle([x - int(10 * s), y - int(120 * s), x + int(10 * s), y], fill=(80, 56, 40, 255))
+              for dx, dy, r in ((0, -170, 70), (-45, -135, 50), (45, -135, 50)):
+                  d.ellipse([x + dx * s - r * s, y + dy * s - r * s, x + dx * s + r * s, y + dy * s + r * s], fill=col + (255,))
+
+
+          def p_boat(img, x, y, s=1.0):
+              d = ImageDraw.Draw(img)
+              d.polygon([(x - 110 * s, y - 30 * s), (x + 110 * s, y - 30 * s), (x + 75 * s, y + 20 * s), (x - 75 * s, y + 20 * s)], fill=(92, 58, 36, 255))
+              d.line([(x, y - 30 * s), (x, y - 200 * s)], fill=(70, 48, 32, 255), width=int(8 * s))
+              d.polygon([(x + 6 * s, y - 195 * s), (x + 6 * s, y - 60 * s), (x + 90 * s, y - 60 * s)], fill=(245, 238, 220, 255))
+
+
+          def p_house(img, x, y, s=1.0, col=(214, 190, 150), lit=False):
+              d = ImageDraw.Draw(img)
+              w, h = int(190 * s), int(120 * s)
+              d.rectangle([x - w // 2, y - h, x + w // 2, y], fill=col + (255,))
+              d.polygon([(x - w // 2 - 12 * s, y - h), (x, y - h - 90 * s), (x + w // 2 + 12 * s, y - h)], fill=(120, 70, 50, 255))
+              wc = (255, 214, 120, 255) if lit else (70, 60, 70, 255)
+              d.rectangle([x - w // 2 + 20 * s, y - h + 30 * s, x - w // 2 + 60 * s, y - h + 80 * s], fill=wc)
+              d.rectangle([x + 15 * s, y - 70 * s, x + 55 * s, y], fill=wc if lit else (80, 52, 36, 255))
+
+
+          def p_rock(img, x, y, w, h):
+              d = ImageDraw.Draw(img)
+              d.polygon([(x - w / 2, y), (x - w / 2 + 70, y - h), (x + w / 2 - 70, y - h), (x + w / 2, y)], fill=(112, 108, 104, 255))
+              d.polygon([(x + w / 2 - 70, y - h), (x + w / 2, y), (x + 40, y)], fill=(88, 84, 80, 255))
+
+
+          def p_rain(img, n=160, seed=2):
+              layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+              d = ImageDraw.Draw(layer)
+              r = random.Random(seed)
+              for _ in range(n):
+                  x, y = r.randint(0, CW), r.randint(0, CH)
+                  d.line([(x, y), (x - 18, y + 60)], fill=(200, 210, 230, 130), width=3)
+              img.alpha_composite(layer)
+
+
+          def p_path(img, col=(190, 160, 110)):
+              d = ImageDraw.Draw(img)
+              d.polygon([(CW / 2 - 30, HZ), (CW / 2 + 30, HZ), (CW / 2 + 430, CH), (CW / 2 - 430, CH)], fill=col + (255,))
+
+
+          def p_fish(img, x, y, s=1.0):
+              d = ImageDraw.Draw(img)
+              c = (52, 86, 120, 255)
+              d.ellipse([x - 220 * s, y - 90 * s, x + 200 * s, y + 90 * s], fill=c)
+              d.polygon([(x + 180 * s, y), (x + 300 * s, y - 100 * s), (x + 300 * s, y + 100 * s)], fill=c)
+              d.ellipse([x - 200 * s, y + 10 * s, x + 160 * s, y + 85 * s], fill=(120, 160, 190, 255))
+              d.ellipse([x - 170 * s, y - 40 * s, x - 135 * s, y - 5 * s], fill=(255, 255, 255, 255))
+              d.ellipse([x - 160 * s, y - 32 * s, x - 146 * s, y - 14 * s], fill=(10, 10, 20, 255))
+
+
+          def p_city(img, base, col, seed=3):
+              d = ImageDraw.Draw(img)
+              r = random.Random(seed)
+              x = 0
+              while x < CW:
+                  w, h = r.randint(70, 150), r.randint(140, 340)
+                  d.rectangle([x, base - h, x + w, base], fill=col + (255,))
+                  if r.random() < 0.4:
+                      d.pieslice([x + w * 0.1, base - h - w * 0.4, x + w * 0.9, base - h + w * 0.4], 180, 360, fill=col + (255,))
+                  for wy in range(base - h + 30, base - 20, 45):
+                      for wx in range(x + 16, x + w - 16, 36):
+                          if r.random() < 0.3:
+                              d.rectangle([wx, wy, wx + 14, wy + 22], fill=(255, 214, 120, 255))
+                  x += w + r.randint(0, 10)
+
+
+          def p_cave(img, x, y, w=480, h=380):
+              d = ImageDraw.Draw(img)
+              d.pieslice([x - w, y - h, x + w, y + h], 180, 360, fill=(58, 50, 46, 255))
+              d.pieslice([x - w * 0.5, y - h * 0.62, x + w * 0.5, y + h * 0.62], 180, 360, fill=(24, 16, 14, 255))
+              layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+              ImageDraw.Draw(layer).ellipse([x - w * 0.4, y - h * 0.5, x + w * 0.4, y + 20], fill=(255, 170, 60, 70))
+              img.alpha_composite(layer.filter(ImageFilter.GaussianBlur(30)))
+
+
+          def p_bigstar(img, x, y, s=1.0):
+              layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+              d = ImageDraw.Draw(layer)
+              d.ellipse([x - 110 * s, y - 110 * s, x + 110 * s, y + 110 * s], fill=(255, 244, 200, 60))
+              img.alpha_composite(layer.filter(ImageFilter.GaussianBlur(25)))
+              d = ImageDraw.Draw(img)
+              d.polygon([(x, y - 120 * s), (x + 18 * s, y - 18 * s), (x + 120 * s, y), (x + 18 * s, y + 18 * s),
+                         (x, y + 120 * s), (x - 18 * s, y + 18 * s), (x - 120 * s, y), (x - 18 * s, y - 18 * s)], fill=(255, 246, 210, 255))
+
+
+          def p_rainbow(img, cx, cy, r):
+              layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+              d = ImageDraw.Draw(layer)
+              cols = [(231, 76, 60), (243, 156, 18), (241, 196, 15), (46, 204, 113), (52, 152, 219), (142, 68, 173)]
+              for i, c in enumerate(cols):
+                  rr = r - i * 22
+                  d.arc([cx - rr, cy - rr, cx + rr, cy + rr], 180, 360, fill=c + (200,), width=24)
+              img.alpha_composite(layer)
+
+
+          def p_wheat(img, n=120, seed=4, col=(184, 134, 40)):
+              d = ImageDraw.Draw(img)
+              r = random.Random(seed)
+              for _ in range(n):
+                  x, y = r.randint(20, CW - 20), r.randint(HZ + 60, HZ + 330)
+                  d.line([(x, y), (x + r.randint(-6, 6), y - 90)], fill=col + (255,), width=4)
+                  d.ellipse([x - 7, y - 130, x + 7, y - 80], fill=col + (255,))
+
+
+          def p_ark(img, x, y, s=1.0):
+              d = ImageDraw.Draw(img)
+              d.polygon([(x - 260 * s, y - 50 * s), (x + 260 * s, y - 50 * s), (x + 200 * s, y + 40 * s), (x - 200 * s, y + 40 * s)], fill=(110, 72, 44, 255))
+              d.rectangle([x - 130 * s, y - 150 * s, x + 130 * s, y - 50 * s], fill=(140, 96, 60, 255))
+              d.polygon([(x - 150 * s, y - 150 * s), (x, y - 215 * s), (x + 150 * s, y - 150 * s)], fill=(90, 60, 40, 255))
+              for dx in (-70, 0, 70):
+                  d.rectangle([x + dx * s - 14 * s, y - 130 * s, x + dx * s + 14 * s, y - 95 * s], fill=(255, 214, 120, 255))
+
+
+          PRIM = {"sun": p_sun, "moon": p_moon, "stars": p_stars, "clouds": p_clouds, "mount": p_mount, "hills": p_hills,
+                  "ground": p_ground, "water": p_water, "figure": p_figure, "sheep": p_sheep, "tree": p_tree, "boat": p_boat,
+                  "house": p_house, "rock": p_rock, "rain": p_rain, "path": p_path, "fish": p_fish, "city": p_city,
+                  "cave": p_cave, "bigstar": p_bigstar, "rainbow": p_rainbow, "wheat": p_wheat, "ark": p_ark}
+
+          G = HZ
+          STORM_CL = [(260, 430, 420), (760, 500, 460), (540, 330, 380)]
+          ART = {
+              "road_alone": dict(sky="day", p=[("sun", 900, 560, 90), ("clouds", [(260, 520, 320), (820, 420, 280)]), ("mount", G - 20, (128, 156, 176), [(180, 260, 320), (940, 220, 280)]),
+                                                ("hills", G - 10, (98, 152, 102), 50, 0.006, 0.5), ("ground", "green"), ("path",), ("tree", 150, G + 150, 1.6), ("figure", 594, G + 280, 2.0, (58, 40, 32), True)]),
+              "road_two": dict(sky="day", p=[("sun", 260, 560, 80), ("clouds", [(700, 480, 320)]), ("hills", G - 20, (98, 152, 102), 60, 0.007, 1.0), ("ground", "green"), ("path",),
+                                              ("tree", 980, G + 130, 1.5), ("figure", 470, G + 260, 1.8, (48, 36, 60), False), ("figure", 760, G + 285, 1.9, (120, 70, 40), False)]),
+              "road_inn": dict(sky="dusk", p=[("sun", 300, G - 40, 100), ("hills", G - 20, (70, 90, 80), 50, 0.007, 2.0), ("ground", "dusk"), ("path",),
+                                               ("house", 830, G + 190, 2.0, (214, 190, 150), True), ("figure", 520, G + 280, 2.0, (40, 30, 30), False), ("figure", 650, G + 290, 1.7, (120, 70, 40), False)]),
+              "home_day": dict(sky="day", p=[("sun", 880, 540, 90), ("clouds", [(300, 480, 300)]), ("hills", G - 20, (98, 152, 102), 50, 0.006, 0.2), ("ground", "green"),
+                                              ("house", 350, G + 200, 2.2, (226, 204, 164), False), ("tree", 800, G + 160, 1.5), ("figure", 640, G + 280, 1.9, (80, 52, 36), False), ("figure", 760, G + 290, 1.6, (60, 80, 120), False)]),
+              "far_country": dict(sky="desert", p=[("sun", 800, 540, 100), ("hills", G - 10, (214, 178, 120), 60, 0.005, 1.0), ("ground", "sand"), ("figure", 560, G + 280, 1.9, (70, 48, 36), False)]),
+              "home_welcome": dict(sky="dusk", p=[("sun", 880, G - 60, 110), ("hills", G - 20, (80, 92, 86), 50, 0.006, 0.7), ("ground", "dusk"), ("house", 250, G + 190, 2.0, (226, 204, 164), True),
+                                                   ("path",), ("figure", 560, G + 280, 1.9, (80, 52, 36), False), ("figure", 760, G + 270, 2.0, (150, 60, 60), False)]),
+              "feast": dict(sky="night", p=[("stars", 120, 5), ("moon", 880, 480, 60), ("hills", G, (20, 30, 40), 40, 0.006, 0.3), ("ground", "dark"), ("house", 540, G + 210, 2.8, (226, 204, 164), True),
+                                             ("figure", 250, G + 280, 1.8, (210, 170, 90), False), ("figure", 840, G + 285, 1.8, (150, 60, 60), False), ("figure", 980, G + 275, 1.6, (90, 120, 160), False)]),
+              "pasture_day": dict(sky="day", p=[("sun", 880, 540, 90), ("clouds", [(260, 500, 320), (760, 420, 260)]), ("mount", G - 10, (128, 156, 176), [(220, 240, 300)]), ("hills", G - 10, (98, 152, 102), 50, 0.006, 0.3),
+                                                 ("ground", "green"), ("sheep", 250, G + 200, 2.0), ("sheep", 460, G + 260, 2.2), ("sheep", 700, G + 210, 1.9), ("sheep", 900, G + 270, 2.1), ("figure", 600, G + 285, 2.0, (100, 66, 40), True)]),
+              "pasture_night": dict(sky="night", p=[("stars", 160, 7), ("moon", 840, 520, 70), ("hills", G - 10, (18, 32, 44), 50, 0.006, 0.9), ("ground", "dark"),
+                                                     ("sheep", 250, G + 210, 2.0), ("sheep", 450, G + 270, 2.2), ("sheep", 900, G + 240, 2.0), ("figure", 640, G + 285, 2.0, (210, 200, 170), True)]),
+              "mountain_search": dict(sky="dawn", p=[("sun", 540, G - 60, 110), ("mount", G + 10, (90, 80, 120), [(240, 420, 340), (700, 520, 380), (1000, 360, 280)]), ("hills", G + 10, (60, 70, 90), 40, 0.008, 1.4),
+                                                      ("ground", "dark", G + 60), ("figure", 420, G + 280, 1.9, (30, 24, 30), True), ("sheep", 780, G + 260, 1.8)]),
+              "field_sower": dict(sky="day", p=[("sun", 880, 540, 90), ("clouds", [(300, 470, 300)]), ("hills", G - 20, (150, 170, 100), 50, 0.006, 0.4), ("ground", "green"), ("wheat", 70, 4),
+                                                 ("figure", 560, G + 285, 2.0, (100, 70, 40), False)]),
+              "harvest": dict(sky="dawn", p=[("sun", 540, G - 30, 130), ("hills", G - 20, (190, 160, 90), 40, 0.006, 0.4), ("ground", "sand"), ("wheat", 220, 6)]),
+              "desert_day": dict(sky="desert", p=[("sun", 860, 520, 100), ("hills", G, (222, 190, 130), 70, 0.005, 0.2), ("hills", G + 90, (200, 160, 100), 60, 0.007, 1.8), ("ground", "sand", G + 170),
+                                                   ("figure", 560, G + 285, 1.9, (70, 48, 36), True)]),
+              "mountain_dawn": dict(sky="dawn", p=[("sun", 540, G - 80, 120), ("mount", G, (104, 88, 130), [(200, 380, 320), (560, 520, 400), (960, 340, 300)]), ("hills", G + 10, (70, 70, 100), 40, 0.008, 1.0),
+                                                    ("ground", "dark", G + 60), ("figure", 540, G + 285, 1.9, (30, 24, 34), True)]),
+              "city_day": dict(sky="day", p=[("sun", 880, 520, 90), ("clouds", [(300, 480, 320)]), ("city", G + 30, (178, 150, 112)), ("ground", "sand", G + 30), ("figure", 560, G + 285, 1.9, (60, 44, 34), False)]),
+              "palace": dict(sky="dusk", p=[("sun", 250, G - 30, 100), ("city", G + 30, (86, 70, 96)), ("ground", "dusk", G + 30), ("figure", 560, G + 285, 1.9, (190, 170, 120), False)]),
+              "sea_calm": dict(sky="dusk", p=[("sun", 540, G - 50, 110), ("water", G, (60, 90, 140), (20, 40, 80), 3), ("boat", 540, G + 270, 2.0)]),
+              "sea_calm_night": dict(sky="night", p=[("stars", 160, 9), ("moon", 800, 500, 70), ("water", G, (30, 50, 100), (8, 16, 44), 5), ("boat", 540, G + 270, 2.0)]),
+              "sea_storm": dict(sky="storm", p=[("clouds", STORM_CL, (70, 76, 90), 230), ("water", G, (50, 70, 90), (14, 24, 38), 7), ("boat", 540, G + 270, 2.0), ("rain", 200, 2)]),
+              "sea_fish": dict(sky="night", p=[("stars", 120, 11), ("moon", 260, 500, 60), ("water", G - 60, (24, 56, 104), (6, 16, 44), 9), ("fish", 540, G + 230, 1.8)]),
+              "shore_land": dict(sky="dawn", p=[("sun", 540, G - 60, 110), ("water", G, (70, 110, 160), (30, 60, 110), 2), ("ground", "sand", G + 200), ("figure", 560, G + 330, 1.9, (60, 44, 34), False)]),
+              "house_rock": dict(sky="day", p=[("sun", 880, 540, 90), ("clouds", [(300, 480, 300)]), ("hills", G - 10, (98, 152, 102), 40, 0.006, 0.8), ("ground", "green"),
+                                                ("rock", 540, G + 290, 640, 150), ("house", 540, G + 150, 2.0, (214, 190, 150), False)]),
+              "house_sand": dict(sky="desert", p=[("sun", 880, 540, 90), ("hills", G, (222, 190, 130), 50, 0.006, 0.5), ("ground", "sand"), ("house", 540, G + 250, 2.0, (214, 190, 150), False)]),
+              "house_storm": dict(sky="storm", p=[("clouds", STORM_CL[:2], (70, 76, 90), 230), ("hills", G, (40, 56, 50), 40, 0.006, 0.5), ("ground", "dark"), ("house", 540, G + 250, 2.0, (150, 140, 120), False), ("rain", 220, 4)]),
+              "stable_night": dict(sky="night", p=[("stars", 140, 13), ("bigstar", 760, 520, 1.2), ("hills", G, (18, 30, 40), 40, 0.006, 0.1), ("ground", "dark"), ("house", 440, G + 230, 2.2, (150, 120, 90), True),
+                                                    ("figure", 750, G + 280, 1.8, (210, 190, 150), False), ("figure", 880, G + 290, 1.6, (90, 120, 170), False)]),
+              "giant": dict(sky="day", p=[("sun", 880, 540, 80), ("clouds", [(300, 470, 300)]), ("mount", G, (128, 140, 160), [(200, 260, 320), (820, 300, 360)]), ("hills", G, (130, 150, 96), 40, 0.006, 0.5),
+                                           ("ground", "green"), ("figure", 290, G + 290, 2.9, (70, 60, 70), False), ("figure", 820, G + 280, 1.7, (120, 80, 44), False)]),
+              "den": dict(sky="night", p=[("stars", 100, 15), ("moon", 840, 500, 60), ("hills", G, (30, 28, 28), 40, 0.006, 0.3), ("ground", "stone"), ("cave", 540, G + 240, 480, 380),
+                                           ("figure", 540, G + 240, 1.6, (255, 220, 160), False)]),
+              "ark_build": dict(sky="day", p=[("sun", 880, 540, 90), ("clouds", [(300, 470, 300)]), ("hills", G - 10, (98, 152, 102), 50, 0.006, 0.3), ("ground", "green"), ("tree", 140, G + 160, 1.6),
+                                               ("ark", 560, G + 230, 1.5), ("figure", 920, G + 270, 1.7, (90, 60, 40), False)]),
+              "ark_flood": dict(sky="storm", p=[("clouds", STORM_CL, (70, 76, 90), 230), ("water", G - 40, (48, 68, 88), (12, 22, 36), 8), ("ark", 540, G + 190, 1.8), ("rain", 240, 6)]),
+              "ark_rainbow": dict(sky="day", p=[("sun", 900, 520, 90), ("clouds", [(250, 480, 300)]), ("rainbow", 540, G - 60, 420), ("mount", G + 10, (110, 130, 120), [(300, 300, 360), (840, 240, 300)]),
+                                                 ("hills", G + 10, (98, 152, 102), 40, 0.007, 0.5), ("ground", "green"), ("ark", 400, G + 230, 1.2), ("figure", 760, G + 270, 1.6, (90, 60, 40), False)]),
+              "hope_dawn": dict(sky="dawn", p=[("sun", 540, G - 70, 130), ("clouds", [(250, 520, 300), (830, 470, 260)], (255, 235, 220), 130), ("hills", G - 10, (120, 110, 140), 50, 0.006, 0.3),
+                                                ("hills", G + 40, (80, 90, 110), 40, 0.008, 1.2), ("ground", "dark", G + 90)]),
+          }
+
+
+          def build_art(name):
+              spec = ART[name]
+              sky = vgrad(SKY[spec["sky"]], HZ + 80, CW)
+              arr = np.vstack([sky, np.repeat(sky[-1:], CH - HZ - 80, axis=0)])
+              img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8)).convert("RGBA")
+              for p in spec["p"]:
+                  PRIM[p[0]](img, *p[1:])
+              return img.convert("RGB")
+
+
+          ART_IMG = {}
+
+
+          def art_frame(name, lt, span, idx):
+              if name not in ART_IMG:
+                  ART_IMG[name] = build_art(name)
+              p = min(1.0, max(0.0, lt / max(span, 1.0)))
+              z = 1.0 + 0.07 * p
+              cw, ch = W / z, H / z
+              panx = (p - 0.5) * 50 * (1 if idx % 2 else -1)
+              x0 = CW / 2 + panx - cw / 2
+              y0 = CH / 2 - ch / 2
+              return ART_IMG[name].transform((W, H), Image.EXTENT, (x0, y0, x0 + cw, y0 + ch), Image.BILINEAR)
+
+
+          # ================================================================== STOCK FOOTAGE (Pixabay)
+          def pix_find(q, taken):
+              if not PIX:
+                  return None
+              try:
+                  url = "https://pixabay.com/api/videos/?" + urllib.parse.urlencode(dict(key=PIX, q=q, video_type="film", per_page=20, safesearch="true"))
+                  data = json.load(urllib.request.urlopen(url, timeout=15))
+              except Exception as ex:
+                  print("Pixabay search failed:", q, ex)
+                  return None
+              hits = [h for h in data.get("hits", []) if h.get("duration", 0) >= 5]
+              random.shuffle(hits)
+              for h in hits[:8]:
+                  v = h.get("videos", {})
+                  for k in ("large", "medium", "small"):
+                      u = (v.get(k) or {}).get("url")
+                      if u and u not in taken:
+                          return u
+              return None
+
+
+          def fetch_clip(url, out, secs):
+              try:
+                  subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", url, "-t", str(secs), "-c", "copy", out], capture_output=True, timeout=120)
+              except Exception:
+                  return False
+              return os.path.exists(out) and os.path.getsize(out) > 10000
+
+
+          class VReader:
+              def __init__(self, path, dur):
+                  vf = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={FPS},eq=brightness=-0.10:saturation=0.9"
+                  self.p = subprocess.Popen(["ffmpeg", "-v", "error", "-stream_loop", "-1", "-i", path, "-t", f"{dur:.2f}", "-vf", vf,
+                                             "-pix_fmt", "rgb24", "-f", "rawvideo", "-"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                  self.last = None
+
+              def read(self):
+                  b = self.p.stdout.read(W * H * 3)
+                  if b and len(b) == W * H * 3:
+                      self.last = Image.frombytes("RGB", (W, H), b)
+                  return self.last
+
+              def close(self):
+                  try:
+                      self.p.stdout.close()
+                      self.p.kill()
+                      self.p.wait()
+                  except Exception:
+                      pass
+
+
+          # ================================================================== SEGMENTS
+          def cap_panel(text):
+              return [(panel_img(text, SERIF_B, 50, maxh=470), 1340)]
+
+
+          intro_cap = [(pill_img("A BIBLE STORY IN UNDER A MINUTE", SANS_B, 40, GOLD, GINK), 1250),
+                       (pill_img(f"{st['ref']} (KJV)", SANS_B, 46, "#2E4A9E", "#FFFFFF"), 1370)]
+          lim = panel_img("Lesson: " + st["lesson"], SERIF_B, 50, maxh=480, fillc=hexrgb(GOLD) + (240,), ink=GINK, outline="#FFFFFF")
+          vim = panel_img("\u201c" + st["verse"] + "\u201d", SERIF_I, 46, maxh=430)
+          vrim = pill_img(f"{st['vref']} (KJV)", SANS_B, 44, GOLD, GINK)
+          verse_cap = [(vim, 1130 + vim.height / 2), (vrim, 1130 + vim.height + 80)]
+          outro_cap = [(pill_img("A NEW BIBLE STORY EVERY DAY", SANS_B, 44, GOLD, GINK), 1330)]
+
+          segs = [dict(text=f"{st['title']}. {spoken_ref(st['ref'])}. A Bible story in under a minute.", art="hope_dawn", stock="sunrise clouds", cap=intro_cap)]
+          for text, art, q in st["scenes"]:
+              segs.append(dict(text=text, art=art, stock=q, cap=cap_panel(text)))
+          segs.append(dict(text="The lesson. " + st["lesson"], art="hope_dawn", stock="sunrise light rays", cap=[(lim, 1340)]))
+          segs.append(dict(text=f"{spoken_ref(st['vref'])}. {st['verse']}", art="hope_dawn", stock="sunrise light rays", cap=verse_cap))
+          segs.append(dict(text="Follow for a new Bible story every day.", art="hope_dawn", stock="peaceful nature", cap=outro_cap))
+
+          # ================================================================== NARRATION (TTS)
+          VOICE = None
+          TTS_DEAD = False
+
+
+          def synth(i, text):
+              global VOICE, TTS_DEAD
+              if TTS_DEAD:
+                  return None
+              out = f"/tmp/seg{i}.mp3"
+              clean = tts_clean(text)
+              order = ([VOICE] if VOICE else []) + [v for v in VOICES if v != VOICE]
+              for v in order:
+                  for _ in range(2):
+                      if os.path.exists(out):
+                          os.remove(out)
+                      try:
+                          subprocess.run([sys.executable, "-m", "edge_tts", "--voice", v, "--rate=-8%", "--text", clean, "--write-media", out],
+                                         capture_output=True, timeout=60)
+                      except Exception:
+                          pass
+                      if os.path.exists(out) and os.path.getsize(out) > 0:
+                          try:
+                              a = load(out)
+                              VOICE = v
+                              return a
+                          except Exception:
+                              pass
+              TTS_DEAD = True
+              return None
+
+
+          t = 0.2
+          for i, s in enumerate(segs):
+              a = synth(i, s["text"])
+              if a is None or len(a) == 0:
+                  sys.exit("Narration failed, not creating a silent story video.")
+              s["audio"] = a / (float(np.max(np.abs(a))) or 1.0) * 0.92
+              s["start"] = t
+              s["dur"] = len(a) / SR + 0.1
+              t = s["start"] + s["dur"] + 0.45
+          TOTAL = segs[-1]["start"] + segs[-1]["dur"] + 1.3
+          for i, s in enumerate(segs):
+              nxt = segs[i + 1]["start"] if i + 1 < len(segs) else TOTAL
+              s["span"] = nxt - s["start"]
+              s["end"] = nxt
+          print(f"Total duration: {TOTAL:.1f}s with {len(segs)} scenes")
+
+          # ================================================================== VISUAL SOURCES
+          for s in segs:
+              s["vid"] = None
+          if vis == "stock":
+              taken = set()
+              for i, s in enumerate(segs):
+                  for q in [s["stock"], "peaceful nature", "clouds sky"]:
+                      u = pix_find(q, taken)
+                      if not u:
+                          continue
+                      taken.add(u)
+                      path = f"/tmp/clip{i}.mp4"
+                      if fetch_clip(u, path, min(12, int(s["span"]) + 3)):
+                          s["vid"] = path
+                          break
+                  print(f"Scene {i}: {'stock' if s['vid'] else 'illustration (fallback)'}")
+
+          # ================================================================== OVERLAYS
+          OVS = []
+
+
+          def ov(im, cx, cy, a, b=None, fd=0.4):
+              OVS.append(dict(im=im, cx=cx, cy=cy, a=a, b=b, fd=fd))
+
+
+          ov(pill_img(series, PLAY_B, 40, GOLD, GINK), W / 2, 255, 0.05, None, 0.5)
+          ov(text_img(st["title"], PLAY_B, 66, "#FFFFFF", 940), W / 2, 375, 0.05, None, 0.5)
+          for s in segs:
+              for im, cy in s["cap"]:
+                  ov(im, W / 2, cy, s["start"] + 0.08, s["end"] if s is not segs[-1] else None, 0.4)
+
+
+          def fade(im, a):
+              r, g, b, al = im.split()
+              return Image.merge("RGBA", (r, g, b, al.point(lambda v: int(v * a))))
+
+
+          BLACK = Image.new("RGB", (W, H), (0, 0, 0))
+          sm = np.zeros(H, dtype=np.float32)
+          sm[:520] = np.linspace(125, 0, 520)
+          sm[1000:] = np.linspace(0, 110, H - 1000)
+          SHADE = Image.fromarray(np.repeat(sm[:, None], W, axis=1).astype(np.uint8), "L")
+
+          cur = 0
+
+
+          def render(t):
+              global cur
+              while cur + 1 < len(segs) and t >= segs[cur + 1]["start"]:
+                  r = segs[cur].get("reader")
+                  if r:
+                      r.close()
+                      segs[cur]["reader"] = None
+                  cur += 1
+              s = segs[cur]
+              lt = t - s["start"]
+              fr = None
+              if s["vid"]:
+                  if s.get("reader") is None:
+                      s["reader"] = VReader(s["vid"], s["span"] + 1.0)
+                  fr = s["reader"].read()
+              fr = fr.copy() if fr is not None else art_frame(s["art"], lt, s["span"], cur)
+              a = min(1.0, max(0.0, lt / 0.4))
+              if t > TOTAL - 1.0:
+                  a = min(a, max(0.0, TOTAL - t))
+              if a < 1.0:
+                  fr = Image.blend(BLACK, fr, a)
+              fr.paste(BLACK, (0, 0), SHADE)
+              fr = fr.convert("RGBA")
+              for o in OVS:
+                  if t < o["a"]:
+                      continue
+                  if o["b"] is not None and t >= o["b"]:
+                      al = 1 - (t - o["b"]) / 0.2
+                      if al <= 0:
+                          continue
+                      dy = 0
+                  else:
+                      x = min(1.0, (t - o["a"]) / o["fd"])
+                      al = 1 - (1 - x) ** 3
+                      dy = (1 - al) * 30
+                  im = o["im"] if al >= 0.99 else fade(o["im"], al)
+                  fr.alpha_composite(im, (int(o["cx"] - im.width / 2), int(o["cy"] + dy - im.height / 2)))
+              return fr.convert("RGB")
+
+
+          # ================================================================== AUDIO
+          buf = np.zeros(int((TOTAL + 0.5) * SR), dtype=np.float32)
+
+
+          def tone(freq, d_, vol, decay):
+              tt = np.arange(int(SR * d_)) / SR
+              return (np.sin(2 * np.pi * freq * tt) * np.exp(-decay * tt) * vol).astype(np.float32)
+
+
+          CHIME = tone(784, 1.4, 0.26, 3.5) + tone(988, 1.4, 0.2, 3.5) + tone(1319, 1.4, 0.14, 3.5)
+
+
+          def mix(snd, at, gain=1.0):
+              i = int(at * SR)
+              n = min(len(snd), len(buf) - i)
+              if n > 0 and i >= 0:
+                  buf[i:i + n] += snd[:n] * gain
+
+
+          for s in segs:
+              mix(s["audio"], s["start"])
+          mix(CHIME, 0.05)
+          mix(CHIME, segs[-2]["start"] - 0.1, 0.8)
+
+
+          def pad_music(total):
+              tt = np.arange(int(total * SR)) / SR
+              root = random.choice([130.81, 146.83, 164.81, 174.61, 196.0])
+              out = np.zeros_like(tt)
+              for r, a in ((1, 1.0), (1.5, 0.7), (2, 0.6), (2.5, 0.4), (3, 0.3)):
+                  out += a * np.sin(2 * np.pi * root * r * tt + random.uniform(0, 6.28)) * (0.7 + 0.3 * np.sin(2 * np.pi * random.uniform(0.07, 0.15) * tt))
+              return (out / (np.max(np.abs(out)) or 1)).astype(np.float32)
+
+
+          # music: one folder, bgmusic/
+          EXTS = ("mp3", "wav", "m4a", "aac", "ogg", "flac", "mp4")
+          cands = [p for e in EXTS for p in glob.glob(f"bgmusic/*.{e}")]
+          m = None
+          if cands:
+              try:
+                  mp = random.choice(cands)
+                  dd = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp], capture_output=True, text=True).stdout.strip()
+                  mdur = float(dd) if dd else 0
+                  ms = random.uniform(0, mdur - TOTAL - 2) if mdur > TOTAL + 4 else 0
+                  raw = subprocess.run(["ffmpeg", "-v", "error", "-stream_loop", "-1", "-ss", f"{ms:.1f}", "-t", f"{TOTAL:.1f}", "-i", mp,
+                                        "-f", "f32le", "-ac", "1", "-ar", str(SR), "-"], capture_output=True).stdout
+                  m = np.frombuffer(raw, dtype=np.float32).copy()
+                  m = m / (float(np.max(np.abs(m))) or 1.0)
+                  print("Music:", mp)
+              except Exception as ex:
+                  print("music failed:", ex)
+                  m = None
+          if m is None or len(m) == 0:
+              m = pad_music(TOTAL)
+          n = min(len(m), len(buf))
+          env = np.ones(n, dtype=np.float32)
+          fi, fo = int(SR * 0.8), int(SR * 1.5)
+          if n > fi + fo:
+              env[:fi] = np.linspace(0, 1, fi)
+              env[-fo:] = np.linspace(1, 0, fo)
+          buf[:n] += m[:n] * env * 0.12
+
+          buf = np.clip(buf * 0.92, -1, 1)
+          with wave.open("audio.wav", "wb") as wf:
+              wf.setnchannels(1)
+              wf.setsampwidth(2)
+              wf.setframerate(SR)
+              wf.writeframes((buf * 32767).astype(np.int16).tobytes())
+
+          # ================================================================== ENCODE
+          ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS),
+                                 "-i", "-", "-i", "audio.wav", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+                                 "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-t", f"{TOTAL:.2f}", "-movflags", "+faststart", "final.mp4"],
+                                stdin=subprocess.PIPE)
+          for k in range(int(TOTAL * FPS)):
+              ff.stdin.write(render(k / FPS).tobytes())
+          ff.stdin.close()
+          ff.wait()
+          for s in segs:
+              if s.get("reader"):
+                  s["reader"].close()
+
+          # ================================================================== METADATA (SEO)
+          title, ref, lesson, verse, vref = st["title"], st["ref"], st["lesson"], st["verse"], st["vref"]
+          story_text = " ".join(x[0] for x in st["scenes"])
+          TITLES = [f"{title} Explained in 1 Minute \u271D\uFE0F Bible Story",
+                    f"The Story of {title} | Bible Stories #{EP}",
+                    f"{title} ({ref}) | Bible Story with Lesson",
+                    f"{title}: What Is the Lesson? \U0001F4D6 Bible Story"]
+          hashtags = ["#BibleStory", "#BibleStories", "#Jesus", "#Christian", "#KJV", "#Shorts"]
+          desc = (f"{title} ({ref}): a Bible story told in under a minute, with the lesson and key verse.\n\n"
+                  f"THE STORY\n{story_text}\n\n"
+                  f"THE LESSON\n{lesson}\n\n"
+                  f"\U0001F4D6 {vref} (KJV): \"{verse}\"\n\n"
+                  "\U0001F4AC What does this story mean to you? Tell us in the comments.\n\n"
+                  "\U0001F4D6 Bible translation: King James Version (KJV, public domain).\n"
+                  "\U0001F514 Subscribe for a new Bible story every day.\n\n" + " ".join(hashtags))
+          base_tags = ["bible story", "bible stories", "bible stories short", "jesus", "christian shorts", "bible study", "kjv", "faith", "scripture", "bible lesson"]
+          tags, total_len = [], 0
+          for tg in base_tags + [title.lower(), ref.lower(), f"{title.lower()} bible story"]:
+              if tg not in tags and total_len + len(tg) + 3 < 480:
+                  tags.append(tg)
+                  total_len += len(tg) + 3
+          comment = (f"\u271D\uFE0F {title} ({ref})\nLesson: {lesson}\n\n{vref} (KJV): \"{verse}\"\n\n"
+                     "What does this story mean to you? \U0001F447 Which Bible story should we tell next?")
+          json.dump(dict(title=random.choice(TITLES)[:100], description=desc[:4900], tags=tags, comment=comment, fmt="story"),
+                    open("meta.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+          json.dump(used, open(USED_FILE, "w"), ensure_ascii=False, indent=1)
+          print("Done.")
+          PYEOF
+
+          python3 story.py
+          ls -lh final.mp4
+
+      - name: post-to-youtube
+        id: post
+        timeout-minutes: 8
+        env:
+          YT_ACCESS_TOKEN: ${{ secrets.YT_ACCESS_TOKEN }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_PLAYLISTS: ${{ secrets.YT_PLAYLISTS }}
+        run: |
+          python3 << 'PYEOF'
+          import os, json, time
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+          from google.oauth2.credentials import Credentials
+
+          meta = json.load(open("meta.json", encoding="utf-8"))
+
+          creds = Credentials(
+              token=os.environ.get("YT_ACCESS_TOKEN"),
+              refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
+              token_uri="https://oauth2.googleapis.com/token",
+              client_id=os.environ.get("YT_CLIENT_ID"),
+              client_secret=os.environ.get("YT_CLIENT_SECRET"),
+          )
+          youtube = build("youtube", "v3", credentials=creds)
+
+          request = youtube.videos().insert(
+              part="snippet,status",
+              body={
+                  "snippet": {
+                      "title": meta["title"],
+                      "description": meta["description"],
+                      "tags": meta["tags"],
+                      "categoryId": "27",
+                      "defaultLanguage": "en",
+                      "defaultAudioLanguage": "en",
+                  },
+                  "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False},
+              },
+              media_body=MediaFileUpload("final.mp4", mimetype="video/mp4", resumable=True),
+          )
+
+          response = None
+          while response is None:
+              status, response = request.next_chunk()
+              if status:
+                  print(f"Upload progress: {int(status.progress() * 100)}%")
+
+          vid = response.get("id", "")
+          print(f"Uploaded: https://youtube.com/shorts/{vid}")
+
+          for attempt in range(4):
+              try:
+                  time.sleep(20)
+                  youtube.commentThreads().insert(
+                      part="snippet",
+                      body={"snippet": {"videoId": vid, "topLevelComment": {"snippet": {"textOriginal": meta["comment"]}}}},
+                  ).execute()
+                  print("Comment posted")
+                  break
+              except Exception as ex:
+                  print(f"::warning::Comment attempt {attempt + 1} failed: {ex}")
+
+          try:
+              pl = json.loads(os.environ.get("YT_PLAYLISTS") or "{}")
+              pid = pl.get(meta["fmt"])
+              if pid:
+                  youtube.playlistItems().insert(
+                      part="snippet",
+                      body={"snippet": {"playlistId": pid, "resourceId": {"kind": "youtube#video", "videoId": vid}}},
+                  ).execute()
+                  print("Added to playlist")
+          except Exception as ex:
+              print(f"::warning::Playlist add failed: {ex}")
+          PYEOF
+
+      - name: save-used
+        if: success()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add used_stories.json
+          git diff --cached --quiet || (git commit -m "update used stories [skip ci]" && git pull --rebase && git push)
