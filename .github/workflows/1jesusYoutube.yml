@@ -8,7 +8,7 @@ name: bible-shorts-post
         required: false
         default: "auto"
         type: choice
-        options: [auto, fill_verse, unscramble, true_false, order_events, guess_book, names_of_jesus, parable]
+        options: [auto, fill_verse, unscramble, true_false, order_events, guess_book, names_of_jesus, parable, message]
       theme:
         description: "Look"
         required: false
@@ -16,7 +16,7 @@ name: bible-shorts-post
         type: choice
         options: [auto, sunrise_gold, midnight_stars, stained_glass, parchment, watercolor, minimal_dark, dawn_sky]
   schedule:
-    - cron: "0 13,22 * * *"   # 2 per day (9 AM and 6 PM EST). Adjust as you like.
+    - cron: "0 13 * * *"   # once a day, 9 AM EST / 13:00 UTC
 
 permissions:
   contents: write
@@ -105,36 +105,37 @@ jobs:
 
 
           # ================================================================== CONTENT (KJV, public domain)
-          # (ref, verse, answer word, [2 wrong options])
+          # Finish the Verse: (ref, text BEFORE the gap, ANSWER, text AFTER the gap, [2 wrong options])
+          # Exactly one gap per verse, by construction.
           FV = [
-              ("John 3:16", "For God so loved the world, that he gave his only begotten Son.", "loved", ["saw", "knew"]),
-              ("Psalm 23:1", "The LORD is my shepherd; I shall not want.", "shepherd", ["king", "rock"]),
-              ("Philippians 4:13", "I can do all things through Christ which strengtheneth me.", "Christ", ["God", "Him"]),
-              ("Proverbs 3:5", "Trust in the LORD with all thine heart; and lean not unto thine own understanding.", "Trust", ["Hope", "Rest"]),
-              ("Isaiah 41:10", "Fear thou not; for I am with thee: be not dismayed; for I am thy God: I will strengthen thee; yea, I will help thee.", "dismayed", ["afraid", "alone"]),
-              ("Matthew 11:28", "Come unto me, all ye that labour and are heavy laden, and I will give you rest.", "rest", ["peace", "joy"]),
-              ("Jeremiah 29:11", "For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.", "peace", ["joy", "hope"]),
-              ("Joshua 1:9", "Have not I commanded thee? Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.", "courage", ["heart", "faith"]),
-              ("Psalm 119:105", "Thy word is a lamp unto my feet, and a light unto my path.", "lamp", ["sword", "staff"]),
-              ("Genesis 1:1", "In the beginning God created the heaven and the earth.", "created", ["blessed", "spoke"]),
-              ("Psalm 27:1", "The LORD is my light and my salvation; whom shall I fear?", "light", ["rock", "shield"]),
-              ("1 Corinthians 13:13", "And now abideth faith, hope, charity, these three; but the greatest of these is charity.", "charity", ["mercy", "grace"]),
-              ("Ephesians 2:8", "For by grace are ye saved through faith; and that not of yourselves: it is the gift of God.", "grace", ["works", "mercy"]),
-              ("Matthew 7:7", "Ask, and it shall be given you; seek, and ye shall find; knock, and it shall be opened unto you.", "knock", ["pray", "call"]),
-              ("Psalm 118:24", "This is the day which the LORD hath made; we will rejoice and be glad in it.", "rejoice", ["sing", "kneel"]),
-              ("2 Timothy 1:7", "For God hath not given us the spirit of fear; but of power, and of love, and of a sound mind.", "fear", ["doubt", "pride"]),
-              ("Hebrews 11:1", "Now faith is the substance of things hoped for, the evidence of things not seen.", "faith", ["hope", "love"]),
-              ("Luke 1:37", "For with God nothing shall be impossible.", "impossible", ["hidden", "difficult"]),
-              ("Proverbs 15:1", "A soft answer turneth away wrath: but grievous words stir up anger.", "soft", ["loud", "quick"]),
-              ("John 14:6", "Jesus saith unto him, I am the way, the truth, and the life: no man cometh unto the Father, but by me.", "truth", ["light", "door"]),
-              ("Matthew 6:33", "But seek ye first the kingdom of God, and his righteousness; and all these things shall be added unto you.", "first", ["only", "daily"]),
-              ("1 John 4:8", "He that loveth not knoweth not God; for God is love.", "love", ["peace", "joy"]),
-              ("Psalm 46:1", "God is our refuge and strength, a very present help in trouble.", "refuge", ["king", "judge"]),
-              ("Romans 8:31", "What shall we then say to these things? If God be for us, who can be against us?", "against", ["beside", "before"]),
-              ("Psalm 34:8", "O taste and see that the LORD is good: blessed is the man that trusteth in him.", "taste", ["touch", "hear"]),
-              ("Isaiah 40:31", "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles; they shall run, and not be weary; and they shall walk, and not faint.", "eagles", ["doves", "angels"]),
-              ("Matthew 5:14", "Ye are the light of the world. A city that is set on an hill cannot be hid.", "hill", ["rock", "tower"]),
-              ("Galatians 6:9", "And let us not be weary in well doing: for in due season we shall reap, if we faint not.", "reap", ["rest", "win"]),
+              ("John 3:16", "For God so ", "loved", " the world, that he gave his only begotten Son.", ["saw", "knew"]),
+              ("Psalm 23:1", "The LORD is my ", "shepherd", "; I shall not want.", ["guide", "father"]),
+              ("Philippians 4:13", "I can do ", "all things", " through Christ which strengtheneth me.", ["great things", "hard things"]),
+              ("Proverbs 3:5", "", "Trust", " in the LORD with all thine heart; and lean not unto thine own understanding.", ["Wait", "Boast"]),
+              ("Isaiah 41:10", "Fear thou not; for I am with thee: be not ", "dismayed", "; for I am thy God: I will strengthen thee; yea, I will help thee.", ["troubled", "ashamed"]),
+              ("Matthew 11:28", "Come unto me, all ye that labour and are heavy laden, and I will give you ", "rest", ".", ["peace", "strength"]),
+              ("Jeremiah 29:11", "For I know the thoughts that I think toward you, saith the LORD, thoughts of ", "peace", ", and not of evil, to give you an expected end.", ["joy", "comfort"]),
+              ("Joshua 1:9", "Have not I commanded thee? Be strong and of a good ", "courage", "; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.", ["heart", "mind"]),
+              ("Psalm 119:105", "Thy word is a ", "lamp", " unto my feet, and a light unto my path.", ["sword", "staff"]),
+              ("Genesis 1:1", "In the beginning God ", "created", " the heaven and the earth.", ["blessed", "called"]),
+              ("Psalm 27:1", "The LORD is my ", "light", " and my salvation; whom shall I fear?", ["shepherd", "king"]),
+              ("1 Corinthians 13:4", "Charity suffereth long, and is ", "kind", "; charity envieth not; charity vaunteth not itself, is not puffed up.", ["wise", "strong"]),
+              ("Ephesians 2:8", "For by ", "grace", " are ye saved through faith; and that not of yourselves: it is the gift of God.", ["works", "law"]),
+              ("Matthew 7:7", "Ask, and it shall be given you; seek, and ye shall find; ", "knock", ", and it shall be opened unto you.", ["pray", "call"]),
+              ("Psalm 118:24", "This is the day which the LORD hath made; we will ", "rejoice", " and be glad in it.", ["sing", "kneel"]),
+              ("2 Timothy 1:7", "For God hath not given us the spirit of ", "fear", "; but of power, and of love, and of a sound mind.", ["doubt", "pride"]),
+              ("Hebrews 11:1", "Now ", "faith", " is the substance of things hoped for, the evidence of things not seen.", ["hope", "love"]),
+              ("Luke 1:37", "For with God nothing shall be ", "impossible", ".", ["hidden", "hard"]),
+              ("Proverbs 15:1", "A ", "soft answer", " turneth away wrath: but grievous words stir up anger.", ["quick reply", "loud voice"]),
+              ("John 14:6", "Jesus saith unto him, I am the way, the ", "truth", ", and the life: no man cometh unto the Father, but by me.", ["light", "door"]),
+              ("Matthew 6:33", "But seek ye ", "first", " the kingdom of God, and his righteousness; and all these things shall be added unto you.", ["only", "daily"]),
+              ("1 John 4:8", "He that loveth not knoweth not God; for God is ", "love", ".", ["good", "just"]),
+              ("Psalm 46:1", "God is our ", "refuge and strength", ", a very present help in trouble.", ["king and judge", "shield and sword"]),
+              ("Romans 8:31", "What shall we then say to these things? If God be for us, who can be ", "against us", "?", ["beside us", "before us"]),
+              ("Psalm 34:8", "O ", "taste and see", " that the LORD is good: blessed is the man that trusteth in him.", ["hear and know", "look and learn"]),
+              ("Isaiah 40:31", "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as ", "eagles", "; they shall run, and not be weary; and they shall walk, and not faint.", ["doves", "angels"]),
+              ("Matthew 5:14", "Ye are the light of the world. A city that is set on an ", "hill", " cannot be hid.", ["rock", "tower"]),
+              ("Galatians 6:9", "And let us not be weary in well doing: for in due season we shall ", "reap", ", if we faint not.", ["rest", "win"]),
           ]
 
           # (ref, verse) for unscramble
@@ -269,12 +270,30 @@ jobs:
               ("The Lost Coin", "Luke 15:8-10", "A woman loses one of her ten silver coins. She lights a lamp and searches the whole house until she finds it.", "Heaven rejoices over every person who is found."),
           ]
 
+          # Daily Encouragement: (hook, message, KJV verse, ref)
+          MSG = [
+              ("If your mind feels heavy today.", "You do not have to carry everything alone. Take a deep breath, and hand this day to God.", "Casting all your care upon him; for he careth for you.", "1 Peter 5:7"),
+              ("If you are tired today.", "It is okay to rest. Rest is not weakness. It is part of how God renews you.", "Come unto me, all ye that labour and are heavy laden, and I will give you rest.", "Matthew 11:28"),
+              ("If you feel alone right now.", "You are seen, you are known, and God is closer than you think.", "Fear thou not; for I am with thee: be not dismayed; for I am thy God: I will strengthen thee; yea, I will help thee.", "Isaiah 41:10"),
+              ("If you need strength today.", "You are stronger than this moment. Take one small step, and God will meet you there.", "I can do all things through Christ which strengtheneth me.", "Philippians 4:13"),
+              ("If you are waiting on an answer.", "Waiting is not wasted. God is working even when you cannot see it.", "Wait on the LORD: be of good courage, and he shall strengthen thine heart: wait, I say, on the LORD.", "Psalm 27:14"),
+              ("If you need hope today.", "Your story is not over. Good things can still grow from where you are standing.", "For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.", "Jeremiah 29:11"),
+              ("If you feel like you are not enough.", "You are loved, not for what you do, but because of who made you.", "But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us.", "Romans 5:8"),
+              ("If you need peace today.", "Peace is not the absence of storms. It is knowing who is with you in them.", "Peace I leave with you, my peace I give unto you: not as the world giveth, give I unto you. Let not your heart be troubled, neither let it be afraid.", "John 14:27"),
+              ("If you are starting a new day.", "Today is a gift. Begin it with thanks, and walk into it with courage.", "This is the day which the LORD hath made; we will rejoice and be glad in it.", "Psalm 118:24"),
+              ("If you are afraid right now.", "Courage is not having no fear. It is trusting God while you are afraid.", "What time I am afraid, I will trust in thee.", "Psalm 56:3"),
+              ("If you need a fresh start.", "A new beginning is always available. Come as you are.", "If we confess our sins, he is faithful and just to forgive us our sins, and to cleanse us from all unrighteousness.", "1 John 1:9"),
+              ("If everything feels like too much.", "One step at a time is still progress. You do not have to solve it all today.", "Thy word is a lamp unto my feet, and a light unto my path.", "Psalm 119:105"),
+              ("If you forgot to be thankful today.", "There is always something to be grateful for. Start with just one.", "O give thanks unto the LORD; for he is good: for his mercy endureth for ever.", "Psalm 107:1"),
+              ("If you need joy today.", "Joy can live right next to sorrow. Let a little light in today.", "Weeping may endure for a night, but joy cometh in the morning.", "Psalm 30:5"),
+          ]
+
           # ================================================================== PICK FORMAT / THEME
           USED_FILE = "used.json"
           used = json.load(open(USED_FILE)) if os.path.exists(USED_FILE) else {}
 
-          FORMATS = ["fill_verse", "unscramble", "true_false", "order_events", "guess_book", "names_of_jesus", "parable"]
-          WEIGHTS = [3, 2, 3, 2, 3, 2, 1]
+          FORMATS = ["fill_verse", "unscramble", "true_false", "order_events", "guess_book", "names_of_jesus", "parable", "message"]
+          WEIGHTS = [3, 2, 3, 2, 3, 2, 1, 3]
           fmt = os.environ.get("GAME", "auto")
           if fmt not in FORMATS:
               last = used.get("_last_fmt")
@@ -283,7 +302,8 @@ jobs:
 
           SERIES = {"fill_verse": ("quiz", "BIBLE QUIZ"), "unscramble": ("quiz", "BIBLE QUIZ"), "true_false": ("quiz", "BIBLE QUIZ"),
                     "order_events": ("quiz", "BIBLE QUIZ"), "guess_book": ("quiz", "BIBLE QUIZ"),
-                    "names_of_jesus": ("names", "NAMES OF JESUS"), "parable": ("parable", "PARABLES OF JESUS")}
+                    "names_of_jesus": ("names", "NAMES OF JESUS"), "parable": ("parable", "PARABLES OF JESUS"),
+                    "message": ("message", "DAILY ENCOURAGEMENT")}
           ck, label = SERIES[fmt]
           eps = used.setdefault("_ep", {})
           eps[ck] = eps.get(ck, 0) + 1
@@ -306,29 +326,31 @@ jobs:
           THEMES = {
               "sunrise_gold": dict(bg="sunrise", tx="#FFFFFF", sh=True, panel=(255, 250, 238, 238), pink="#3A1D08",
                                    acc="#C2570C", acc_ink="#FFFFFF", chips=["#E0662A", "#C98A1C", "#B5532A", "#C77D1E"], chip_ink="#FFFFFF",
-                                   fh=PLAY_B, fb=SERIF_B, part=("#FFF2C2", 26, "mote"), mood="warm"),
+                                   fh=PLAY_B, fb=SERIF_B, part=("#FFF2C2", 26, "mote")),
               "midnight_stars": dict(bg="midnight", tx="#FFFFFF", sh=True, panel=(12, 18, 54, 218), pink="#F4F1E8",
                                      acc="#F5C84C", acc_ink="#14183A", chips=["#2E4A9E", "#5B3FA0", "#1F6F8B", "#3B5BCF"], chip_ink="#FFFFFF",
-                                     fh=SERIF_B, fb=SANS_B, part=("#FFF6D6", 60, "twinkle"), mood="night"),
+                                     fh=SERIF_B, fb=SANS_B, part=("#FFF6D6", 60, "twinkle")),
               "stained_glass": dict(bg="glass", tx="#FFFFFF", sh=True, panel=(18, 10, 34, 222), pink="#FFFFFF",
                                     acc="#FFD36B", acc_ink="#2A1740", chips=["#8E1B3A", "#1B4F9C", "#1E7A4A", "#6A2C91"], chip_ink="#FFFFFF",
-                                    fh=GAR_B, fb=SERIF_B, part=("#FFFFFF", 0, "mote"), mood="choir"),
+                                    fh=GAR_B, fb=SERIF_B, part=("#FFFFFF", 0, "mote")),
               "parchment": dict(bg="parchment", tx="#4A2E12", sh=False, panel=(255, 248, 230, 242), pink="#3B2410",
                                 acc="#8B2E1A", acc_ink="#FFF4DC", chips=["#7A4A22", "#8B2E1A", "#5B6B2E", "#3E5C76"], chip_ink="#FFF4DC",
-                                fh=GAR_B, fb=GAR_B, part=("#8A6A3A", 14, "mote"), mood="classic"),
+                                fh=GAR_B, fb=GAR_B, part=("#8A6A3A", 14, "mote")),
               "watercolor": dict(bg="watercolor", tx="#2F3E55", sh=False, panel=(255, 255, 255, 228), pink="#2F3E55",
                                  acc="#D2628A", acc_ink="#FFFFFF", chips=["#5E8FC9", "#D2728F", "#5FAE86", "#D79A52"], chip_ink="#FFFFFF",
-                                 fh=SANS_B, fb=SANS_B, part=("#FFFFFF", 16, "mote"), mood="soft"),
+                                 fh=SANS_B, fb=SANS_B, part=("#FFFFFF", 16, "mote")),
               "minimal_dark": dict(bg="minimal", tx="#E8E2D0", sh=True, panel=(24, 24, 26, 238), pink="#F2EEE3",
                                    acc="#D4AF37", acc_ink="#141414", chips=["#2B2B2E", "#34343A", "#2B2B2E", "#34343A"], chip_ink="#F2EEE3",
-                                   fh=SERIF_B, fb=SANS_B, part=("#D4AF37", 14, "mote"), mood="modern"),
+                                   fh=SERIF_B, fb=SANS_B, part=("#D4AF37", 14, "mote")),
               "dawn_sky": dict(bg="dawn", tx="#FFFFFF", sh=True, panel=(44, 26, 74, 214), pink="#FFFFFF",
                                acc="#FFD7A0", acc_ink="#3B2257", chips=["#7B4FA6", "#C0587E", "#E08A5C", "#5A6CC0"], chip_ink="#FFFFFF",
-                               fh=PLAY_B, fb=SANS_B, part=("#FFFFFF", 22, "mote"), mood="warm"),
+                               fh=PLAY_B, fb=SANS_B, part=("#FFFFFF", 22, "mote")),
           }
+          BRIGHT = ["sunrise_gold", "watercolor", "dawn_sky"]   # used for encouragement messages
           tname = os.environ.get("THEME", "auto")
           if tname not in THEMES:
-              tname = random.choice([k for k in THEMES if k != used.get("_last_theme")])
+              pool = [k for k in (BRIGHT if fmt == "message" else list(THEMES)) if k != used.get("_last_theme")]
+              tname = random.choice(pool)
           th = THEMES[tname]
           print("Format:", fmt, "| Theme:", tname, "| Episode:", EP)
 
@@ -672,8 +694,10 @@ jobs:
 
 
           def build_fill():
-              ref, text, ans, dis = pick_item(FV, lambda p: p[0])
-              blank = re.sub(r"\b" + re.escape(ans) + r"\b", "_____", text, flags=re.I)
+              ref, before, ans, after, dis = pick_item(FV, lambda p: p[0])
+              blank = before + "_____" + after
+              full = before + ans + after
+              assert blank.count("_____") == 1, "Finish the Verse must have exactly one gap"
               opts = [ans] + dis
               random.shuffle(opts)
               ci = opts.index(ans)
@@ -684,7 +708,7 @@ jobs:
                   hook=f"Can you finish this Bible verse from {ref}? Test your Bible knowledge with this quick Bible quiz about Jesus and Scripture.",
                   body="Pause the video if you need more time, then comment your answer below. The answer is revealed at the end of the Short.",
                   cta="Comment A, B, or C and tell us if you got it right!",
-                  comment=f"\u2705 Answer: {disp[ci]}\n{ref} (KJV)\n\n\"{text}\"\n\nDid you get it right? Tell us below \U0001F447 Which verse should we do next?",
+                  comment=f"\u2705 Answer: {disp[ci]}\n{ref} (KJV)\n\n\"{full}\"\n\nDid you get it right? Tell us below \U0001F447 Which verse should we do next?",
                   hashtags=HASH_Q, tags=["finish the verse", "bible verse quiz", ref.lower()])
               return choice_quiz("FINISH THE VERSE", "Can you finish this Bible verse? " + blank, blank, disp, ci, 5,
                                  f"The answer is {ans}. That's from {spoken_ref(ref)}.", OUTRO_Q, ref_label=f"{ref} (KJV)")
@@ -853,8 +877,37 @@ jobs:
                       seg(text="Follow for more Bible stories and teachings from Jesus.")]
 
 
+          def build_message():
+              hook, msg, verse, ref = pick_item(MSG, lambda p: p[0])
+              him = panel_img(hook, th["fh"], 62, maxw=930, maxh=300, fillc=th["acc"], ink=th["acc_ink"], outline="#FFFFFF")
+              mim = panel_img(msg, th["fb"], 50, maxw=930, maxh=420)
+              y = 500
+              hy = y + him.height / 2
+              y += him.height + 30
+              my = y + mim.height / 2
+              y += mim.height + 30
+              vim = panel_img("\u201c" + verse + "\u201d", SERIF_I, 42, maxw=930, maxh=max(250, 1540 - y - 110))
+              vy = y + vim.height / 2
+              y += vim.height + 10
+              rim = pill_img(f"{ref} (KJV)", th["fb"], 44, th["acc"], th["acc_ink"])
+              ry = y + rim.height / 2
+              short_hook = hook.rstrip(".")
+              META.update(
+                  title=random.choice([f"{short_hook}, Listen to This \u2728 Bible Encouragement", f"A Message for You Today \U0001F49B {ref}", f"{short_hook} | Encouraging Bible Verse"])[:100],
+                  hook=f"{short_hook}, here is a short, encouraging message from the Bible ({ref}) to lift your faith today.",
+                  body=f"{msg}\n\n{ref} (KJV): \"{verse}\"",
+                  cta="Share this with someone who needs encouragement today.",
+                  comment=f"\U0001F49B {msg}\n\n{ref} (KJV): \"{verse}\"\n\nWho needs to hear this today? Share it with them \U0001F447",
+                  hashtags=["#Encouragement", "#BibleVerse", "#Faith", "#Jesus", "#ChristianShorts", "#Shorts"],
+                  tags=["encouraging bible verse", "bible verse for today", "daily encouragement", "christian encouragement", ref.lower()])
+              return [seg(text="A message for you. " + hook, els=header("A MESSAGE FOR YOU") + [E(him, W / 2, hy)], sfx="chime"),
+                      seg(text=msg, els=[E(mim, W / 2, my)]),
+                      seg(text=f"{spoken_ref(ref)}. {verse}", els=[E(vim, W / 2, vy), E(rim, W / 2, ry, frac=0.5)]),
+                      seg(text="You are loved, and you are not alone. Follow for a new message every day.")]
+
+
           segs = {"fill_verse": build_fill, "unscramble": build_unscramble, "true_false": build_tf, "order_events": build_order,
-                  "guess_book": build_guess, "names_of_jesus": build_names, "parable": build_parable}[fmt]()
+                  "guess_book": build_guess, "names_of_jesus": build_names, "parable": build_parable, "message": build_message}[fmt]()
 
           # ================================================================== TIMELINE
           t = 0.15
@@ -960,8 +1013,9 @@ jobs:
               return (out / (np.max(np.abs(out)) or 1)).astype(np.float32)
 
 
+          # music: one folder, bgmusic/
           EXTS = ("mp3", "wav", "m4a", "aac", "ogg", "flac", "mp4")
-          cands = [p for e in EXTS for p in glob.glob(f"bgmusic/{th['mood']}/*.{e}")] or [p for e in EXTS for p in glob.glob(f"bgmusic/*.{e}")]
+          cands = [p for e in EXTS for p in glob.glob(f"bgmusic/*.{e}")]
           m = None
           if cands:
               try:
@@ -1077,7 +1131,6 @@ jobs:
           vid = response.get("id", "")
           print(f"Uploaded: https://youtube.com/shorts/{vid}")
 
-          # Answer comment (needs the youtube.force-ssl scope; non-fatal if missing)
           for attempt in range(4):
               try:
                   time.sleep(20)
@@ -1090,7 +1143,6 @@ jobs:
               except Exception as ex:
                   print(f"::warning::Comment attempt {attempt + 1} failed: {ex}")
 
-          # Optional playlist per format: secret YT_PLAYLISTS = {"fill_verse":"PLxxx","true_false":"PLyyy",...}
           try:
               pl = json.loads(os.environ.get("YT_PLAYLISTS") or "{}")
               pid = pl.get(meta["fmt"])
