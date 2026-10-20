@@ -1,17 +1,20 @@
 {
  "_ep": {
-  "quiz": 2,
+  "quiz": 3,
   "names": 1
  },
  "unscramble": [
   "Matthew 11:28"
  ],
- "_last_fmt": "guess_book",
- "_last_theme": "sunrise_gold",
+ "_last_fmt": "fill_verse",
+ "_last_theme": "parchment",
  "names_of_jesus": [
   "The Way, the Truth, and the Life"
  ],
  "guess_book": [
   "Joshua 1:9"
+ ],
+ "fill_verse": [
+  "1 Corinthians 13:13"
  ]
 }
