@@ -1,14 +1,15 @@
 {
  "_ep": {
-  "quiz": 4,
+  "quiz": 5,
   "names": 1,
   "message": 1
  },
  "unscramble": [
-  "Matthew 11:28"
+  "Matthew 11:28",
+  "Matthew 6:33"
  ],
- "_last_fmt": "message",
- "_last_theme": "dawn_sky",
+ "_last_fmt": "unscramble",
+ "_last_theme": "stained_glass",
  "names_of_jesus": [
   "The Way, the Truth, and the Life"
  ],
