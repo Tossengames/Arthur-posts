@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gospel Washes (Bible Reels, Watercolor)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=block">
+<style>
+  html,body{margin:0;height:100%;background:#16120e;color:#f3ead8;font:15px system-ui,sans-serif}
+  #app{display:flex;flex-direction:column;height:100%}
+  #stage{flex:1;min-height:0;position:relative;background:#16120e}
+  canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#16120e}
+  #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 34px Caveat,cursive;pointer-events:none}
+  #bar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#241d15;border-top:1px solid #3d3122;flex-wrap:wrap}
+  #bar button,#bar select{background:#33281c;color:#f3ead8;border:1px solid #54432e;border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer;min-width:44px}
+  #bar button:focus-visible,#bar select:focus-visible,#seek:focus-visible{outline:2px solid #d9a441;outline-offset:2px}
+  #bar button[aria-pressed="true"]{background:#54432e}
+  #seek{flex:1;min-width:120px;accent-color:#d9a441}
+  #time{font-variant-numeric:tabular-nums;min-width:110px;text-align:right}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"><canvas id="c" width="720" height="1280"></canvas><div id="loading">Mixing paint...</div></div>
+  <div id="bar">
+    <button id="play" aria-label="Play">Play</button>
+    <select id="topic" aria-label="Topic"></select>
+    <input id="seek" type="range" min="0" max="30" step="0.01" value="0" aria-label="Scrub">
+    <span id="time">0:00.0</span>
+    <button id="snd" aria-pressed="true" aria-label="Sound on or off">Sound</button>
+    <button id="loop" aria-pressed="true" aria-label="Loop on or off">Loop</button>
+  </div>
+</div>
+
+<script>
+// ===================== H helper library =====================
+(function () {
+  const H = (window.H = {});
+  H.rng = function (seed = 1) {
+    let a = typeof seed === 'string' ? hashStr(seed) : (seed >>> 0) || 1;
+    const r = function () {
+      a |= 0; a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    r.range = (lo, hi) => lo + r() * (hi - lo);
+    r.int = (lo, hi) => Math.floor(lo + r() * (hi - lo + 1));
+    r.pick = (arr) => arr[Math.floor(r() * arr.length)];
+    r.chance = (p) => r() < p;
+    r.gauss = () => { let u = 0, v = 0; while (!u) u = r(); while (!v) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+    return r;
+  };
+  function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  H.lerp = (a, b, t) => a + (b - a) * t;
+  H.clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
+  H.smooth = (e0, e1, x) => { const t = H.clamp((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
+  H.ease = {
+    inOut: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+    out: (t) => 1 - Math.pow(1 - t, 3),
+    in: (t) => t * t * t,
+    back: (t) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); },
+  };
+  H.hex = (h) => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  H.rgba = (hexOrArr, a = 1) => { const [r, g, b] = Array.isArray(hexOrArr) ? hexOrArr : H.hex(hexOrArr); return `rgba(${r | 0},${g | 0},${b | 0},${a})`; };
+  H.mix = (c1, c2, t) => { const a = Array.isArray(c1) ? c1 : H.hex(c1), b = Array.isArray(c2) ? c2 : H.hex(c2); return [0, 1, 2].map((i) => a[i] + (b[i] - a[i]) * t); };
+  H.layer = (W, H_) => { const c = document.createElement('canvas'); c.width = W; c.height = H_; return c; };
+  H.grain = function (ctx, W, Hh, amount = 0.08, seed = 7, mono = true) {
+    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), d = img.data, r = H.rng(seed), k = amount * 255;
+    for (let i = 0; i < d.length; i += 4) {
+      const n = (r() - 0.5) * k;
+      if (mono) { d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+      else { d[i] += (r() - 0.5) * k; d[i + 1] += (r() - 0.5) * k; d[i + 2] += (r() - 0.5) * k; }
+    }
+    ctx.putImageData(img, 0, 0);
+  };
+  H.vignette = function (ctx, W, Hh, strength = 0.5, color = '0,0,0') {
+    const g = ctx.createRadialGradient(W / 2, Hh / 2, Math.min(W, Hh) * 0.3, W / 2, Hh / 2, Math.hypot(W, Hh) * 0.6);
+    g.addColorStop(0, `rgba(${color},0)`); g.addColorStop(1, `rgba(${color},${strength})`);
+    ctx.save(); ctx.fillStyle = g; ctx.fillRect(0, 0, W, Hh); ctx.restore();
+  };
+})();
+</script>
+
+<script>
+// ===================== SOUND kit (unchanged logic) =====================
+(function () {
+  'use strict';
+  const SOUND = (window.SOUND = {});
+  const TINY = 1e-4;
+  function rand(key) {
+    let h = 2166136261;
+    for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+    let a = h >>> 0 || 1;
+    return () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+  const STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  function hz(n) {
+    if (typeof n === 'number') return n;
+    const m = /^([A-G])([#b]?)(-?\d)$/.exec(n);
+    const semis = STEP[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (Number(m[3]) - 4) * 12 - 9;
+    return 440 * Math.pow(2, semis / 12);
+  }
+  SOUND.hz = hz;
+  SOUND.kit = function (ctx, opts) {
+    const o = opts || {};
+    const VO = !!o.voiceover;
+    const MINOR = 0.6;
+    let inMinor = false;
+    const gainOf = (p, d) => (p.gain == null ? d : p.gain) * (VO && (p.minor || inMinor) ? MINOR : 1);
+    const T0 = (o.start || 0) - 0;
+    const base = ctx.currentTime + (o.delay || 0);
+    const SR = ctx.sampleRate;
+    const at = (t) => (Math.round((base + (t - T0)) * SR) + 0.25) / SR;
+    const master = ctx.createGain(); master.gain.value = o.master == null ? 0.9 : o.master;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -16; comp.knee.value = 8; comp.ratio.value = 3; comp.attack.value = 0.004; comp.release.value = 0.18;
+    comp.connect(master); master.connect(o.dest || ctx.destination);
+    const bus = {};
+    for (const [name, g] of Object.entries({ sfx: VO ? 0.7 : 0.85, amb: 0.5, music: 0.45 })) { bus[name] = ctx.createGain(); bus[name].gain.value = g; bus[name].connect(comp); }
+    const verb = ctx.createConvolver();
+    {
+      const secs = 1.6, n = Math.floor(secs * ctx.sampleRate), ir = ctx.createBuffer(2, n, ctx.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const r = rand('verb' + c), d = ir.getChannelData(c); let lp = 0;
+        for (let i = 0; i < n; i++) { const u = i / n; lp += (0.6 - 0.45 * u) * ((r() * 2 - 1) - lp); d[i] = lp * Math.pow(1 - u, 3); }
+      }
+      verb.buffer = ir;
+    }
+    const verbIn = ctx.createGain(); verbIn.gain.value = 0.9; verbIn.connect(verb); verb.connect(comp);
+    const noiseBuf = {};
+    {
+      const n = Math.floor(2.5 * ctx.sampleRate);
+      for (const kind of ['white', 'pink', 'brown']) {
+        const b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0), r = rand('noise-' + kind);
+        let p0 = 0, p1 = 0, p2 = 0, br = 0;
+        for (let i = 0; i < n; i++) {
+          const w = r() * 2 - 1;
+          if (kind === 'white') d[i] = w;
+          else if (kind === 'pink') { p0 = 0.997 * p0 + 0.029 * w; p1 = 0.985 * p1 + 0.032 * w; p2 = 0.95 * p2 + 0.048 * w; d[i] = (p0 + p1 + p2 + w * 0.05) * 2.2; }
+          else { br = (br + 0.02 * w) / 1.02; d[i] = br * 3.2; }
+        }
+        noiseBuf[kind] = b;
+      }
+    }
+    function sweep(param, v, t) {
+      if (!Array.isArray(v)) { param.setValueAtTime(v, t); return; }
+      param.setValueAtTime(v[0][1], t + v[0][0]);
+      for (let i = 1; i < v.length; i++) param.exponentialRampToValueAtTime(Math.max(v[i][1], 1), t + v[i][0]);
+    }
+    function shape(param, t, gain, dur, a, hold) {
+      a = Math.min(a == null ? 0.004 : a, dur * 0.9);
+      hold = Math.min(hold || 0, dur - a);
+      param.setValueAtTime(0, t);
+      param.linearRampToValueAtTime(gain, t + a);
+      if (hold > 0) param.setValueAtTime(gain, t + a + hold);
+      param.exponentialRampToValueAtTime(TINY, t + dur);
+      param.setValueAtTime(0, t + dur + 0.001);
+    }
+    function out(node, p) {
+      const pan = ctx.createStereoPanner(); pan.pan.value = Math.max(-1, Math.min(1, p.pan || 0));
+      node.connect(pan); pan.connect(bus[p.bus || 'sfx']);
+      if (p.verb) { const s = ctx.createGain(); s.gain.value = p.verb; pan.connect(s); s.connect(verbIn); }
+    }
+    function filterNode(p, t) {
+      if (!p.filter) return null;
+      const f = ctx.createBiquadFilter(); f.type = p.filter; f.Q.value = p.q == null ? 1 : p.q;
+      sweep(f.frequency, p.f == null ? 1000 : p.f, t);
+      return f;
+    }
+    function tone(time, p) {
+      const t = at(time), dur = p.dur || 0.2;
+      if (t + dur < ctx.currentTime || (time < T0 - 0.001 && dur < 1.5)) return;
+      const osc = ctx.createOscillator(); osc.type = p.type || 'sine';
+      sweep(osc.frequency, Array.isArray(p.f) ? p.f.map(([d, v]) => [d, hz(v)]) : hz(p.f || 440), t);
+      if (p.detune) osc.detune.value = p.detune;
+      const g = ctx.createGain(); shape(g.gain, t, gainOf(p, 0.3), dur, p.a, p.hold);
+      let node = osc;
+      if (p.filter) { const f = ctx.createBiquadFilter(); f.type = p.filter; f.Q.value = p.q == null ? 0.8 : p.q; sweep(f.frequency, p.f2 || 2000, t); osc.connect(f); node = f; }
+      node.connect(g); out(g, p);
+      osc.start(t); osc.stop(t + dur + 0.02);
+    }
+    function noise(time, p) {
+      const t = at(time), dur = p.dur || 0.2;
+      if (t + dur < ctx.currentTime || (time < T0 - 0.001 && dur < 1.5)) return;
+      const src = ctx.createBufferSource(); src.buffer = noiseBuf[p.color || 'white']; src.loop = true;
+      if (p.rate) src.playbackRate.value = p.rate;
+      const g = ctx.createGain(); shape(g.gain, t, gainOf(p, 0.3), dur, p.a, p.hold);
+      const f = filterNode(p, t);
+      if (f) { src.connect(f); f.connect(g); } else src.connect(g);
+      out(g, p);
+      const off = rand('off' + time + (p.f || ''))() * 2;
+      src.start(t, off); src.stop(t + dur + 0.02);
+    }
+    const S = {
+      tock: (t, o) => { tone(t, { f: o.f || 820, dur: 0.07, gain: 0.25 * o.g, pan: o.pan }); noise(t, { dur: 0.05, filter: 'bandpass', f: o.f || 820, q: 9, gain: 0.35 * o.g, pan: o.pan }); },
+      thud: (t, o) => { tone(t, { f: [[0, o.f || 130], [0.16, 42]], dur: 0.26, gain: 0.55 * o.g, pan: o.pan }); noise(t, { dur: 0.09, color: 'brown', filter: 'lowpass', f: 500, gain: 0.35 * o.g, pan: o.pan }); },
+      impact: (t, o) => { S.thud(t, o); noise(t, { dur: 0.7, color: 'pink', filter: 'lowpass', f: [[0, 2400], [0.6, 300]], gain: 0.3 * o.g, verb: 0.35, pan: o.pan }); },
+      ding: (t, o) => { const f = hz(o.f || 'E6'); tone(t, { f, dur: 1.3, gain: 0.2 * o.g, verb: 0.3, pan: o.pan }); tone(t, { f: f * 2.76, dur: 0.5, gain: 0.05 * o.g, verb: 0.3, pan: o.pan }); },
+      success: (t, o) => { S.ding(t, { ...o, f: o.f || 'C6' }); S.ding(t + 0.09, { ...o, f: hz(o.f || 'C6') * 1.5, g: o.g * 0.9 }); },
+      stroke: (t, o) => {
+        const d = o.dur || 0.4, m = o.material || 'marker', r = rand('stroke' + m + t);
+        const M = {
+          marker: { f: 2900, q: 2.2, g: 0.16, grain: 0.05 },
+          pencil: { f: 4600, q: 0.8, g: 0.16, grain: 0.04, filter: 'highpass' },
+          brush: { f: 900, q: 0.5, g: 0.1, grain: 0.09, color: 'pink' },
+        }[m];
+        for (let x = 0; x < d; x += M.grain * (0.7 + r() * 0.6)) {
+          const gd = M.grain * (0.8 + r() * 0.9);
+          noise(t + x, { dur: gd, color: M.color, filter: M.filter || 'bandpass', f: M.f * (0.8 + r() * 0.4), q: M.q, gain: M.g * o.g * (0.6 + r() * 0.5), a: gd * 0.3, pan: (o.pan || 0) + (r() - 0.5) * 0.2 });
+        }
+      },
+    };
+    function play(name, t, opts) {
+      const fn = S[name];
+      if (!fn) throw new Error('unknown sound: ' + name);
+      const o2 = Object.assign({}, opts); o2.g = o2.gain == null ? 1 : o2.gain;
+      if (opts && opts.minor) withMinor(() => fn(t, o2)); else fn(t, o2);
+    }
+    function withMinor(fn) { const was = inMinor; inMinor = true; try { fn(); } finally { inMinor = was; } }
+    function bed(name, t0, t1, p) {
+      if (VO) return;
+      p = p || {}; const g = p.gain == null ? 1 : p.gain, d = t1 - t0, fade = Math.min(0.4, d / 4);
+      const long = (q) => Object.assign({ dur: d, a: fade, hold: d - fade * 2, bus: 'amb' }, q);
+      if (name === 'room') noise(t0, long({ color: 'brown', filter: 'lowpass', f: 320, gain: 0.12 * g }));
+      else throw new Error('unknown bed: ' + name);
+    }
+    function music(name, t0, t1, p) {
+      if (VO) return;
+      p = p || {}; const g = p.gain == null ? 1 : p.gain, bpm = p.bpm || 100, beat = 60 / bpm, bar = beat * 4;
+      const chords = p.chords || [['C4', 'E4', 'G4', 'B4']];
+      let i = 0;
+      for (let t = t0; t < t1 - 0.05; t += bar, i++) {
+        const ch = chords[i % chords.length], len = Math.min(bar, t1 - t);
+        ch.forEach((n, k) => { tone(t, { f: n, type: 'triangle', dur: len + 0.3, gain: 0.035 * g, a: 0.25, hold: len - 0.3, bus: 'music', filter: 'lowpass', f2: 1400, pan: (k - 1.5) * 0.25, verb: 0.25 }); tone(t, { f: hz(n) * 1.004, type: 'sine', dur: len + 0.3, gain: 0.03 * g, a: 0.3, hold: len - 0.3, bus: 'music' }); });
+      }
+    }
+    return { play, bed, music, tone, noise, withMinor, hz, vo: VO };
+  };
+  SOUND.live = function (fn, fromT, opts) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    fn(SOUND.kit(ctx, Object.assign({}, opts, { start: fromT || 0, delay: 0.03 })));
+    return () => { try { ctx.close(); } catch (e) {} };
+  };
+  SOUND.renderOffline = async function (fn, duration, sampleRate, kitOpts) {
+    const sr = sampleRate || 48000, len = Math.ceil(duration * sr);
+    const ctx = new OfflineAudioContext(2, len, sr);
+    fn(SOUND.kit(ctx, kitOpts || {}));
+    const buf = await ctx.startRendering();
+    const L = buf.getChannelData(0), R = buf.getChannelData(1), inter = new Float32Array(len * 2);
+    let peak = 0;
+    for (let i = 0; i < len; i++) { inter[2 * i] = L[i]; inter[2 * i + 1] = R[i]; peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i])); }
+    return { inter, peak, frames: len, sr };
+  };
+})();
+</script>
+
+<script>
+// ===================== WATERCOLOR ENGINE (portrait 720x1280 for Reels) =====================
+const CW = 720, CH = 1280, TAU = Math.PI * 2;
+const cl = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const lerp = (a, b, u) => a + (b - a) * u;
+const win = (t, a, b) => cl((t - a) / (b - a));
+const ez = (u) => H.ease.inOut(cl(u));
+const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+const rgbs = (a) => `rgb(${a[0]},${a[1]},${a[2]})`;
+
+function deform(pts, r, depth, amt) {
+  let p = pts;
+  for (let d = 0; d < depth; d++) {
+    const out = [];
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length];
+      out.push(a);
+      const len = Math.hypot(b.x - a.x, b.y - a.y), v = (a.v + b.v) * 0.5, s = len * amt * v;
+      out.push({ x: (a.x + b.x) / 2 + r.gauss() * s, y: (a.y + b.y) / 2 + r.gauss() * s, v: v * (0.7 + r() * 0.6) });
+    }
+    p = out;
+  }
+  return p;
+}
+function poly(c, pts) { c.beginPath(); c.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y); c.closePath(); }
+const P = (x, y, v = 1) => ({ x, y, v });
+function circlePts(cx, cy, rx, ry, n, r, vv = 1) {
+  const out = [];
+  for (let i = 0; i < n; i++) { const a = TAU * i / n; out.push(P(cx + Math.cos(a) * rx, cy + Math.sin(a) * ry, vv * (0.6 + r() * 0.8))); }
+  return out;
+}
+function exWash(c, base, col, { layers = 26, alpha = 0.06, amt = 0.14, depth = 3, seed = 1, comp = 'source-over' } = {}) {
+  const r = H.rng(seed);
+  c.save(); c.globalCompositeOperation = comp; c.fillStyle = Array.isArray(col) ? H.rgba(col, 1) : col;
+  for (let i = 0; i < layers; i++) { c.globalAlpha = alpha * (0.6 + r() * 0.8); poly(c, deform(base, r, depth, amt)); c.fill(); }
+  c.restore();
+}
+const disc = (x, y, rx, ry, seed) => deform(circlePts(x, y, rx, ry, 12, H.rng(seed), 1), H.rng(seed + 1), 2, 0.12);
+const lift = (c, pts, a, seed, layers = 10) => exWash(c, pts, '#000', { layers, alpha: a / 5, amt: 0.3, depth: 2, seed, comp: 'destination-out' });
+function drop(c, col, blobs) {
+  c.save(); c.globalCompositeOperation = 'source-atop';
+  blobs.forEach(([x, y, rx, ry, a]) => {
+    c.save(); c.translate(x, y); c.scale(1, ry / rx); const g = c.createRadialGradient(0, 0, 0, 0, 0, rx * 1.3);
+    g.addColorStop(0, H.rgba(col, a)); g.addColorStop(0.55, H.rgba(col, a * 0.7)); g.addColorStop(1, H.rgba(col, 0));
+    c.fillStyle = g; c.fillRect(-rx * 1.3, -rx * 1.3, rx * 2.6, rx * 2.6); c.restore();
+  });
+  c.restore();
+}
+function rimPool(cv, pool = 2.2, blur = 4) {
+  const w = cv.width, h = cv.height, c = cv.getContext('2d');
+  const B = H.layer(w, h), b = B.getContext('2d');
+  b.filter = `blur(${blur}px)`; b.drawImage(cv, 0, 0); b.filter = 'none';
+  const A = c.getImageData(0, 0, w, h), d = A.data, e = b.getImageData(0, 0, w, h).data;
+  for (let i = 3; i < d.length; i += 4) { const rim = d[i] - e[i]; if (rim > 0) d[i] = Math.min(255, d[i] + rim * pool); }
+  c.putImageData(A, 0, 0);
+  return cv;
+}
+let SOFT = null;
+function softMottle() {
+  if (SOFT) return SOFT;
+  const r = H.rng(77);
+  const cell = (w, h, lo) => { const c = H.layer(w, h), x = c.getContext('2d'), im = x.createImageData(w, h); for (let i = 0; i < w * h; i++) im.data[i * 4 + 3] = (lo + r() * (1 - lo)) * 255; x.putImageData(im, 0, 0); return c; };
+  const m = H.layer(760, 1240), mx = m.getContext('2d'); mx.imageSmoothingQuality = 'high';
+  mx.drawImage(cell(48, 80, 0.55), 0, 0, 760, 1240); mx.globalCompositeOperation = 'destination-in'; mx.drawImage(cell(160, 260, 0.75), 0, 0, 760, 1240);
+  SOFT = H.layer(760, 1240); const s = SOFT.getContext('2d'); s.fillStyle = 'rgba(0,0,0,0.5)'; s.fillRect(0, 0, 760, 1240); s.drawImage(m, 0, 0);
+  return SOFT;
+}
+function mk(w, h, fn, pool = 2.4, blur = 5) {
+  const cv = H.layer(w, h), c = cv.getContext('2d');
+  fn(c, w, h);
+  c.globalCompositeOperation = 'destination-in'; c.drawImage(softMottle(), 0, 0, w, h); c.globalCompositeOperation = 'source-over';
+  rimPool(cv, pool, blur);
+  return cv;
+}
+function bloomIn(c, cv, x, y, p, w = cv.width, h = cv.height) {
+  if (p <= 0) return;
+  c.save(); c.globalCompositeOperation = 'multiply';
+  if (p >= 1) { c.drawImage(cv, x, y, w, h); c.restore(); return; }
+  const T = H.layer(Math.ceil(w), Math.ceil(h)), tc = T.getContext('2d');
+  tc.drawImage(cv, 0, 0, w, h); tc.globalCompositeOperation = 'destination-in';
+  const r = Math.hypot(w, h) * 0.55 * H.ease.out(p), g = tc.createRadialGradient(w / 2, h / 2, r * 0.6, w / 2, h / 2, r + 1);
+  g.addColorStop(0, '#000'); g.addColorStop(1, 'rgba(0,0,0,0)'); tc.fillStyle = g; tc.fillRect(0, 0, w, h);
+  c.globalAlpha = Math.min(1, p * 1.5); c.drawImage(T, x, y); c.restore();
+}
+function pencil(c, pts, prog = 1, a = 0.4, w = 1.4) {
+  if (prog <= 0) return;
+  const n = Math.max(2, Math.ceil(pts.length * cl(prog)));
+  c.save(); c.strokeStyle = `rgba(70,68,72,${a})`; c.lineWidth = w; c.lineCap = 'round';
+  c.beginPath(); for (let i = 0; i < n; i++) i ? c.lineTo(pts[i][0], pts[i][1]) : c.moveTo(pts[i][0], pts[i][1]); c.stroke(); c.restore();
+}
+const bez = (p0, p1, p2, p3, n = 40) => { const o = []; for (let i = 0; i <= n; i++) { const u = i / n, a = 1 - u; o.push([a * a * a * p0[0] + 3 * a * a * u * p1[0] + 3 * a * u * u * p2[0] + u * u * u * p3[0], a * a * a * p0[1] + 3 * a * a * u * p1[1] + 3 * a * u * u * p2[1] + u * u * u * p3[1]]); } return o; };
+const ellPts = (cx, cy, rx, ry, a0 = -0.5, a1 = -0.5 + TAU * 1.06, n = 60) => { const o = []; for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; o.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]); } return o; };
+
+// brush lettering (darker and bolder than the reference so it reads on a phone)
+const TEXTC = new Map();
+function wcText(c, str, x, y, size, col, { align = 'left', reveal = 1, weight = '700', alpha = 0.97 } = {}) {
+  if (reveal <= 0 || !str) return;
+  const key = str + '|' + size + '|' + col + '|' + weight;
+  let cv = TEXTC.get(key);
+  if (!cv) {
+    const m = H.layer(4, 4).getContext('2d'); m.font = `${weight} ${size}px "Caveat", cursive`;
+    const w = Math.ceil(m.measureText(str).width) + 30, h = Math.ceil(size * 1.5);
+    cv = H.layer(w, h); const tc = cv.getContext('2d');
+    tc.font = `${weight} ${size}px "Caveat", cursive`; tc.fillStyle = col; tc.textBaseline = 'alphabetic';
+    tc.globalAlpha = 0.92; tc.fillText(str, 15, size * 1.08); tc.globalAlpha = 0.4; tc.fillText(str, 16.2, size * 1.08 + 0.8);
+    rimPool(cv, 1.8, 2.2);
+    cv.base = size * 1.08;
+    if (TEXTC.size > 400) TEXTC.clear();
+    TEXTC.set(key, cv);
+  }
+  const w = cv.width - 30, ox = align === 'center' ? -w / 2 : align === 'right' ? -w : 0;
+  c.save(); c.globalAlpha = alpha;
+  const rw = Math.max(1, cv.width * cl(reveal));
+  c.drawImage(cv, 0, 0, rw, cv.height, x + ox - 15, y - cv.base, rw, cv.height);
+  c.restore();
+}
+function wcStroke(c, pts, w, col, prog = 1, { head = true, alpha = 0.75, taper = true } = {}) {
+  if (prog <= 0) return;
+  const L = [], R = [], n = pts.length, N = Math.max(2, Math.ceil(n * cl(prog)));
+  for (let i = 0; i < N; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+    const u = i / (n - 1), ww = w * (taper ? 0.35 + 0.65 * Math.sin(Math.min(1, u * 1.15 + 0.1) * Math.PI * 0.95) : 0.8 + 0.2 * Math.sin(i * 0.7)) * 0.5;
+    L.push([pts[i][0] - dy / l * ww, pts[i][1] + dx / l * ww]); R.push([pts[i][0] + dy / l * ww, pts[i][1] - dx / l * ww]);
+  }
+  c.save(); c.globalCompositeOperation = 'multiply'; c.fillStyle = H.rgba(col, alpha); c.strokeStyle = H.rgba(col, 0.45); c.lineWidth = 1.2; c.lineJoin = 'round';
+  c.beginPath(); L.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); for (let i = R.length - 1; i >= 0; i--) c.lineTo(R[i][0], R[i][1]); c.closePath(); c.fill(); c.stroke();
+  if (head && prog >= 1) {
+    const a = pts[n - 3] || pts[0], b = pts[n - 1], ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    c.lineCap = 'round'; c.strokeStyle = H.rgba(col, alpha); c.lineWidth = w * 0.55;
+    for (const s of [-1, 1]) { c.beginPath(); c.moveTo(b[0], b[1]); c.lineTo(b[0] - Math.cos(ang + s * 0.5) * w * 2.6, b[1] - Math.sin(ang + s * 0.5) * w * 2.6); c.stroke(); }
+  }
+  c.restore();
+}
+
+// ---------- palettes (one per mood; the paper tint changes too) ----------
+const PALS = {
+  dawn:  { paper: [252, 246, 234], s1: [246, 206, 150], s2: [150, 186, 222], warm: [244, 190, 120], gr: [150, 176, 110], gr2: [110, 140, 90], ink: [48, 50, 92], acc: [190, 52, 62] },
+  day:   { paper: [251, 248, 240], s1: [140, 190, 226], s2: [86, 130, 196], warm: [246, 214, 130], gr: [120, 170, 100], gr2: [80, 130, 86], ink: [44, 52, 112], acc: [190, 40, 60] },
+  dusk:  { paper: [250, 243, 238], s1: [236, 160, 130], s2: [110, 100, 170], warm: [244, 176, 120], gr: [120, 130, 110], gr2: [80, 90, 100], ink: [46, 40, 92], acc: [184, 46, 70] },
+  night: { paper: [244, 244, 248], s1: [70, 84, 150], s2: [34, 42, 104], warm: [250, 214, 140], gr: [50, 70, 90], gr2: [34, 50, 70], ink: [30, 34, 84], acc: [188, 48, 60] },
+  storm: { paper: [246, 247, 248], s1: [110, 128, 148], s2: [56, 74, 104], warm: [226, 214, 176], gr: [70, 100, 110], gr2: [40, 70, 86], ink: [34, 44, 84], acc: [190, 50, 56] },
+  gold:  { paper: [253, 248, 232], s1: [252, 220, 120], s2: [240, 170, 80], warm: [250, 214, 120], gr: [170, 180, 100], gr2: [120, 150, 80], ink: [70, 50, 60], acc: [176, 70, 50] },
+  earth: { paper: [250, 244, 230], s1: [236, 200, 150], s2: [190, 150, 110], warm: [232, 190, 130], gr: [190, 160, 110], gr2: [150, 120, 84], ink: [70, 48, 44], acc: [170, 60, 44] },
+  garden:{ paper: [250, 248, 238], s1: [176, 206, 150], s2: [96, 150, 120], warm: [240, 214, 130], gr: [110, 160, 90], gr2: [70, 120, 80], ink: [36, 70, 66], acc: [180, 56, 60] },
+};
+
+// ---------- scene library (640x460 watercolor vignettes; no faces) ----------
+const SC = {};
+const sky = (c, p, w, h, s) => {
+  exWash(c, deform([P(14, 26, 1.3), P(w * 0.5, 10, 1.1), P(w - 14, 30, 1.3), P(w - 4, h * 0.62, 1.4), P(w * 0.5, h * 0.74, 1.2), P(6, h * 0.64, 1.4)], H.rng(s), 3, 0.16), p.s1, { layers: 24, alpha: 0.055, amt: 0.12, seed: s + 1 });
+  exWash(c, deform([P(30, 22, 1.3), P(w * 0.55, 12, 1.2), P(w - 24, 44, 1.4), P(w * 0.6, h * 0.3, 1.1), P(50, h * 0.34, 1.3)], H.rng(s + 2), 3, 0.2), p.s2, { layers: 16, alpha: 0.04, amt: 0.14, seed: s + 3 });
+  drop(c, p.s2, [[w * 0.2, h * 0.2, 100, 60, 0.28], [w * 0.8, h * 0.28, 90, 50, 0.22]]);
+};
+const land = (c, pts, seed, col, al = 0.06) => exWash(c, deform(pts.map((q) => P(q[0], q[1], q[2] || 1)), H.rng(seed), 3, 0.14), col, { layers: 24, alpha: al, amt: 0.1, seed: seed + 1 });
+const sun = (c, p, x, y, r, s) => { lift(c, disc(x, y, r * 1.9, r * 1.9, s), 0.5, s + 2); exWash(c, disc(x, y, r, r, s + 3), p.warm, { layers: 18, alpha: 0.08, amt: 0.1, seed: s + 4 }); };
+const moon = (c, x, y, r, s) => { lift(c, disc(x, y, r * 1.8, r * 1.8, s), 0.55, s + 1); exWash(c, disc(x, y, r, r, s + 2), [246, 238, 200], { layers: 14, alpha: 0.09, amt: 0.08, seed: s + 3 }); };
+const stars = (c, w, h, s, n) => { const r = H.rng(s); for (let i = 0; i < n; i++) lift(c, disc(r.range(30, w - 30), r.range(24, h * 0.42), 3.2, 3.2, s + i * 3), 0.9, s + i * 3 + 1, 6); };
+const figure = (c, x, y, s, col, seed) => {
+  exWash(c, disc(x, y - 56 * s, 10 * s, 11 * s, seed), col, { layers: 10, alpha: 0.14, amt: 0.06, seed: seed + 1 });
+  exWash(c, deform([P(x - 15 * s, y), P(x + 15 * s, y), P(x + 10 * s, y - 44 * s), P(x - 10 * s, y - 44 * s)], H.rng(seed + 2), 2, 0.05), col, { layers: 14, alpha: 0.12, amt: 0.05, seed: seed + 3 });
+};
+const glow = (c, x, y, r, col) => { c.save(); c.filter = 'blur(12px)'; c.fillStyle = `rgba(${col},0.7)`; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); c.restore(); };
+const waves = (c, w, h, n, seed) => { const r = H.rng(seed); for (let i = 0; i < n; i++) lift(c, disc(r.range(60, w - 60), r.range(h * 0.58, h - 30), r.range(36, 80), 5, seed + i * 3), 0.55, seed + i * 3 + 1, 6); };
+const boat = (c, x, y, s, tilt) => {
+  c.save(); c.translate(x, y); c.rotate(tilt || 0); c.scale(s, s);
+  exWash(c, deform([P(-110, 0), P(110, 0), P(80, 56), P(-80, 56)], H.rng(31), 2, 0.06), [150, 96, 60], { layers: 20, alpha: 0.08, amt: 0.05, seed: 32 });
+  c.strokeStyle = 'rgba(90,62,44,.85)'; c.lineWidth = 5; c.lineCap = 'round'; c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -130); c.stroke();
+  exWash(c, deform([P(8, -124), P(8, -12), P(84, -12)], H.rng(33), 2, 0.06), [240, 232, 214], { layers: 14, alpha: 0.08, amt: 0.05, seed: 34 });
+  c.restore();
+};
+const olive = (c, x, y, s, seed) => {
+  exWash(c, deform([P(x - 16 * s, y), P(x - 9 * s, y - 70 * s), P(x - 26 * s, y - 130 * s), P(x - 6 * s, y - 100 * s), P(x + 10 * s, y - 132 * s), P(x + 8 * s, y - 66 * s), P(x + 18 * s, y)], H.rng(seed), 2, 0.08), [96, 74, 60], { layers: 20, alpha: 0.09, amt: 0.06, seed: seed + 1 });
+  [[-38, -140, 62, 36], [24, -150, 66, 38], [-6, -176, 56, 32], [52, -120, 40, 26]].forEach(([dx, dy, rx, ry], i) => exWash(c, disc(x + dx * s, y + dy * s, rx * s, ry * s, seed + 4 + i * 2), [104, 128, 108], { layers: 16, alpha: 0.07, amt: 0.14, seed: seed + 5 + i * 2 }));
+};
+const cross = (c, x, y, s, col, seed) => {
+  exWash(c, [P(x - 9 * s, y - 150 * s), P(x + 9 * s, y - 150 * s), P(x + 9 * s, y), P(x - 9 * s, y)], col, { layers: 18, alpha: 0.1, amt: 0.05, seed });
+  exWash(c, [P(x - 58 * s, y - 118 * s), P(x + 58 * s, y - 118 * s), P(x + 58 * s, y - 100 * s), P(x - 58 * s, y - 100 * s)], col, { layers: 18, alpha: 0.1, amt: 0.05, seed: seed + 1 });
+};
+const nightBase = (c, p, w, h, s) => { sky(c, p, w, h, s); stars(c, w, h, s + 5, 14); land(c, p, 0, 0); };
+SC.hill = (c, p, w, h) => {
+  sky(c, p, w, h, 10); sun(c, p, 470, 110, 44, 12);
+  land(c, [[0, 300], [160, 248], [330, 284], [500, 232], [w, 280], [w, h], [0, h]], 14, p.gr2, 0.05);
+  land(c, [[0, 372], [200, 326], [420, 356], [w, 312], [w, h], [0, h]], 16, p.gr, 0.06);
+  lift(c, deform([P(292, h, 0.6), P(318, 350, 0.5), P(340, 350, 0.5), P(420, h, 0.6)], H.rng(18), 2, 0.12), 0.4, 19);
+  drop(c, p.warm, [[420, 380, 120, 40, 0.25]]);
+};
+SC.sea = (c, p, w, h) => { sky(c, p, w, h * 0.8, 20); land(c, [[0, 236], [w, 230], [w, h], [0, h]], 22, p.s2, 0.07); drop(c, [40, 70, 120], [[200, 380, 160, 50, 0.3], [480, 330, 140, 40, 0.25]]); waves(c, w, h, 7, 24); boat(c, 320, 306, 1, 0); };
+SC.storm = (c, p, w, h) => {
+  sky(c, p, w, h * 0.8, 26); land(c, [[0, 226], [w, 218], [w, h], [0, h]], 28, p.s2, 0.08); drop(c, [20, 36, 70], [[200, 150, 200, 70, 0.35], [480, 330, 160, 50, 0.3]]); waves(c, w, h, 9, 30);
+  boat(c, 320, 320, 0.9, 0.16);
+  const r = H.rng(40); c.save(); c.strokeStyle = 'rgba(30,40,70,.35)'; c.lineWidth = 1.6; for (let i = 0; i < 44; i++) { const x = r.range(0, w), y = r.range(0, h * 0.8); c.beginPath(); c.moveTo(x, y); c.lineTo(x - 18, y + 46); c.stroke(); } c.restore();
+};
+SC.calm = (c, p, w, h) => { sky(c, p, w, h * 0.8, 44); sun(c, p, 320, 190, 40, 46); land(c, [[0, 238], [w, 238], [w, h], [0, h]], 48, p.s2, 0.05); const r = H.rng(50); for (let i = 0; i < 6; i++) lift(c, disc(r.range(80, w - 80), 270 + i * 28, r.range(80, 140), 3, 52 + i * 3), 0.6, 53 + i * 3, 6); boat(c, 330, 300, 0.8, 0); };
+SC.night = (c, p, w, h) => { sky(c, p, w, h, 60); stars(c, w, h, 62, 14); moon(c, 500, 100, 38, 64); land(c, [[0, 360], [200, 330], [420, 356], [w, 326], [w, h], [0, h]], 66, p.gr2, 0.07); olive(c, 150, 390, 1, 70); olive(c, 500, 410, 0.9, 90); };
+SC.torches = (c, p, w, h) => {
+  sky(c, p, w, h, 110); stars(c, w, h, 112, 10); land(c, [[0, 340], [w, 326], [w, h], [0, h]], 116, p.gr2, 0.08);
+  for (let i = 0; i < 6; i++) figure(c, 110 + i * 82, 410 - (i % 2) * 14, 1.05, [28, 28, 56], 120 + i * 9);
+  [[150, 330], [320, 318], [490, 326]].forEach(([x, y]) => glow(c, x, y, 20, '255,160,50'));
+};
+SC.sword = (c, p, w, h) => {
+  sky(c, p, w, h, 140); stars(c, w, h, 142, 12); land(c, [[0, 380], [w, 366], [w, h], [0, h]], 146, p.gr2, 0.08);
+  c.save(); c.translate(330, 250); c.rotate(0.28);
+  exWash(c, [P(0, -200), P(14, -160), P(14, 60), P(-14, 60), P(-14, -160)], [170, 180, 198], { layers: 20, alpha: 0.08, amt: 0.04, seed: 150 });
+  lift(c, [P(-2, -150), P(3, -150), P(3, 40), P(-2, 40)], 0.6, 151, 6);
+  exWash(c, [P(-60, 60), P(60, 60), P(60, 76), P(-60, 76)], [160, 130, 70], { layers: 16, alpha: 0.1, amt: 0.04, seed: 152 });
+  exWash(c, [P(-8, 76), P(8, 76), P(8, 130), P(-8, 130)], [96, 66, 44], { layers: 16, alpha: 0.1, amt: 0.04, seed: 153 });
+  exWash(c, disc(0, 142, 13, 13, 154), [160, 130, 70], { layers: 12, alpha: 0.1, amt: 0.05, seed: 156 });
+  c.restore();
+};
+SC.tree = (c, p, w, h) => {
+  sky(c, p, w, h, 170); land(c, [[0, 350], [220, 320], [440, 346], [w, 318], [w, h], [0, h]], 172, p.gr, 0.07);
+  exWash(c, deform([P(296, h), P(308, 300), P(298, 220), P(342, 210), P(352, 300), P(372, h)], H.rng(176), 2, 0.06), [112, 80, 56], { layers: 22, alpha: 0.09, amt: 0.05, seed: 177 });
+  [[-110, -40, 130, 80], [100, -50, 140, 84], [0, -110, 120, 76], [-20, 10, 150, 70], [150, 10, 90, 56]].forEach(([dx, dy, rx, ry], i) => exWash(c, disc(330 + dx, 180 + dy, rx, ry, 180 + i * 3), p.gr2, { layers: 16, alpha: 0.07, amt: 0.14, seed: 181 + i * 3 }));
+  figure(c, 360, 214, 0.5, [60, 44, 52], 200);
+};
+SC.house = (c, p, w, h) => {
+  sky(c, p, w, h, 210); land(c, [[0, 370], [220, 340], [w, 352], [w, h], [0, h]], 212, p.gr, 0.07);
+  exWash(c, deform([P(220, 290), P(430, 290), P(430, 396), P(220, 396)], H.rng(214), 2, 0.04), [226, 190, 140], { layers: 20, alpha: 0.09, amt: 0.04, seed: 215 });
+  exWash(c, deform([P(198, 294), P(325, 206), P(452, 294)], H.rng(216), 2, 0.05), [180, 96, 60], { layers: 20, alpha: 0.09, amt: 0.05, seed: 217 });
+  exWash(c, [P(300, 340), P(344, 340), P(344, 396), P(300, 396)], [90, 60, 50], { layers: 14, alpha: 0.1, amt: 0.04, seed: 218 });
+  glow(c, 396, 330, 14, '255,200,90');
+  lift(c, deform([P(300, h), P(316, 400), P(336, 400), P(420, h)], H.rng(219), 2, 0.1), 0.45, 220);
+};
+SC.road = (c, p, w, h) => {
+  sky(c, p, w, h, 230); sun(c, p, 480, 120, 36, 232);
+  land(c, [[0, 290], [200, 262], [w, 280], [w, h], [0, h]], 234, p.gr2, 0.05);
+  land(c, [[0, 350], [w, 330], [w, h], [0, h]], 236, p.gr, 0.05);
+  exWash(c, deform([P(300, 262), P(344, 262), P(580, h), P(60, h)], H.rng(238), 2, 0.05), [222, 180, 130], { layers: 20, alpha: 0.06, amt: 0.05, seed: 239 });
+  figure(c, 324, 300, 0.5, [60, 50, 80], 240);
+};
+SC.field = (c, p, w, h) => {
+  sky(c, p, w, h, 250); land(c, [[0, 290], [w, 270], [w, h], [0, h]], 252, [214, 176, 112], 0.07); drop(c, [150, 100, 60], [[220, 400, 160, 40, 0.25]]);
+  const r = H.rng(260); c.save(); c.strokeStyle = 'rgba(140,104,56,.55)'; c.lineWidth = 2; for (let i = 0; i < 70; i++) { const x = r.range(10, w - 10), y = r.range(310, 440); c.beginPath(); c.moveTo(x, y); c.lineTo(x + r.range(-5, 5), y - r.range(14, 34)); c.stroke(); } c.restore();
+};
+const sheep = (c, x, y, s, seed) => {
+  exWash(c, disc(x, y + 22 * s, 50 * s, 9 * s, seed), [110, 110, 150], { layers: 10, alpha: 0.06, amt: 0.1, seed: seed + 1 });
+  [[-18, 0], [10, -6], [26, 2], [-2, 8]].forEach(([dx, dy], i) => lift(c, disc(x + dx * s, y + dy * s, 26 * s, 20 * s, seed + 3 + i * 2), 0.9, seed + 4 + i * 2, 8));
+  exWash(c, disc(x - 38 * s, y + 2 * s, 12 * s, 10 * s, seed + 20), [60, 54, 66], { layers: 12, alpha: 0.12, amt: 0.06, seed: seed + 21 });
+};
+SC.sheep = (c, p, w, h) => {
+  sky(c, p, w, h, 270); land(c, [[0, 300], [200, 270], [w, 292], [w, h], [0, h]], 272, p.gr2, 0.05); land(c, [[0, 350], [w, 336], [w, h], [0, h]], 274, p.gr, 0.07);
+  [[150, 372, 0.95], [270, 402, 1.05], [400, 364, 0.9], [500, 408, 1.05], [210, 440, 0.85]].forEach((q, i) => sheep(c, q[0], q[1], q[2], 280 + i * 40));
+};
+SC.well = (c, p, w, h) => {
+  sky(c, p, w, h, 330); land(c, [[0, 350], [w, 336], [w, h], [0, h]], 332, p.gr, 0.06);
+  exWash(c, deform([P(230, 280), P(410, 280), P(410, 380), P(230, 380)], H.rng(334), 2, 0.04), [176, 160, 140], { layers: 20, alpha: 0.08, amt: 0.04, seed: 335 });
+  exWash(c, disc(320, 280, 90, 28, 336), [60, 70, 90], { layers: 16, alpha: 0.09, amt: 0.05, seed: 337 });
+  exWash(c, [P(220, 150), P(232, 150), P(232, 280), P(220, 280)], [96, 70, 50], { layers: 14, alpha: 0.1, amt: 0.04, seed: 338 });
+  exWash(c, [P(408, 150), P(420, 150), P(420, 280), P(408, 280)], [96, 70, 50], { layers: 14, alpha: 0.1, amt: 0.04, seed: 339 });
+  exWash(c, [P(210, 140), P(430, 140), P(430, 156), P(210, 156)], [96, 70, 50], { layers: 14, alpha: 0.1, amt: 0.04, seed: 340 });
+  exWash(c, disc(500, 390, 26, 34, 341), [180, 100, 70], { layers: 16, alpha: 0.09, amt: 0.06, seed: 342 });
+  c.save(); c.strokeStyle = 'rgba(90,60,40,.8)'; c.lineWidth = 3; c.beginPath(); c.moveTo(320, 156); c.lineTo(320, 250); c.stroke(); c.restore();
+};
+SC.pool = (c, p, w, h) => {
+  sky(c, p, w, h, 350); land(c, [[0, 330], [w, 320], [w, h], [0, h]], 352, [200, 186, 160], 0.07);
+  exWash(c, deform([P(120, 310), P(520, 310), P(570, 410), P(70, 410)], H.rng(354), 2, 0.05), [100, 160, 200], { layers: 22, alpha: 0.07, amt: 0.05, seed: 355 });
+  for (let i = 0; i < 5; i++) exWash(c, [P(100 + i * 112, 160), P(124 + i * 112, 160), P(124 + i * 112, 310), P(100 + i * 112, 310)], [196, 178, 150], { layers: 14, alpha: 0.09, amt: 0.04, seed: 360 + i });
+  exWash(c, [P(80, 134), P(560, 134), P(560, 160), P(80, 160)], [176, 156, 128], { layers: 14, alpha: 0.1, amt: 0.04, seed: 370 });
+};
+SC.cross = (c, p, w, h) => {
+  sky(c, p, w, h, 380); land(c, [[0, 340], [200, 300], [420, 318], [w, 290], [w, h], [0, h]], 382, p.gr2, 0.09);
+  cross(c, 320, 330, 1.25, [46, 36, 46], 384); cross(c, 190, 340, 0.85, [56, 44, 54], 386); cross(c, 450, 336, 0.85, [56, 44, 54], 388);
+};
+const tomb = (c, p, w, h, open) => {
+  sky(c, p, w, h, 400);
+  exWash(c, deform([P(60, h), P(100, 200), P(250, 100), P(430, 110), P(560, 210), P(590, h)], H.rng(402), 3, 0.08), [166, 150, 136], { layers: 24, alpha: 0.06, amt: 0.08, seed: 403 });
+  drop(c, [90, 80, 90], [[200, 300, 120, 60, 0.3]]);
+  exWash(c, deform([P(250, 420), P(250, 320), P(290, 270), P(350, 270), P(390, 320), P(390, 420)], H.rng(404), 2, 0.05), [60, 50, 56], { layers: 18, alpha: 0.1, amt: 0.04, seed: 405 });
+  if (open) { glow(c, 320, 350, 40, '255,214,110'); exWash(c, disc(480, 400, 56, 56, 406), [150, 140, 130], { layers: 20, alpha: 0.08, amt: 0.06, seed: 408 }); }
+  else exWash(c, disc(320, 350, 64, 64, 406), [150, 140, 130], { layers: 20, alpha: 0.08, amt: 0.06, seed: 408 });
+  land(c, [[0, 420], [w, 410], [w, h], [0, h]], 410, p.gr, 0.07);
+};
+SC.tomb = (c, p, w, h) => tomb(c, p, w, h, false);
+SC.tombOpen = (c, p, w, h) => { tomb(c, p, w, h, true); sun(c, p, 540, 90, 34, 412); };
+SC.light = (c, p, w, h) => {
+  sky(c, p, w, h, 300);
+  for (let k = 0; k < 14; k++) { const a = -Math.PI + (k / 13) * Math.PI; lift(c, [P(320, 250), P(320 + Math.cos(a - 0.05) * 420, 250 + Math.sin(a - 0.05) * 420), P(320 + Math.cos(a + 0.05) * 420, 250 + Math.sin(a + 0.05) * 420)], 0.3, 310 + k, 6); }
+  sun(c, p, 320, 250, 50, 330); land(c, [[0, 370], [w, 356], [w, h], [0, h]], 340, p.gr, 0.06);
+};
+const coinStack = (c, x, y, n, seed) => { for (let i = 0; i < n; i++) { const yy = y - i * 15; exWash(c, disc(x, yy + 8, 48, 16, seed + i * 3), [200, 150, 50], { layers: 12, alpha: 0.09, amt: 0.05, seed: seed + i * 3 + 1 }); exWash(c, disc(x, yy, 48, 16, seed + i * 3 + 2), [240, 196, 80], { layers: 12, alpha: 0.1, amt: 0.05, seed: seed + i * 3 + 3 }); } };
+SC.coins = (c, p, w, h) => { sky(c, p, w, h, 420); land(c, [[0, 330], [w, 330], [w, h], [0, h]], 422, [176, 130, 84], 0.08); coinStack(c, 170, 400, 3, 430); coinStack(c, 320, 420, 5, 450); coinStack(c, 470, 400, 2, 470); };
+
+const SCENEC = {};
+function sceneCanvas(kind, pal) {
+  const key = kind + '|' + pal;
+  if (!SCENEC[key]) SCENEC[key] = mk(640, 460, (c, w, h) => SC[kind](c, PALS[pal], w, h), 2.6, 5);
+  return SCENEC[key];
+}
+const WASHC = {};
+function washCanvas(it) {
+  const key = [it.pal, it.rx, it.ry, it.col.join(','), it.seed].join('|');
+  if (!WASHC[key]) {
+    const w = Math.ceil(it.rx * 2 + 80), h = Math.ceil(it.ry * 2 + 80);
+    WASHC[key] = mk(w, h, (c) => { const s = it.seed || 5; exWash(c, deform(circlePts(w / 2, h / 2, it.rx, it.ry, 12, H.rng(s), 1.2), H.rng(s + 1), 3, 0.2), it.col, { layers: 24, alpha: it.alpha || 0.035, amt: 0.15, depth: 3, seed: s + 2 }); }, 2.0, 8);
+  }
+  return WASHC[key];
+}
+
+// ---------- paper, tooth and finishing ----------
+function grid(W, H_, cell, r) {
+  const gw = Math.ceil(W / cell) + 2, gh = Math.ceil(H_ / cell) + 2, g = new Float32Array(gw * gh);
+  for (let i = 0; i < g.length; i++) g[i] = r();
+  return (x, y) => {
+    const fx = x / cell, fy = y / cell, ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy, sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const a = g[iy * gw + ix], b = g[iy * gw + ix + 1], c = g[(iy + 1) * gw + ix], d = g[(iy + 1) * gw + ix + 1];
+    return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+  };
+}
+let TOOTH = null;
+function tooth() {
+  if (TOOTH) return TOOTH;
+  const cv = H.layer(CW, CH), c = cv.getContext('2d'), im = c.createImageData(CW, CH), d = im.data, r = H.rng(99);
+  const fine = grid(CW, CH, 2.2, r), mid = grid(CW, CH, 7, r), big = grid(CW, CH, 40, r);
+  for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+    const h = fine(x, y) * 0.3 + mid(x, y) * 0.5 + big(x, y) * 0.2, v = Math.max(0, Math.min(255, 243 + (h - 0.5) * 36)), o = (y * CW + x) * 4;
+    d[o] = d[o + 1] = d[o + 2] = v; d[o + 3] = 255;
+  }
+  c.putImageData(im, 0, 0); TOOTH = cv; return cv;
+}
+const PAPERS = {};
+function paperFor(name) {
+  if (PAPERS[name]) return PAPERS[name];
+  const p = PALS[name], cv = H.layer(CW, CH), c = cv.getContext('2d');
+  c.fillStyle = rgbs(p.paper); c.fillRect(0, 0, CW, CH);
+  const r = H.rng(404); c.save(); c.globalCompositeOperation = 'multiply';
+  const ev = c.createLinearGradient(0, 0, 0, CH); ev.addColorStop(0, 'rgba(232,214,182,0.5)'); ev.addColorStop(0.15, 'rgba(250,240,222,0.1)'); ev.addColorStop(0.85, 'rgba(250,240,222,0.1)'); ev.addColorStop(1, 'rgba(228,208,172,0.55)');
+  c.fillStyle = ev; c.fillRect(0, 0, CW, CH);
+  for (let k = 0; k < 12; k++) {
+    const warm = r() < 0.5, x0 = r.range(0, CW), y0 = r.range(0, CH), rx = r.range(120, 260), ry = r.range(80, 200);
+    c.save(); c.translate(x0, y0); c.scale(1, ry / rx); const g = c.createRadialGradient(0, 0, 0, 0, 0, rx);
+    g.addColorStop(0, warm ? 'rgba(236,214,170,0.2)' : 'rgba(214,214,226,0.16)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(-rx, -rx, rx * 2, rx * 2); c.restore();
+  }
+  c.restore(); PAPERS[name] = cv; return cv;
+}
+
+// ---------- text layout ----------
+const meas = H.layer(4, 4).getContext('2d');
+function wrapLines(str, size, maxW, weight = '700') {
+  meas.font = `${weight} ${size}px "Caveat", cursive`;
+  const words = str.split(' '), out = []; let cur = '';
+  for (const w of words) { const t = cur ? cur + ' ' + w : w; if (meas.measureText(t).width > maxW && cur) { out.push(cur); cur = w; } else cur = t; }
+  if (cur) out.push(cur);
+  return out;
+}
+const GRAY = 'rgb(96,92,100)', GRAY2 = 'rgb(112,100,96)', GREEN = 'rgb(46,104,52)', SIENNA = 'rgb(150,80,44)';
+// flow(): stack text blocks top to bottom, shrinking to fit, timed one after another
+function flow(spec, o) {
+  const top = o.top, bottom = o.bottom; let f = 1, rows, endY;
+  for (;;) {
+    let y = top; rows = [];
+    for (const b of spec) {
+      if (b.t === 'gap') { y += b.h * f; continue; }
+      if (b.t === 'div') { rows.push({ b, y: y + 14 * f }); y += 30 * f; continue; }
+      const size = Math.max(36, Math.round(b.size * f)), L = wrapLines(b.s, size, b.maxW || 620, b.weight || '700');
+      rows.push({ b, L, size, y: y + size * 0.82 });
+      y += L.length * size * 1.02 + (b.after == null ? 10 : b.after) * f;
+    }
+    endY = y;
+    if (endY <= bottom || f <= 0.5) break;
+    f -= 0.05;
+  }
+  const shift = o.center ? Math.max(0, ((bottom - top) - (endY - top)) / 2) : 0;
+  const items = []; let t = o.a == null ? 0.2 : o.a;
+  for (const r of rows) {
+    const b = r.b, y0 = r.y + shift;
+    if (b.t === 'div') { items.push({ k: 'stroke', pts: bez([80, y0], [240, y0 + 8], [480, y0 - 6], [640, y0 + 4], 20), w: 6, col: [150, 140, 130], a: t, b: t + 0.4, head: false, alpha: 0.5 }); t += 0.5; continue; }
+    const align = b.align || 'center', x = align === 'left' ? 60 : 360, tot = r.L.join('').length || 1;
+    const dur = b.dur || clampN(tot * 0.03, 0.5, 2.6); let acc = 0;
+    r.L.forEach((ln, k) => {
+      const a0 = t + dur * acc / tot; acc += ln.length; const b0 = t + dur * acc / tot;
+      items.push({ k: 'text', s: ln, x, y: y0 + k * r.size * 1.02, size: r.size, col: b.col, a: a0, b: Math.max(b0, a0 + 0.12), align, weight: b.weight || '700' });
+    });
+    const lastY = y0 + (r.L.length - 1) * r.size * 1.02; t += dur;
+    if (b.ul) {
+      meas.font = `${b.weight || '700'} ${r.size}px "Caveat", cursive`; let mw = 0; r.L.forEach((ln) => { mw = Math.max(mw, meas.measureText(ln).width); });
+      const x0 = align === 'left' ? x : x - mw / 2, uy = lastY + 18;
+      items.push({ k: 'stroke', pts: bez([x0, uy], [x0 + mw * 0.3, uy + 12], [x0 + mw * 0.7, uy - 8], [x0 + mw, uy + 6], 24), w: 9, col: b.ulCol || [190, 52, 62], a: t, b: t + 0.4, head: false, alpha: 0.7 }); t += 0.4;
+    }
+    t += b.pause == null ? 0.15 : b.pause;
+  }
+  return { items, tEnd: t, endY: endY + shift, rows, shift };
+}
+const washBack = (p, cy, ry, a, seed) => ({ k: 'wash', pal: p.name, col: p.warm, cx: 360, cy, rx: 340, ry, a, b: a + 1.2, alpha: 0.032, seed });
+
+function buildLayout(T) {
+  const p = Object.assign({ name: T.pal }, PALS[T.pal]), INK = rgbs(p.ink), ACC = rgbs(p.acc), B = [];
+  const done = (items, tEnd, min = 2.4) => ({ items, d: Math.max(min, tEnd + 0.8) });
+  // beat 1: hook
+  { const fl = flow([{ s: T.series.toUpperCase(), size: 48, col: GRAY, dur: 0.6, after: 26 }, { s: T.hook, size: 110, col: INK, ul: true, maxW: 630, ulCol: p.acc }], { top: 150, bottom: 640, a: 0.3 });
+    fl.items.push({ k: 'scene', kind: T.scene, pal: T.pal, x: 40, y: 668, w: 640, h: 460, a: 0.1, b: 1.7 }); B.push(done(fl.items, fl.tEnd, 2.8)); }
+  const quoteBeat = (q, ref) => {
+    const fl = flow([{ s: 'Scripture says', size: 50, col: ACC, after: 18, dur: 0.5 }, { s: '\u201C' + q + '\u201D', size: 84, col: INK, after: 26 }, { s: '\u2014 ' + ref + ' (KJV)', size: 56, col: ACC }], { top: 190, bottom: 1060, center: true, a: 0.5 });
+    return done([washBack(p, 620, 430, 0, 11), ...fl.items], fl.tEnd, 3.2);
+  };
+  const endBeat = () => {
+    const fl = flow([{ s: T.end, size: 116, col: INK, after: 30 }, { s: '\u2014 ' + T.ref + ' (KJV)', size: 52, col: ACC }], { top: 520, bottom: 1040, center: true, a: 0.9 });
+    const items = [washBack(p, 640, 440, 0, 17), { k: 'scene', kind: 'light', pal: T.pal === 'night' ? 'dawn' : T.pal, x: 100, y: 110, w: 520, h: 374, a: 0.1, b: 1.5 }, ...fl.items];
+    return done(items, fl.tEnd, 3.0);
+  };
+  if (T.fmt === 'A') {
+    const spec = [{ s: 'Context', size: 78, col: ACC, ul: true, after: 34, dur: 0.6 }];
+    T.context.forEach(([k, v]) => { spec.push({ s: k, size: 58, col: ACC, align: 'left', after: 2, dur: 0.4 }, { s: v, size: 52, col: INK, align: 'left', after: 10, maxW: 600 }, { t: 'div' }); });
+    B.push(quoteBeat(T.quote, T.ref));
+    { const fl = flow(spec, { top: 150, bottom: 1090, a: 0.2 }); B.push(done(fl.items, fl.tEnd)); }
+    { const fl = flow([{ s: 'What it means', size: 78, col: ACC, ul: true, after: 30, dur: 0.6 }, { s: T.meaning, size: 64, col: INK, maxW: 620 }], { top: 150, bottom: 700, a: 0.2 });
+      const sh = Math.min(400, 1100 - fl.endY - 40);
+      if (sh >= 220) fl.items.push({ k: 'scene', kind: T.scene2 || T.scene, pal: T.pal, x: 360 - sh * 640 / 460 / 2, y: fl.endY + 30, w: sh * 640 / 460, h: sh, a: fl.tEnd, b: fl.tEnd + 1.2 });
+      B.push(done(fl.items, fl.tEnd + (sh >= 220 ? 1.2 : 0))); }
+    { const fl = flow([{ s: T.key, size: 140, col: INK, after: 40, dur: 1.2 }, { s: '\u2014 ' + (T.keyRef || T.ref) + ' (KJV)', size: 56, col: ACC }], { top: 250, bottom: 1000, center: true, a: 0.5 });
+      const r0 = fl.rows[0]; let mw = 0; meas.font = `700 ${r0.size}px "Caveat", cursive`; r0.L.forEach((ln) => { mw = Math.max(mw, meas.measureText(ln).width); });
+      const ty = r0.y + fl.shift - r0.size * 0.8, hh = r0.L.length * r0.size * 1.02;
+      fl.items.push({ k: 'stroke', pts: ellPts(360, ty + hh / 2, Math.min(340, mw / 2 + 50), hh / 2 + 44), w: 9, col: p.acc, a: fl.tEnd, b: fl.tEnd + 0.6, head: false, alpha: 0.7, sfx: 'hit' });
+      B.push(done([washBack(p, 620, 400, 0, 13), ...fl.items], fl.tEnd + 0.6, 3.0)); }
+    { const fl = flow([{ s: 'Try this today', size: 78, col: GREEN, ul: true, ulCol: [54, 110, 56], after: 30, dur: 0.6 }, { s: T.step, size: 66, col: INK, maxW: 620 }], { top: 190, bottom: 900, a: 0.2 });
+      fl.items.push({ k: 'stroke', pts: [[300, fl.endY + 70], [338, fl.endY + 112], [420, fl.endY + 30]], w: 14, col: [60, 130, 60], a: fl.tEnd, b: fl.tEnd + 0.4, head: false, alpha: 0.85, sfx: 'ok' });
+      B.push(done(fl.items, fl.tEnd + 0.4)); }
+    B.push(endBeat());
+  } else {
+    T.panels.forEach((pn, k) => {
+      const top = (T.id.length + k) % 2 === 0, sw = 544, sh = 391, spec = [{ s: 'Scripture says', size: 46, col: ACC, after: 8, dur: 0.4 }, { s: pn.cap, size: 62, col: INK, after: 12 }, { s: '\u2014 ' + pn.ref + ' (KJV)', size: 46, col: GRAY2, after: 18 }];
+      if (pn.ctx) spec.push({ s: 'Context', size: 42, col: SIENNA, after: 4, dur: 0.4 }, { s: pn.ctx, size: 44, col: GRAY, maxW: 620 });
+      const fl = flow(spec, top ? { top: 120 + sh + 36, bottom: 1100, a: 0.8 } : { top: 130, bottom: 1100 - sh - 36, a: 0.8 });
+      const sy = top ? 120 : 1100 - sh, fx = 360 - sw / 2;
+      fl.items.push({ k: 'scene', kind: pn.scene, pal: pn.pal || T.pal, x: fx, y: sy, w: sw, h: sh, a: 0.1, b: 1.5 });
+      fl.items.push({ k: 'pencil', pts: [[fx - 6, sy - 6], [fx + sw + 6, sy - 4], [fx + sw + 4, sy + sh + 6], [fx - 4, sy + sh + 4], [fx - 6, sy - 6]], a: 0.2, b: 1.0 });
+      B.push(done(fl.items, fl.tEnd, 3.0));
+    });
+    B.push(quoteBeat(T.quote, T.ref));
+    { const fl = flow([{ s: 'What it means', size: 72, col: ACC, ul: true, after: 24, dur: 0.6 }, { s: T.meaning, size: 58, col: INK, after: 14 }, { t: 'div' }, { s: 'Try this today', size: 62, col: GREEN, after: 6, dur: 0.6 }, { s: T.step, size: 58, col: INK }], { top: 160, bottom: 1080, a: 0.2 }); B.push(done(fl.items, fl.tEnd)); }
+    B.push(endBeat());
+  }
+  return B;
+}
+
+// ---------- topics (KJV text, public domain; context is labelled separately from what Scripture says) ----------
+const TOPICS = [
+  { id: 'weary', series: 'Jesus Said', fmt: 'A', pal: 'dawn', scene: 'hill', scene2: 'light',
+    hook: 'Tired? Weighed down? Jesus has an invitation.', intro: 'Feeling worn out? Jesus once made a simple invitation to tired people.',
+    ref: 'Matthew 11:28', sref: 'Matthew eleven, twenty-eight', quote: 'Come unto me, all ye that labour and are heavy laden, and I will give you rest.',
+    context: [['Who', 'Jesus, speaking to the crowds.'], ['Just before', 'He thanked the Father in prayer (verse 25).'], ['Just after', 'He said he is \u201Cmeek and lowly in heart\u201D (verse 29).']],
+    meaning: 'Jesus does not tell the weary to fix themselves first. He invites them to come to him, and he says he is gentle and humble.',
+    key: 'Come unto me', step: 'Name one thing that is wearing you out, and tell Jesus about it in prayer today.', end: 'Come, and rest.' },
+  { id: 'peace', series: 'Jesus Said', fmt: 'A', pal: 'night', scene: 'house', scene2: 'light',
+    hook: 'Afraid? Jesus spoke to troubled hearts.', intro: 'Afraid or troubled? Here is what Jesus said to his friends on a hard night.',
+    ref: 'John 14:27', sref: 'John fourteen, twenty-seven', quote: 'Let not your heart be troubled, neither let it be afraid.',
+    context: [['Who', 'Jesus, speaking to his disciples.'], ['When', 'The evening before his crucifixion, at the table with them.'], ['Why', 'He had just told them he was leaving (John 13:33).']],
+    meaning: 'He said it to friends facing the hardest days of their lives, and promised them his own peace, not as the world gives (verse 27).',
+    key: 'my peace I give unto you', step: 'When worry starts today, say this verse out loud and hand that worry to him.', end: 'His peace. Not as the world gives.' },
+  { id: 'anxious', series: 'When You Feel Anxious', fmt: 'A', pal: 'garden', scene: 'hill', scene2: 'sheep',
+    hook: 'Anxious about tomorrow?', intro: 'Anxious about tomorrow? Listen to what Jesus taught.',
+    ref: 'Matthew 6:34', sref: 'Matthew six, thirty-four', quote: 'Take therefore no thought for the morrow: for the morrow shall take thought for the things of itself.',
+    context: [['Who', 'Jesus, teaching in the Sermon on the Mount.'], ['Old English', 'In 1611, \u201Ctake no thought\u201D meant do not be anxious.'], ['Just before', 'He pointed to birds and flowers that God cares for (verses 26 to 30).']],
+    meaning: 'Jesus is not saying never plan. He says not to carry tomorrow\u2019s worry today, because the Father who feeds the birds knows what we need (verses 26 and 32).',
+    key: 'your heavenly Father knoweth', keyRef: 'Matthew 6:32', step: 'Take one worry about tomorrow, say it to God, then do only today\u2019s task.', end: 'One day at a time.' },
+  { id: 'jeremiah', series: 'Verse in Context', fmt: 'A', pal: 'earth', scene: 'road', scene2: 'light',
+    hook: 'You know Jeremiah 29:11. Know the rest?', intro: 'You may know Jeremiah twenty-nine, eleven. But do you know who it was written to?',
+    ref: 'Jeremiah 29:11', sref: 'Jeremiah twenty-nine, eleven', quote: 'For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.',
+    context: [['Who', 'God, through the prophet Jeremiah, in a letter.'], ['To whom', 'Jews taken captive to Babylon (verse 1).'], ['The catch', 'Verse 10 says the return would come after seventy years.']],
+    meaning: 'This was a promise to a nation in exile, with a long wait. God told them to build houses, plant gardens, and seek the good of the city meanwhile (verses 5 to 7).',
+    key: 'seventy years', keyRef: 'Jeremiah 29:10', step: 'Read Jeremiah 29:4 to 14 today and notice what God asks them to do while they wait.', end: 'Read the whole letter.' },
+  { id: 'phil413', series: 'Verse in Context', fmt: 'A', pal: 'dusk', scene: 'hill', scene2: 'light',
+    hook: 'I can do all things? Look at where Paul was.', intro: 'I can do all things. Do you know where Paul was when he wrote that?',
+    ref: 'Philippians 4:13', sref: 'Philippians four, thirteen', quote: 'I can do all things through Christ which strengtheneth me.',
+    context: [['Who', 'The apostle Paul, writing to the church in Philippi.'], ['Where', 'From prison (Philippians 1:13 mentions his bonds).'], ['Just before', 'He says he has learned to be content in every state (verse 11).']],
+    meaning: 'Paul is not promising a win in everything we try. In verse 12 he says he has known both hunger and plenty, and that Christ gives strength for either.',
+    key: 'both to be full and to be hungry', keyRef: 'Philippians 4:12', step: 'Instead of asking for a win today, ask for strength to face what is in front of you.', end: 'Strength for whatever comes.' },
+  { id: 'healed', series: 'Jesus Asked', fmt: 'A', pal: 'earth', scene: 'pool', scene2: 'light',
+    hook: 'Jesus asked a man, \u201CWilt thou be made whole?\u201D', intro: 'Jesus once asked a man a surprising question.',
+    ref: 'John 5:6', sref: 'John five, six', quote: 'Wilt thou be made whole?',
+    context: [['Where', 'The pool of Bethesda in Jerusalem, with five porches (verse 2).'], ['Who', 'A man who had been sick thirty and eight years (verse 5).'], ['His answer', 'He said he had no one to put him in the pool (verse 7).']],
+    meaning: 'Jesus asked first. The man answered with his obstacle, not a plain yes, and Jesus healed him with a word (verses 7 and 8).',
+    key: 'Rise, take up thy bed, and walk', keyRef: 'John 5:8', step: 'Answer his question honestly: what do you most want him to change in you?', end: 'Take him your honest answer.' },
+  { id: 'storm', series: 'What Happened', fmt: 'B', pal: 'storm', scene: 'storm',
+    hook: 'The storm Jesus slept through.', intro: 'A storm, a sleeping Jesus, and a boat full of frightened men.',
+    panels: [
+      { scene: 'storm', cap: 'A great tempest rose on the sea, and the boat was covered with waves. But Jesus was asleep.', ref: 'Matthew 8:24', sref: 'Matthew eight, twenty-four', ctx: 'The Sea of Galilee lies among hills, and sudden storms are well known there.' },
+      { scene: 'sea', cap: 'His disciples woke him and said, \u201CLord, save us: we perish.\u201D', ref: 'Matthew 8:25', sref: 'Matthew eight, twenty-five' },
+      { scene: 'calm', pal: 'gold', cap: 'He rebuked the winds and the sea, and there was a great calm.', ref: 'Matthew 8:26', sref: 'Matthew eight, twenty-six' }],
+    ref: 'Matthew 8:27', sref: 'Matthew eight, twenty-seven', quote: 'But the men marvelled, saying, What manner of man is this, that even the winds and the sea obey him!',
+    meaning: 'Jesus was in the boat the whole time. He calmed the storm, and he asked why they were so afraid (verse 26).',
+    step: 'When fear rises today, remember who is in the boat with you, and say his name in prayer.', end: 'Even the winds and the sea obey him.' },
+  { id: 'gethsemane', series: 'What Happened', fmt: 'B', pal: 'night', scene: 'night',
+    hook: 'The night Jesus could have called angels.', intro: 'The night Jesus was arrested, he spoke about angels.',
+    panels: [
+      { scene: 'night', cap: 'In Gethsemane Jesus prayed: \u201Cnot as I will, but as thou wilt.\u201D', ref: 'Matthew 26:39', sref: 'Matthew twenty-six, thirty-nine' },
+      { scene: 'torches', cap: 'Judas arrived with a great multitude with swords and staves, and betrayed him with a kiss.', ref: 'Matthew 26:47 to 49', sref: 'Matthew twenty-six, forty-seven to forty-nine' },
+      { scene: 'sword', cap: 'When a disciple drew a sword, Jesus said, \u201CPut up again thy sword into his place.\u201D', ref: 'Matthew 26:52', sref: 'Matthew twenty-six, fifty-two', ctx: 'A Roman legion was roughly 5,000 to 6,000 soldiers.' }],
+    ref: 'Matthew 26:53', sref: 'Matthew twenty-six, fifty-three', quote: 'Thinkest thou that I cannot now pray to my Father, and he shall presently give me more than twelve legions of angels?',
+    meaning: 'Jesus said he could ask the Father for more than twelve legions of angels. He did not, and he said the scriptures must be fulfilled (verse 54).',
+    step: 'Take a quiet minute to thank Jesus for going to the cross by choice.', end: 'He had the power to stop it. He stayed.' },
+  { id: 'zacchaeus', series: 'Met Jesus', fmt: 'B', pal: 'day', scene: 'tree',
+    hook: 'The tax collector who climbed a tree.', intro: 'A rich tax collector climbed a tree to see Jesus.',
+    panels: [
+      { scene: 'tree', cap: 'Zacchaeus, a chief tax collector and a rich man, was little of stature. He ran ahead and climbed a sycomore tree to see Jesus.', ref: 'Luke 19:2 to 4', sref: 'Luke nineteen, two to four' },
+      { scene: 'house', pal: 'dawn', cap: 'Jesus looked up and said, \u201CZacchaeus, make haste, and come down; for to day I must abide at thy house.\u201D', ref: 'Luke 19:5', sref: 'Luke nineteen, five', ctx: 'The crowd grumbled that Jesus was the guest of \u201Ca man that is a sinner\u201D (verse 7).' },
+      { scene: 'coins', pal: 'earth', cap: 'Zacchaeus said he would give half his goods to the poor, and repay fourfold anyone he had wronged.', ref: 'Luke 19:8', sref: 'Luke nineteen, eight' }],
+    ref: 'Luke 19:10', sref: 'Luke nineteen, ten', quote: 'For the Son of man is come to seek and to save that which was lost.',
+    meaning: 'Jesus went to the home of the man everyone avoided. Zacchaeus gave and repaid, and Jesus said salvation had come to that house (verse 9).',
+    step: 'Think of someone others avoid, and do one kind thing for them this week.', end: 'Jesus came to seek the lost.' },
+  { id: 'prodigal', series: 'Parables', fmt: 'B', pal: 'earth', scene: 'road',
+    hook: 'The father who ran to meet his son.', intro: 'In one of the best known stories Jesus told, a father runs.',
+    panels: [
+      { scene: 'road', cap: 'A younger son asked for his share of the inheritance, journeyed to a far country, and wasted it all.', ref: 'Luke 15:12 and 13', sref: 'Luke fifteen, twelve and thirteen', ctx: 'Jesus told this to Pharisees and scribes who complained that he welcomed sinners (verses 1 and 2).' },
+      { scene: 'field', pal: 'dusk', cap: 'When a famine came, he was in need. Then he \u201Ccame to himself\u201D and decided to go home.', ref: 'Luke 15:14 to 18', sref: 'Luke fifteen, fourteen to eighteen' },
+      { scene: 'house', pal: 'dawn', cap: '\u201CWhen he was yet a great way off, his father saw him, and had compassion, and ran.\u201D', ref: 'Luke 15:20', sref: 'Luke fifteen, twenty' }],
+    ref: 'Luke 15:24', sref: 'Luke fifteen, twenty-four', quote: 'For this my son was dead, and is alive again; he was lost, and is found.',
+    meaning: 'The father ran first, before his son said a word of his speech (verses 20 and 21). Jesus used the story to show how God welcomes the lost.',
+    step: 'If you feel far from God, take one step toward home today with a short, honest prayer.', end: 'The Father is watching the road.' },
+  { id: 'sheep', series: 'Parables', fmt: 'B', pal: 'day', scene: 'sheep',
+    hook: 'The shepherd who left ninety-nine.', intro: 'Jesus told a story about a shepherd and one lost sheep.',
+    panels: [
+      { scene: 'sheep', cap: 'A man with a hundred sheep loses one of them.', ref: 'Luke 15:4', sref: 'Luke fifteen, four', ctx: 'Jesus told this to Pharisees and scribes who complained that he welcomed sinners (verses 1 and 2).' },
+      { scene: 'hill', pal: 'dusk', cap: 'He leaves the ninety and nine and goes after the lost one until he finds it.', ref: 'Luke 15:4', sref: 'Luke fifteen, four' },
+      { scene: 'light', pal: 'gold', cap: 'When he finds it, he calls his friends and neighbours together to rejoice.', ref: 'Luke 15:5 and 6', sref: 'Luke fifteen, five and six' }],
+    ref: 'Luke 15:6', sref: 'Luke fifteen, six', quote: 'Rejoice with me; for I have found my sheep which was lost.',
+    meaning: 'Jesus says there is joy in heaven over one sinner who repents, more than over ninety and nine just persons who need no repentance (verse 7).',
+    step: 'Remember you were worth the search. Thank him for it today.', end: 'Found, and celebrated.' },
+  { id: 'well', series: 'Met Jesus', fmt: 'B', pal: 'earth', scene: 'well',
+    hook: 'The woman who met Jesus at a well.', intro: 'Jesus met a woman at a well, and she went and told her whole town.',
+    panels: [
+      { scene: 'well', cap: 'Jesus, wearied with his journey, sat by the well in Samaria. A woman came to draw water.', ref: 'John 4:6 and 7', sref: 'John four, six and seven', ctx: 'The sixth hour is about noon. Jews and Samaritans normally had no dealings (verse 9).' },
+      { scene: 'light', pal: 'dawn', cap: 'He asked her for a drink, then spoke of \u201Cliving water\u201D he could give.', ref: 'John 4:7 to 10', sref: 'John four, seven to ten' },
+      { scene: 'road', pal: 'day', cap: 'She left her waterpot, went into the city, and told the men, \u201CCome, see a man.\u201D', ref: 'John 4:28 and 29', sref: 'John four, twenty-eight and twenty-nine' }],
+    ref: 'John 4:14', sref: 'John four, fourteen', quote: 'But whosoever drinketh of the water that I shall give him shall never thirst.',
+    meaning: 'Jesus spoke openly with someone others would have passed by: a Samaritan woman. After meeting him, she went and told her town (verses 28 to 30).',
+    step: 'Talk kindly today with someone you would usually skip past.', end: 'He offers living water.' },
+  { id: 'bartimaeus', series: 'Met Jesus', fmt: 'B', pal: 'dawn', scene: 'road',
+    hook: 'The blind man who would not be quiet.', intro: 'A blind beggar cried out to Jesus, and would not be silenced.',
+    panels: [
+      { scene: 'road', pal: 'earth', cap: 'Blind Bartimaeus sat by the highway side begging, and cried, \u201CJesus, thou son of David, have mercy on me.\u201D', ref: 'Mark 10:46 and 47', sref: 'Mark ten, forty-six and forty-seven', ctx: 'This happened as Jesus left Jericho, on his way up to Jerusalem.' },
+      { scene: 'light', cap: 'Many told him to be quiet, but he cried the more. Jesus stood still and called for him.', ref: 'Mark 10:48 and 49', sref: 'Mark ten, forty-eight and forty-nine' },
+      { scene: 'hill', pal: 'day', cap: 'He cast away his garment and came to Jesus. He received his sight, and followed Jesus in the way.', ref: 'Mark 10:50 to 52', sref: 'Mark ten, fifty to fifty-two' }],
+    ref: 'Mark 10:51', sref: 'Mark ten, fifty-one', quote: 'What wilt thou that I should do unto thee?',
+    meaning: 'Jesus asked him what he wanted, and Bartimaeus answered plainly: \u201CLord, that I might receive my sight.\u201D Jesus said his faith had made him whole (verse 52).',
+    step: 'Ask Jesus plainly for the one thing you need most today.', end: 'Ask him plainly.' },
+  { id: 'tomb', series: 'What Happened', fmt: 'B', pal: 'dusk', scene: 'cross',
+    hook: 'What the Gospels record on the first Easter morning.', intro: 'Here is what the Gospels record about the first Easter morning.',
+    panels: [
+      { scene: 'cross', cap: 'Jesus was crucified at Golgotha, with two others crucified beside him.', ref: 'Matthew 27:33 to 38', sref: 'Matthew twenty-seven, thirty-three to thirty-eight' },
+      { scene: 'tomb', cap: 'Joseph of Arimathaea laid his body in his own new tomb, and rolled a great stone to the door.', ref: 'Matthew 27:57 to 60', sref: 'Matthew twenty-seven, fifty-seven to sixty' },
+      { scene: 'tombOpen', pal: 'dawn', cap: 'As the first day of the week began to dawn, two women came to see the tomb, and an angel rolled back the stone.', ref: 'Matthew 28:1 and 2', sref: 'Matthew twenty-eight, one and two', ctx: 'All four Gospels record the empty tomb.' }],
+    ref: 'Matthew 28:6', sref: 'Matthew twenty-eight, six', quote: 'He is not here: for he is risen, as he said. Come, see the place where the Lord lay.',
+    meaning: 'The angel told the women that Jesus had risen, as he had said, and invited them to see the place. They were sent to tell his disciples (verses 6 and 7).',
+    step: 'This week, read one resurrection account in full: Matthew 28, Mark 16, Luke 24, or John 20.', end: 'He is risen.' },
+];
+function buildVO(T) {
+  if (T.fmt === 'A') return [T.intro, `In the King James Version, ${T.sref}. ${T.quote}`, 'Some context. ' + T.context.map((r) => r[0] + '. ' + r[1]).join(' '), T.meaning, `Remember these words. ${T.key}.`, 'Try this today. ' + T.step, T.end];
+  return [T.intro, ...T.panels.map((p) => p.cap + ' ' + p.sref + '.' + (p.ctx ? ' Some context. ' + p.ctx : '')), `In the King James Version, ${T.sref}. ${T.quote}`, T.meaning + ' Try this today. ' + T.step, T.end];
+}
+
+// ---------- timeline: every beat plays at normal speed, then holds until its narration line has finished ----------
+const VOICE_OFF = 0.35, VOICE_TAIL = 0.5, END_HOLD = 0.8, TRN = 0.8;
+let TOPIC = null, LAY = [], TL = null;
+function buildTL(v) {
+  const E = [], R = [], starts = []; let t = 0;
+  LAY.forEach((b, i) => { const r = v && v[i] > 0 ? Math.max(b.d, VOICE_OFF + v[i] + VOICE_TAIL) : b.d; E.push(t); R.push(r); starts.push(t + VOICE_OFF); t += r; });
+  return { E, R, starts, total: t + (v ? END_HOLD : 0) };
+}
+function loadTopic(id) {
+  TOPIC = TOPICS.find((x) => x.id === id) || TOPICS[0];
+  LAY = buildLayout(TOPIC); TL = buildTL(null);
+  const T = TOPIC;
+  return { id: T.id, title: T.hook, vo: buildVO(T), caption: `${T.series}: ${T.hook}\n\n\u201C${T.quote}\u201D (${T.ref}, KJV)`, tags: '#Bible #Jesus #KJV #Faith #Scripture #' + T.series.replace(/[^A-Za-z]/g, '') };
+}
+function setVoiceDurations(v) { TL = buildTL(v); return { starts: TL.starts, total: TL.total }; }
+
+// ---------- drawing ----------
+function drawItem(c, it, lt) {
+  switch (it.k) {
+    case 'text': wcText(c, it.s, it.x, it.y, it.size, it.col, { align: it.align, reveal: win(lt, it.a, it.b), weight: it.weight }); break;
+    case 'stroke': wcStroke(c, it.pts, it.w, it.col, win(lt, it.a, it.b), { head: it.head, alpha: it.alpha }); break;
+    case 'pencil': pencil(c, it.pts, win(lt, it.a, it.b), 0.5, 1.6); break;
+    case 'scene': { const p = win(lt, it.a, it.b); if (p > 0) bloomIn(c, sceneCanvas(it.kind, it.pal), it.x, it.y, p, it.w, it.h); break; }
+    case 'wash': { const p = win(lt, it.a, it.b); if (p > 0) bloomIn(c, washCanvas(it), it.cx - it.rx - 40, it.cy - it.ry - 40, p); break; }
+  }
+}
+function drawBeat(c, B, pal, lt, u) {
+  c.save(); const s = 1 + 0.035 * u;
+  c.translate(CW / 2, CH / 2); c.scale(s, s); c.translate(-CW / 2, -CH / 2);
+  c.drawImage(paperFor(pal), 0, 0);
+  B.items.forEach((it) => drawItem(c, it, lt));
+  c.restore();
+}
+const OLD = H.layer(CW, CH), OC = OLD.getContext('2d');
+function locate(T) {
+  let i = LAY.length - 1;
+  for (let k = 0; k < LAY.length; k++) if (T < TL.E[k] + TL.R[k]) { i = k; break; }
+  const rt = T - TL.E[i];
+  return { i, rt, lt: Math.min(Math.max(0, rt), LAY[i].d), u: cl(rt / TL.R[i]) };
+}
+function explainer(ctx, W, H_, T) {
+  const { i, rt, lt, u } = locate(T), pal = TOPIC.pal;
+  drawBeat(ctx, LAY[i], pal, lt, u);
+  if (i > 0 && rt < TRN) { // the previous page dries away under a spreading wet bloom
+    drawBeat(OC, LAY[i - 1], pal, LAY[i - 1].d, 1);
+    const k = ez(rt / TRN), r = H.rng(i * 31 + 7); OC.save(); OC.globalCompositeOperation = 'destination-out';
+    for (let n = 0; n < 3; n++) {
+      const cx = r.range(120, 600), cy = r.range(300, 980), R = lerp(0, 1100, k) * (0.8 + n * 0.25);
+      const g = OC.createRadialGradient(cx, cy, R * 0.55, cx, cy, R + 1); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      OC.fillStyle = g; OC.fillRect(0, 0, CW, CH);
+    }
+    OC.restore(); ctx.drawImage(OLD, 0, 0);
+  }
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(tooth(), 0, 0); ctx.restore();
+  H.vignette(ctx, CW, CH, 0.26, '60,40,20');
+  H.grain(ctx, CW, CH, 0.022, 8 + Math.floor(T * 12) % 9);
+}
+
+// ---------- sound score (same item times as the picture) ----------
+function scoreSound(k) {
+  const total = TL.total, pan = (x) => clampN((x - 360) / 360, -1, 1) * 0.5;
+  const brush = (a, b, g = 1, pn = 0, minor = true) => {
+    k.noise(a, { dur: 0.05, color: 'pink', filter: 'lowpass', f: 700, gain: 0.16 * g, a: 0.008, pan: pn, minor });
+    k.play('stroke', a, { material: 'brush', dur: Math.max(0.1, b - a), gain: 1.5 * g, pan: pn, minor });
+  };
+  const letter = (s, a, b, g, pn) => { const re = /\S+/g; let m; while ((m = re.exec(s))) brush(a + (b - a) * m.index / s.length, a + (b - a) * (m.index + m[0].length) / s.length, g, pn); };
+  const wash = (a, b, g = 1, pn = 0, minor = true) => {
+    const d = b - a;
+    k.noise(a, { dur: d, color: 'pink', filter: 'bandpass', f: [[0, 260], [d * 0.45, 820], [d, 420]], q: 0.7, gain: 0.09 * g, a: d * 0.4, pan: pn, minor, verb: 0.1 });
+    k.noise(a + 0.03, { dur: d * 0.7, color: 'brown', filter: 'lowpass', f: 380, gain: 0.08 * g, a: d * 0.3, pan: pn, minor });
+  };
+  const dropS = (t, g = 1, pn = 0) => k.tone(t, { f: [[0, 330], [0.05, 560]], dur: 0.08, gain: 0.07 * g, a: 0.003, pan: pn, minor: true, verb: 0.2 });
+  const rinse = (t, d) => {
+    for (let i = 0; i < 3; i++) { const ti = t + i * d / 4; k.noise(ti, { dur: d / 2.2, color: 'pink', filter: 'bandpass', f: [[0, 420], [d / 5, 1100], [d / 2.2, 520]], q: 1.6, gain: 0.1, a: d / 9, pan: i % 2 ? 0.2 : -0.2, minor: true }); }
+    dropS(t + d * 0.4, 1, 0); k.play('tock', t + d, { f: 900, gain: 0.3, minor: true });
+  };
+  k.bed('room', 0, total, { gain: 0.4 });
+  k.music('pad', 0, total, { bpm: 56, gain: 0.3, chords: [['F3', 'A3', 'C4', 'E4'], ['D3', 'F3', 'A3', 'C4'], ['Bb2', 'D3', 'F3', 'A3'], ['C3', 'G3', 'C4', 'E4']] });
+  LAY.forEach((B, i) => {
+    const E = TL.E[i];
+    if (i > 0) rinse(E, 0.6);
+    B.items.forEach((it) => {
+      if (it.k === 'text') letter(it.s, E + it.a, E + it.b, 0.9, pan(it.x));
+      else if (it.k === 'stroke') {
+        brush(E + it.a, E + it.b, 1.0, 0, false);
+        if (it.sfx === 'hit') { k.play('thud', E + it.b, { f: 100, gain: 0.5 }); k.play('ding', E + it.b, { f: 'C5', gain: 0.4 }); }
+        if (it.sfx === 'ok') k.play('success', E + it.b, { f: 'A5', gain: 0.4 });
+      } else if (it.k === 'scene') wash(E + it.a, E + it.b, 1.0, 0, false);
+      else if (it.k === 'wash') wash(E + it.a, E + it.b, 0.6, 0, true);
+      else if (it.k === 'pencil') k.play('stroke', E + it.a, { material: 'pencil', dur: it.b - it.a, gain: 0.5, minor: true });
+    });
+  });
+  const tEnd = TL.E[LAY.length - 1] + LAY[LAY.length - 1].d - 0.5;
+  k.play('ding', tEnd, { f: 'F4', gain: 0.4 });
+  ['A4', 'C5', 'F5'].forEach((f, i) => k.tone(tEnd + 0.06 + i * 0.06, { f, dur: 1.4, gain: 0.07 - i * 0.01, verb: 0.3, pan: (i - 1) * 0.3 }));
+}
+
+// ===================== exports for the automated render =====================
+window.TOPIC_IDS = TOPICS.map((x) => x.id);
+window.loadTopic = loadTopic;
+window.setVoiceDurations = setVoiceDurations;
+window.scoreSound = scoreSound;
+Object.defineProperty(window, 'DURATION', { get: () => TL.total });
+
+// ===================== PLAYER =====================
+(async function () {
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d', { willReadFrequently: true });
+  const playBtn = document.getElementById('play'), seekEl = document.getElementById('seek'), timeEl = document.getElementById('time');
+  const sndBtn = document.getElementById('snd'), loopBtn = document.getElementById('loop'), loading = document.getElementById('loading'), topicEl = document.getElementById('topic');
+  let cur = 0, playing = false, tPrev = 0, loop = true, soundOn = true, stopSound = () => {};
+  const mmss = (t) => Math.floor(t / 60) + ':' + (t % 60).toFixed(1).padStart(4, '0');
+  TOPICS.forEach((x) => { const o = document.createElement('option'); o.value = x.id; o.textContent = x.id; topicEl.appendChild(o); });
+  try { await Promise.all(['700 60px "Caveat"', '400 60px "Caveat"'].map((f) => document.fonts.load(f, 'AaZz09\u201C\u201D\u2014'))); await document.fonts.ready; } catch (e) {}
+  await new Promise((r) => setTimeout(r, 30));
+  const wanted = new URLSearchParams(location.search).get('topic');
+  loadTopic(wanted || TOPICS[0].id); topicEl.value = TOPIC.id;
+  function draw(T) { seekEl.max = TL.total; explainer(ctx, CW, CH, T); seekEl.value = T; timeEl.textContent = mmss(T) + ' / ' + mmss(TL.total); }
+  window.seek = (T) => { cur = H.clamp(T, 0, TL.total); draw(cur); };
+  function startSound() { stopSound(); stopSound = () => {}; if (soundOn && playing) stopSound = SOUND.live(scoreSound, cur, { voiceover: false }); }
+  function pause() { playing = false; stopSound(); stopSound = () => {}; playBtn.textContent = 'Play'; playBtn.setAttribute('aria-label', 'Play'); }
+  function play() { if (cur >= TL.total - 0.01) cur = 0; playing = true; tPrev = performance.now(); playBtn.textContent = 'Pause'; playBtn.setAttribute('aria-label', 'Pause'); startSound(); requestAnimationFrame(tick); }
+  function tick(now) {
+    if (!playing) return;
+    cur += (now - tPrev) / 1000; tPrev = now;
+    if (cur >= TL.total) { if (loop) { cur = cur % TL.total; startSound(); } else { cur = TL.total; draw(cur); pause(); return; } }
+    draw(cur); requestAnimationFrame(tick);
+  }
+  playBtn.onclick = () => (playing ? pause() : play());
+  cv.onclick = () => (playing ? pause() : play());
+  seekEl.oninput = () => { cur = parseFloat(seekEl.value); draw(cur); if (playing) { tPrev = performance.now(); startSound(); } };
+  topicEl.onchange = () => { const was = playing; pause(); loadTopic(topicEl.value); cur = 0; draw(0); if (was) play(); };
+  sndBtn.onclick = () => { soundOn = !soundOn; sndBtn.setAttribute('aria-pressed', soundOn); if (!soundOn) { stopSound(); stopSound = () => {}; } else if (playing) startSound(); };
+  loopBtn.onclick = () => { loop = !loop; loopBtn.setAttribute('aria-pressed', loop); };
+  document.addEventListener('keydown', (e) => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); playing ? pause() : play(); } });
+  window.frameJPEG = (T) => { window.seek(T); return cv.toDataURL('image/jpeg', 0.93).split(',')[1]; };
+  window.renderAudioBase64 = async (vo) => {
+    const r = await SOUND.renderOffline(scoreSound, TL.total, 48000, { voiceover: !!vo });
+    const n = r.inter.length, i16 = new Int16Array(n);
+    for (let i = 0; i < n; i++) i16[i] = Math.max(-1, Math.min(1, r.inter[i])) * 32767;
+    const u8 = new Uint8Array(i16.buffer); let s = ''; const CHK = 0x8000;
+    for (let i = 0; i < u8.length; i += CHK) s += String.fromCharCode.apply(null, u8.subarray(i, i + CHK));
+    return btoa(s);
+  };
+  draw(0);
+  window._ready = true;
+  loading.style.display = 'none';
+})();
+</script>
+</body>
+</html>
