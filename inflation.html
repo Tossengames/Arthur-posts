@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Money Explainers (Sticky-Note Wall)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Gloria+Hallelujah&family=Kalam:wght@400;700&family=Permanent+Marker&family=Rock+Salt&display=block">
+<style>
+  html, body { margin:0; height:100%; background:#0d0a07; color:#f0e8da; font:15px Kalam, "Segoe UI", sans-serif; }
+  #app { display:flex; flex-direction:column; height:100%; }
+  #stage { flex:1; min-height:0; position:relative; background:#0d0a07; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#0d0a07; }
+  #loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font:400 26px "Permanent Marker", cursive; pointer-events:none; }
+  #bar { display:flex; align-items:center; gap:10px; padding:8px 12px; background:#1c1610; border-top:1px solid #3a2e20; flex-wrap:wrap; }
+  #bar button, #bar select { background:#2c231a; color:#f0e8da; border:1px solid #4a3b29; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; min-width:44px; }
+  #bar button:focus-visible, #bar select:focus-visible, #seek:focus-visible { outline:2px solid #ee6a70; outline-offset:2px; }
+  #bar button[aria-pressed="true"] { background:#4a3b29; }
+  #seek { flex:1; min-width:120px; accent-color:#ee6a70; }
+  #time { font-variant-numeric:tabular-nums; min-width:110px; text-align:right; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"><canvas id="c" width="1280" height="720"></canvas><div id="loading">Pinning up the board...</div></div>
+  <div id="bar">
+    <button id="play" aria-label="Play">Play</button>
+    <select id="topic" aria-label="Topic"></select>
+    <input id="seek" type="range" min="0" max="25" step="0.01" value="0" aria-label="Scrub">
+    <span id="time">0:00.0 / 0:25.0</span>
+    <button id="snd" aria-pressed="true" aria-label="Sound on or off">Sound</button>
+    <button id="loop" aria-pressed="true" aria-label="Loop on or off">Loop</button>
+  </div>
+</div>
+
+<script>
+// ===================== H helper library (unchanged) =====================
+(function () {
+  const STYLES = (window.STYLES = window.STYLES || []);
+  window.registerStyle = (s) => STYLES.push(s);
+
+  const H = (window.H = {});
+
+  // ---------- seeded randomness ----------
+  H.rng = function (seed = 1) {
+    let a = typeof seed === 'string' ? hashStr(seed) : (seed >>> 0) || 1;
+    const r = function () {
+      a |= 0; a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    r.range = (lo, hi) => lo + r() * (hi - lo);
+    r.int = (lo, hi) => Math.floor(lo + r() * (hi - lo + 1));
+    r.pick = (arr) => arr[Math.floor(r() * arr.length)];
+    r.chance = (p) => r() < p;
+    r.gauss = () => { let u = 0, v = 0; while (!u) u = r(); while (!v) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+    return r;
+  };
+  function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+
+  // ---------- gradient noise ----------
+  H.makeNoise = function (seed = 1) {
+    const r = H.rng(seed), p = new Uint8Array(512), perm = [...Array(256).keys()];
+    for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
+    for (let i = 0; i < 512; i++) p[i] = perm[i & 255];
+    const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const g3 = (h, x, y, z) => { h &= 15; const u = h < 8 ? x : y, v = h < 4 ? y : h === 12 || h === 14 ? x : z; return ((h & 1) ? -u : u) + ((h & 2) ? -v : v); };
+    function n3(x, y, z) {
+      const X = Math.floor(x) & 255, Y = Math.floor(y) & 255, Z = Math.floor(z) & 255;
+      x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
+      const u = fade(x), v = fade(y), w = fade(z);
+      const A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z, B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+      return lerp(lerp(lerp(g3(p[AA], x, y, z), g3(p[BA], x - 1, y, z), u), lerp(g3(p[AB], x, y - 1, z), g3(p[BB], x - 1, y - 1, z), u), v),
+        lerp(lerp(g3(p[AA + 1], x, y, z - 1), g3(p[BA + 1], x - 1, y, z - 1), u), lerp(g3(p[AB + 1], x, y - 1, z - 1), g3(p[BB + 1], x - 1, y - 1, z - 1), u), v), w);
+    }
+    const n2 = (x, y) => n3(x, y, 0.5);
+    const fbm3 = (x, y, z, oct = 4) => { let s = 0, a = 0.5, f = 1, norm = 0; for (let i = 0; i < oct; i++) { s += a * n3(x * f, y * f, z * f); norm += a; a *= 0.5; f *= 2; } return s / norm; };
+    const fbm2 = (x, y, oct = 4) => fbm3(x, y, 0.5, oct);
+    return { n2, n3, fbm2, fbm3 };
+  };
+
+  // ---------- math ----------
+  H.lerp = (a, b, t) => a + (b - a) * t;
+  H.clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
+  H.map = (v, a, b, c, d) => c + ((v - a) / (b - a)) * (d - c);
+  H.smooth = (e0, e1, x) => { const t = H.clamp((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
+  H.ease = {
+    inOut: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+    out: (t) => 1 - Math.pow(1 - t, 3),
+    in: (t) => t * t * t,
+    back: (t) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); },
+  };
+
+  // ---------- color ----------
+  H.hex = (h) => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  H.rgba = (hexOrArr, a = 1) => { const [r, g, b] = Array.isArray(hexOrArr) ? hexOrArr : H.hex(hexOrArr); return `rgba(${r | 0},${g | 0},${b | 0},${a})`; };
+  H.mix = (c1, c2, t) => { const a = Array.isArray(c1) ? c1 : H.hex(c1), b = Array.isArray(c2) ? c2 : H.hex(c2); return [0, 1, 2].map((i) => a[i] + (b[i] - a[i]) * t); };
+
+  // ---------- canvas utilities ----------
+  H.layer = (W, H_, ) => { const c = document.createElement('canvas'); c.width = W; c.height = H_; return c; };
+  H.grain = function (ctx, W, Hh, amount = 0.08, seed = 7, mono = true) {
+    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), d = img.data, r = H.rng(seed), k = amount * 255;
+    for (let i = 0; i < d.length; i += 4) {
+      const n = (r() - 0.5) * k;
+      if (mono) { d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+      else { d[i] += (r() - 0.5) * k; d[i + 1] += (r() - 0.5) * k; d[i + 2] += (r() - 0.5) * k; }
+    }
+    ctx.putImageData(img, 0, 0);
+  };
+  H.paper = function (ctx, W, Hh, base = '#f3ecdc', seed = 3, strength = 0.06) {
+    ctx.save(); ctx.fillStyle = base; ctx.fillRect(0, 0, W, Hh);
+    const nz = H.makeNoise(seed), cell = 4, [br, bg, bb] = H.hex(base);
+    for (let y = 0; y < Hh; y += cell) for (let x = 0; x < W; x += cell) {
+      const v = nz.fbm2(x * 0.01, y * 0.01, 3) * 0.6 + nz.n2(x * 0.15, y * 0.04) * 0.4;
+      const s = 1 + v * strength * 2;
+      ctx.fillStyle = `rgb(${br * s | 0},${bg * s | 0},${bb * s | 0})`; ctx.fillRect(x, y, cell, cell);
+    }
+    ctx.restore();
+  };
+  H.vignette = function (ctx, W, Hh, strength = 0.5, color = '0,0,0') {
+    const g = ctx.createRadialGradient(W / 2, Hh / 2, Math.min(W, Hh) * 0.3, W / 2, Hh / 2, Math.hypot(W, Hh) * 0.6);
+    g.addColorStop(0, `rgba(${color},0)`); g.addColorStop(1, `rgba(${color},${strength})`);
+    ctx.save(); ctx.fillStyle = g; ctx.fillRect(0, 0, W, Hh); ctx.restore();
+  };
+
+  // ---------- rendering entry ----------
+  H.W = 1280; H.H = 720;
+  H.loadFonts = async function (style) {
+    const specs = style.fonts || [];
+    try { const sample = 'AaZz09' + (window.FONT_SAMPLE || '');
+      await Promise.all(specs.map((f) => document.fonts.load(f, sample))); await document.fonts.ready; } catch (e) { /* render anyway */ }
+  };
+  H.render = function (style, canvas, t) {
+    const ctx = canvas.getContext('2d', { willReadFrequently: !!style.readsPixels });
+    const sx = canvas.width / H.W, sy = canvas.height / H.H;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save(); ctx.scale(sx, sy);
+    style.draw(ctx, H.W, H.H, t == null ? style.frameT || 0 : t);
+    ctx.restore();
+  };
+})();
+</script>
+
+<script>
+// ===================== SOUND kit (unchanged) =====================
+// sound.js: a small synthesized sound kit for the style explainers. Plain Web Audio, no audio files.
+(function () {
+  'use strict';
+  const SOUND = (window.SOUND = {});
+  const TINY = 1e-4;
+
+  // seeded random in [0,1), keyed by any string
+  function rand(key) {
+    let h = 2166136261;
+    for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+    let a = h >>> 0 || 1;
+    return () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+
+  // note names to Hz: 'A4' = 440, 'C#5', 'Eb3'
+  const STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  function hz(n) {
+    if (typeof n === 'number') return n;
+    const m = /^([A-G])([#b]?)(-?\d)$/.exec(n);
+    const semis = STEP[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (Number(m[3]) - 4) * 12 - 9;
+    return 440 * Math.pow(2, semis / 12);
+  }
+  SOUND.hz = hz;
+
+  SOUND.kit = function (ctx, opts) {
+    const o = opts || {};
+    const VO = !!o.voiceover;
+    const MINOR = 0.6; // voiceover-mode volume for minor sounds
+    let inMinor = false;
+    const gainOf = (p, d) => (p.gain == null ? d : p.gain) * (VO && (p.minor || inMinor) ? MINOR : 1);
+    const T0 = (o.start || 0) - 0; // explainer time that maps to ctx time `base`
+    const base = ctx.currentTime + (o.delay || 0);
+    // Start times snap to the sample grid (+ a quarter sample): in Chrome a source started a hair off the grid can
+    // spike to about twice its set level.
+    const SR = ctx.sampleRate;
+    const at = (t) => (Math.round((base + (t - T0)) * SR) + 0.25) / SR;
+
+    // ---- buses: sfx, amb, music -> compressor -> master; one shared reverb send
+    const master = ctx.createGain(); master.gain.value = o.master == null ? 0.9 : o.master;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -16; comp.knee.value = 8; comp.ratio.value = 3; comp.attack.value = 0.004; comp.release.value = 0.18;
+    comp.connect(master); master.connect(o.dest || ctx.destination);
+    const bus = {};
+    for (const [name, g] of Object.entries({ sfx: VO ? 0.7 : 0.85, amb: 0.5, music: 0.45 })) { bus[name] = ctx.createGain(); bus[name].gain.value = g; bus[name].connect(comp); }
+
+    // generated room reverb: decaying stereo noise, darker toward the tail
+    const verb = ctx.createConvolver();
+    {
+      const secs = 1.6, n = Math.floor(secs * ctx.sampleRate), ir = ctx.createBuffer(2, n, ctx.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const r = rand('verb' + c), d = ir.getChannelData(c); let lp = 0;
+        for (let i = 0; i < n; i++) { const u = i / n; lp += (0.6 - 0.45 * u) * ((r() * 2 - 1) - lp); d[i] = lp * Math.pow(1 - u, 3); }
+      }
+      verb.buffer = ir;
+    }
+    const verbIn = ctx.createGain(); verbIn.gain.value = 0.9; verbIn.connect(verb); verb.connect(comp);
+
+    // seeded noise buffers: white, pink-ish and brown
+    const noiseBuf = {};
+    {
+      const n = Math.floor(2.5 * ctx.sampleRate);
+      for (const kind of ['white', 'pink', 'brown']) {
+        const b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0), r = rand('noise-' + kind);
+        let p0 = 0, p1 = 0, p2 = 0, br = 0;
+        for (let i = 0; i < n; i++) {
+          const w = r() * 2 - 1;
+          if (kind === 'white') d[i] = w;
+          else if (kind === 'pink') { p0 = 0.997 * p0 + 0.029 * w; p1 = 0.985 * p1 + 0.032 * w; p2 = 0.95 * p2 + 0.048 * w; d[i] = (p0 + p1 + p2 + w * 0.05) * 2.2; }
+          else { br = (br + 0.02 * w) / 1.02; d[i] = br * 3.2; }
+        }
+        noiseBuf[kind] = b;
+      }
+    }
+
+    // ---- automation helpers
+    function sweep(param, v, t) {
+      if (!Array.isArray(v)) { param.setValueAtTime(v, t); return; }
+      param.setValueAtTime(v[0][1], t + v[0][0]);
+      for (let i = 1; i < v.length; i++) param.exponentialRampToValueAtTime(Math.max(v[i][1], 1), t + v[i][0]);
+    }
+    function shape(param, t, gain, dur, a, hold) {
+      a = Math.min(a == null ? 0.004 : a, dur * 0.9);
+      hold = Math.min(hold || 0, dur - a);
+      param.setValueAtTime(0, t);
+      param.linearRampToValueAtTime(gain, t + a);
+      if (hold > 0) param.setValueAtTime(gain, t + a + hold);
+      param.exponentialRampToValueAtTime(TINY, t + dur);
+      param.setValueAtTime(0, t + dur + 0.001);
+    }
+    function out(node, p) {
+      const pan = ctx.createStereoPanner(); pan.pan.value = Math.max(-1, Math.min(1, p.pan || 0));
+      node.connect(pan); pan.connect(bus[p.bus || 'sfx']);
+      if (p.verb) { const s = ctx.createGain(); s.gain.value = p.verb; pan.connect(s); s.connect(verbIn); }
+    }
+    function filterNode(p, t) {
+      if (!p.filter) return null;
+      const f = ctx.createBiquadFilter(); f.type = p.filter; f.Q.value = p.q == null ? 1 : p.q;
+      sweep(f.frequency, p.f == null ? 1000 : p.f, t);
+      return f;
+    }
+
+    // ---- primitives
+    function tone(time, p) {
+      const t = at(time), dur = p.dur || 0.2;
+      if (t + dur < ctx.currentTime || (time < T0 - 0.001 && dur < 1.5)) return;
+      const osc = ctx.createOscillator(); osc.type = p.type || 'sine';
+      sweep(osc.frequency, Array.isArray(p.f) ? p.f.map(([d, v]) => [d, hz(v)]) : hz(p.f || 440), t);
+      if (p.detune) osc.detune.value = p.detune;
+      const g = ctx.createGain(); shape(g.gain, t, gainOf(p, 0.3), dur, p.a, p.hold);
+      let node = osc;
+      if (p.filter) { const f = ctx.createBiquadFilter(); f.type = p.filter; f.Q.value = p.q == null ? 0.8 : p.q; sweep(f.frequency, p.f2 || 2000, t); osc.connect(f); node = f; }
+      node.connect(g); out(g, p);
+      osc.start(t); osc.stop(t + dur + 0.02);
+    }
+    function noise(time, p) {
+      const t = at(time), dur = p.dur || 0.2;
+      if (t + dur < ctx.currentTime || (time < T0 - 0.001 && dur < 1.5)) return;
+      const src = ctx.createBufferSource(); src.buffer = noiseBuf[p.color || 'white']; src.loop = true;
+      if (p.rate) src.playbackRate.value = p.rate;
+      const g = ctx.createGain(); shape(g.gain, t, gainOf(p, 0.3), dur, p.a, p.hold);
+      const f = filterNode(p, t);
+      if (f) { src.connect(f); f.connect(g); } else src.connect(g);
+      out(g, p);
+      const off = rand('off' + time + (p.f || ''))() * 2;
+      src.start(t, off); src.stop(t + dur + 0.02);
+    }
+
+    // ---- named sounds
+    const S = {
+      // UI / motion graphics
+      pop: (t, o) => { tone(t, { f: [[0, o.f || 620], [0.07, (o.f || 620) * 0.45]], dur: 0.1, gain: 0.32 * o.g, pan: o.pan }); noise(t, { dur: 0.012, filter: 'highpass', f: 3000, gain: 0.12 * o.g, pan: o.pan }); },
+      tick: (t, o) => noise(t, { dur: 0.018, filter: 'bandpass', f: o.f || 4200, q: 2.5, gain: 0.3 * o.g, pan: o.pan }),
+      click: (t, o) => { tone(t, { f: o.f || 1900, type: 'square', dur: 0.02, gain: 0.08 * o.g, filter: 'lowpass', f2: 3000, pan: o.pan }); noise(t, { dur: 0.01, filter: 'highpass', f: 2500, gain: 0.15 * o.g, pan: o.pan }); },
+      tock: (t, o) => { tone(t, { f: o.f || 820, dur: 0.07, gain: 0.25 * o.g, pan: o.pan }); noise(t, { dur: 0.05, filter: 'bandpass', f: o.f || 820, q: 9, gain: 0.35 * o.g, pan: o.pan }); },
+      blip: (t, o) => tone(t, { f: o.f || 'E6', type: o.type || 'square', dur: o.dur || 0.07, gain: 0.07 * o.g, a: 0.002, hold: (o.dur || 0.07) * 0.6, pan: o.pan }),
+      whoosh: (t, o) => { const d = o.dur || 0.45; noise(t, { dur: d, color: 'pink', filter: 'bandpass', f: [[0, 350], [d * 0.55, o.top || 2600], [d, 700]], q: 0.9, gain: 0.32 * o.g, a: d * 0.5, pan: o.pan, verb: 0.15 }); },
+      swish: (t, o) => { const d = o.dur || 0.18; noise(t, { dur: d, filter: 'highpass', f: [[0, 1800], [d, 5200]], q: 0.7, gain: 0.22 * o.g, a: d * 0.35, pan: o.pan }); },
+      riser: (t, o) => { const d = o.dur || 0.8; noise(t, { dur: d, color: 'pink', filter: 'bandpass', f: [[0, 300], [d, 4000]], q: 1.2, gain: 0.25 * o.g, a: d * 0.95, pan: o.pan, verb: 0.2 }); tone(t, { f: [[0, 180], [d, 720]], type: 'triangle', dur: d, gain: 0.06 * o.g, a: d * 0.9 }); },
+      thud: (t, o) => { tone(t, { f: [[0, o.f || 130], [0.16, 42]], dur: 0.26, gain: 0.55 * o.g, pan: o.pan }); noise(t, { dur: 0.09, color: 'brown', filter: 'lowpass', f: 500, gain: 0.35 * o.g, pan: o.pan }); },
+      impact: (t, o) => { S.thud(t, o); noise(t, { dur: 0.7, color: 'pink', filter: 'lowpass', f: [[0, 2400], [0.6, 300]], gain: 0.3 * o.g, verb: 0.35, pan: o.pan }); },
+      stamp: (t, o) => { S.thud(t, { ...o, f: 160 }); noise(t, { dur: 0.05, filter: 'bandpass', f: 1300, q: 1.2, gain: 0.4 * o.g, pan: o.pan }); noise(t + 0.004, { dur: 0.012, filter: 'highpass', f: 3500, gain: 0.25 * o.g, pan: o.pan }); },
+      ding: (t, o) => { const f = hz(o.f || 'E6'); tone(t, { f, dur: 1.3, gain: 0.2 * o.g, verb: 0.3, pan: o.pan }); tone(t, { f: f * 2.76, dur: 0.5, gain: 0.05 * o.g, verb: 0.3, pan: o.pan }); },
+      success: (t, o) => { S.ding(t, { ...o, f: o.f || 'C6' }); S.ding(t + 0.09, { ...o, f: hz(o.f || 'C6') * 1.5, g: o.g * 0.9 }); },
+      error: (t, o) => { tone(t, { f: o.f || 'A3', type: 'square', dur: 0.13, gain: 0.09 * o.g, hold: 0.08, filter: 'lowpass', f2: 1400, pan: o.pan }); tone(t + 0.15, { f: hz(o.f || 'A3') * 0.8, type: 'square', dur: 0.22, gain: 0.09 * o.g, hold: 0.14, filter: 'lowpass', f2: 1200, pan: o.pan }); },
+      buzz: (t, o) => { const d = o.dur || 0.3; tone(t, { f: o.f || 110, type: 'sawtooth', dur: d, gain: 0.12 * o.g, hold: d * 0.7, filter: 'lowpass', f2: 900, pan: o.pan }); tone(t, { f: (o.f || 110) * 1.01, type: 'sawtooth', dur: d, gain: 0.1 * o.g, hold: d * 0.7, filter: 'lowpass', f2: 900, pan: o.pan }); },
+      sparkle: (t, o) => { const r = rand('sparkle' + t), notes = ['C6', 'D6', 'E6', 'G6', 'A6', 'C7']; for (let i = 0; i < (o.n || 6); i++) { const ti = t + i * 0.04 + r() * 0.01, f = hz(notes[Math.floor(r() * notes.length)]), pan = r() * 1.2 - 0.6; tone(ti, { f, dur: 0.6, gain: 0.04 * o.g, a: 0.002, verb: 0.35, pan }); tone(ti, { f: f * 2.76, dur: 0.2, gain: 0.012 * o.g, a: 0.002, pan }); } },
+      glitch: (t, o) => { const r = rand('glitch' + t); for (let i = 0; i < 7; i++) tone(t + i * 0.022, { f: 200 + r() * 1800, type: 'square', dur: 0.02, gain: 0.07 * o.g, a: 0.001, hold: 0.015, pan: r() * 1.4 - 0.7 }); noise(t, { dur: 0.16, filter: 'bandpass', f: 2500, q: 0.6, gain: 0.12 * o.g }); },
+      shutter: (t, o) => { S.click(t, o); noise(t + 0.06, { dur: 0.04, filter: 'bandpass', f: 2200, q: 1, gain: 0.2 * o.g, pan: o.pan }); },
+      count: (t, o) => S.tick(t, { ...o, f: o.f || 5200, g: o.g * 0.7 }),
+
+      // hand-made media
+      stroke: (t, o) => {
+        const d = o.dur || 0.4, m = o.material || 'marker', r = rand('stroke' + m + t);
+        const M = {
+          marker: { f: 2900, q: 2.2, g: 0.16, grain: 0.05 },
+          chalk: { f: 1700, q: 0.6, g: 0.22, grain: 0.028 },
+          pencil: { f: 4600, q: 0.8, g: 0.16, grain: 0.04, filter: 'highpass' },
+          pen: { f: 4200, q: 1.6, g: 0.08, grain: 0.06 },
+          brush: { f: 900, q: 0.5, g: 0.1, grain: 0.09, color: 'pink' },
+          sharpie: { f: 2400, q: 1.4, g: 0.2, grain: 0.045 },
+        }[m];
+        for (let x = 0; x < d; x += M.grain * (0.7 + r() * 0.6)) {
+          const gd = M.grain * (0.8 + r() * 0.9);
+          noise(t + x, { dur: gd, color: M.color, filter: M.filter || 'bandpass', f: M.f * (0.8 + r() * 0.4), q: M.q, gain: M.g * o.g * (0.6 + r() * 0.5), a: gd * 0.3, pan: (o.pan || 0) + (r() - 0.5) * 0.2 });
+        }
+      },
+      paper: (t, o) => { const d = o.dur || 0.35, r = rand('paper' + t); for (let x = 0; x < d; x += 0.025 + r() * 0.03) noise(t + x, { dur: 0.05, filter: 'bandpass', f: 1200 + r() * 2600, q: 0.9, gain: 0.12 * o.g * (1 - x / d * 0.5), pan: o.pan }); },
+      slap: (t, o) => { noise(t, { dur: 0.07, filter: 'highpass', f: 900, gain: 0.45 * o.g, a: 0.001, pan: o.pan }); tone(t, { f: [[0, 180], [0.06, 70]], dur: 0.1, gain: 0.25 * o.g, pan: o.pan }); },
+      tape: (t, o) => { noise(t, { dur: o.dur || 0.5, filter: 'bandpass', f: [[0, 900], [o.dur || 0.5, 2200]], q: 1.8, gain: 0.18 * o.g, a: 0.02, pan: o.pan }); },
+      press: (t, o) => { S.thud(t, { ...o, f: 95, g: o.g * 0.9 }); noise(t + 0.01, { dur: 0.25, color: 'brown', filter: 'lowpass', f: 700, gain: 0.25 * o.g, pan: o.pan }); },
+      roller: (t, o) => { const d = o.dur || 0.6; noise(t, { dur: d, color: 'brown', filter: 'bandpass', f: 380, q: 1.5, gain: 0.3 * o.g, a: 0.05, hold: d * 0.6, pan: o.pan }); for (let x = 0; x < d; x += 0.07) S.tock(t + x, { f: 300, g: o.g * 0.15, pan: o.pan }); },
+      erase: (t, o) => { const d = o.dur || 0.6, r = rand('erase' + t); for (let x = 0; x < d; x += 0.06 + r() * 0.04) noise(t + x, { dur: 0.08, color: 'pink', filter: 'bandpass', f: 700 + r() * 500, q: 0.8, gain: 0.22 * o.g, a: 0.03, pan: (r() - 0.5) * 0.5 }); },
+
+      // machines and screens
+      key: (t, o) => { const r = rand('key' + t); noise(t, { dur: 0.025, filter: 'bandpass', f: 2600 + r() * 1200, q: 2, gain: 0.25 * o.g, a: 0.001, pan: o.pan }); tone(t, { f: 160 + r() * 40, dur: 0.04, gain: 0.12 * o.g, pan: o.pan }); },
+      typing: (t, o) => { const r = rand('typing' + t), n = o.n || 8, rate = o.rate || 0.09; for (let i = 0; i < n; i++) S.key(t + i * rate * (0.75 + r() * 0.5), { g: o.g * (0.7 + r() * 0.4), pan: o.pan }); },
+      typebar: (t, o) => { S.key(t, o); noise(t + 0.008, { dur: 0.03, filter: 'bandpass', f: 1100, q: 4, gain: 0.35 * o.g, pan: o.pan }); },
+      bell: (t, o) => S.ding(t, { ...o, f: o.f || 'A6' }),
+      boot: (t, o) => { tone(t, { f: [[0, 80], [0.35, 1600]], type: 'sine', dur: 0.5, gain: 0.08 * o.g, a: 0.3 }); S.blip(t + 0.45, { ...o, f: 'C6', dur: 0.12 }); },
+      crtOn: (t, o) => { noise(t, { dur: 0.25, filter: 'highpass', f: 2000, gain: 0.2 * o.g, a: 0.001 }); tone(t, { f: 15700, dur: 1.5, gain: 0.02 * o.g, a: 0.1, hold: 1 }); S.thud(t, { ...o, f: 90, g: o.g * 0.5 }); },
+      neon: (t, o) => { const d = o.dur || 0.25, r = rand('neon' + t); for (let x = 0; x < d; x += 0.035 + r() * 0.04) tone(t + x, { f: 120, type: 'sawtooth', dur: 0.03, gain: 0.3 * o.g * (0.5 + r() * 0.5), filter: 'bandpass', f2: 1200, q: 1.2, pan: o.pan }); },
+      // chip (8-bit console) sounds
+      coin: (t, o) => { tone(t, { f: 'B5', type: 'square', dur: 0.07, gain: 0.07 * o.g, a: 0.001, hold: 0.06 }); tone(t + 0.07, { f: 'E6', type: 'square', dur: 0.3, gain: 0.07 * o.g, a: 0.001, hold: 0.1 }); },
+      jump: (t, o) => tone(t, { f: [[0, 260], [0.16, 820]], type: 'square', dur: 0.18, gain: 0.07 * o.g, a: 0.001, hold: 0.12 }),
+      hurt: (t, o) => { tone(t, { f: [[0, 600], [0.25, 90]], type: 'square', dur: 0.28, gain: 0.08 * o.g, a: 0.001, hold: 0.2 }); noise(t, { dur: 0.2, filter: 'lowpass', f: 1800, gain: 0.15 * o.g, rate: 0.25 }); },
+      powerup: (t, o) => ['C5', 'E5', 'G5', 'C6', 'E6', 'G6', 'C7'].forEach((n, i) => tone(t + i * 0.045, { f: n, type: 'square', dur: 0.06, gain: 0.06 * o.g, a: 0.001, hold: 0.05 })),
+      select: (t, o) => { S.blip(t, { ...o, f: 'A5', dur: 0.04 }); S.blip(t + 0.05, { ...o, f: 'E6', dur: 0.05 }); },
+      text: (t, o) => { const n = o.n || 10, rate = o.rate || 0.05; for (let i = 0; i < n; i++) tone(t + i * rate, { f: i % 2 ? 'C6' : 'G5', type: 'square', dur: 0.025, gain: 0.04 * o.g, a: 0.001, hold: 0.015 }); },
+    };
+
+    function play(name, t, opts) {
+      const fn = S[name];
+      if (!fn) throw new Error('unknown sound: ' + name);
+      const o2 = Object.assign({}, opts); o2.g = o2.gain == null ? 1 : o2.gain;
+      if (opts && opts.minor) withMinor(() => fn(t, o2)); else fn(t, o2);
+    }
+
+    function withMinor(fn) { const was = inMinor; inMinor = true; try { fn(); } finally { inMinor = was; } }
+
+    // ---- beds
+    function bed(name, t0, t1, p) {
+      if (VO) return;
+      p = p || {}; const g = p.gain == null ? 1 : p.gain, d = t1 - t0, fade = Math.min(0.4, d / 4);
+      const long = (q) => Object.assign({ dur: d, a: fade, hold: d - fade * 2, bus: 'amb' }, q);
+      if (name === 'room') noise(t0, long({ color: 'brown', filter: 'lowpass', f: 320, gain: 0.12 * g }));
+      else if (name === 'hiss') noise(t0, long({ color: 'pink', filter: 'highpass', f: 5000, gain: 0.02 * g }));
+      else if (name === 'hum') { tone(t0, long({ f: 60, gain: 0.05 * g })); tone(t0, long({ f: 120, gain: 0.025 * g })); tone(t0, long({ f: 180, type: 'triangle', gain: 0.012 * g })); }
+      else if (name === 'rain') { noise(t0, long({ color: 'pink', filter: 'bandpass', f: 2500, q: 0.4, gain: 0.08 * g })); const r = rand('rain'); for (let x = 0; x < d; x += 0.04 + r() * 0.08) noise(t0 + x, { dur: 0.01, filter: 'highpass', f: 4000, gain: 0.04 * g * r(), bus: 'amb', pan: r() * 1.6 - 0.8 }); }
+      else if (name === 'projector') { noise(t0, long({ color: 'pink', filter: 'highpass', f: 3000, gain: 0.03 * g })); for (let x = 0; x < d; x += 1 / 24) S.tock(t0 + x, { f: 700, g: 0.04 * g, pan: 0.3 }); }
+      else if (name === 'vinyl') { noise(t0, long({ color: 'pink', filter: 'bandpass', f: 1500, q: 0.5, gain: 0.025 * g })); const r = rand('vinyl'); for (let x = 0; x < d; x += 0.08 + r() * 0.4) noise(t0 + x, { dur: 0.006, filter: 'highpass', f: 2500, gain: 0.08 * g * r(), bus: 'amb' }); }
+      else throw new Error('unknown bed: ' + name);
+    }
+
+    // ---- music
+    function music(name, t0, t1, p) {
+      if (VO) return;
+      p = p || {}; const g = p.gain == null ? 1 : p.gain, bpm = p.bpm || 100, beat = 60 / bpm, bar = beat * 4;
+      const chords = p.chords || [['C4', 'E4', 'G4', 'B4'], ['A3', 'C4', 'E4', 'G4'], ['F3', 'A3', 'C4', 'E4'], ['G3', 'B3', 'D4', 'F4']];
+      let i = 0;
+      for (let t = t0; t < t1 - 0.05; t += bar, i++) {
+        const ch = chords[i % chords.length], len = Math.min(bar, t1 - t);
+        if (name === 'pad' || name === 'pulse') ch.forEach((n, k) => { tone(t, { f: n, type: 'triangle', dur: len + 0.3, gain: 0.035 * g, a: 0.25, hold: len - 0.3, bus: 'music', filter: 'lowpass', f2: 1400, pan: (k - 1.5) * 0.25, verb: 0.25 }); tone(t, { f: hz(n) * 1.004, type: 'sine', dur: len + 0.3, gain: 0.03 * g, a: 0.3, hold: len - 0.3, bus: 'music' }); });
+        if (name === 'pulse') for (let b = 0; b < 4 && t + b * beat < t1 - 0.05; b++) {
+          const tb = t + b * beat;
+          tone(tb, { f: [[0, 110], [0.1, 50]], dur: 0.18, gain: (b % 2 ? 0.16 : 0.26) * g, bus: 'music' });
+          noise(tb + beat / 2, { dur: 0.04, filter: 'highpass', f: 7000, gain: 0.05 * g, bus: 'music' });
+          tone(tb + beat / 2, { f: hz(ch[0]) / 2, type: 'triangle', dur: beat * 0.45, gain: 0.08 * g, bus: 'music' });
+        }
+        if (name === 'chip') for (let s = 0; s < 8 && t + s * beat / 2 < t1 - 0.05; s++) {
+          const ts = t + s * beat / 2;
+          tone(ts, { f: hz(ch[0]) / 2, type: 'triangle', dur: beat * 0.45, gain: 0.12 * g, a: 0.001, hold: beat * 0.35, bus: 'music' });
+          tone(ts, { f: ch[[0, 1, 2, 3, 2, 1, 2, 3][s]], type: 'square', dur: beat * 0.4, gain: 0.03 * g, a: 0.001, hold: beat * 0.25, bus: 'music' });
+        }
+      }
+    }
+
+    return { play, bed, music, tone, noise, withMinor, hz, vo: VO, sounds: Object.keys(S) };
+  };
+
+  // Live playback for a player
+  SOUND.live = function (fn, fromT, opts) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    fn(SOUND.kit(ctx, Object.assign({}, opts, { start: fromT || 0, delay: 0.03 })));
+    return () => { try { ctx.close(); } catch (e) {} };
+  };
+
+  // Render a style's explainerSound into an OfflineAudioContext; returns interleaved float stereo.
+  SOUND.renderOffline = async function (fn, duration, sampleRate, kitOpts) {
+    const sr = sampleRate || 48000, len = Math.ceil(duration * sr);
+    const ctx = new OfflineAudioContext(2, len, sr);
+    fn(SOUND.kit(ctx, kitOpts || {}));
+    const buf = await ctx.startRendering();
+    const L = buf.getChannelData(0), R = buf.getChannelData(1), inter = new Float32Array(len * 2);
+    let peak = 0;
+    for (let i = 0; i < len; i++) { inter[2 * i] = L[i]; inter[2 * i + 1] = R[i]; peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i])); }
+    return { inter, peak, frames: len, sr };
+  };
+})();
+</script>
+
+<script>
+// ===================== Sticky-Note Wall: reference drawing, texture and finishing functions =====================
+const TAU = Math.PI * 2;
+const INK = '#1b1f29', BLUE = '#1f3c8f', RED = '#c3202a';
+const XW = 3200, XH = 1600;
+let BIGCORK = null;
+const GRAIN_TILES = {};
+
+function grainPattern(ctx, seed) {
+  if (!GRAIN_TILES[seed]) { // same tile as the reference, built once and cached
+    const c = H.layer(160, 160), x = c.getContext('2d'), img = x.createImageData(160, 160), d = img.data, r = H.rng(seed), nz = H.makeNoise(seed);
+    for (let i = 0; i < 160 * 160; i++) {
+      const px = i % 160, py = (i / 160) | 0;
+      const v = 200 + (r() - 0.5) * 50 + nz.n2(px * 0.4, py * 0.05) * 20;
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
+    }
+    x.putImageData(img, 0, 0);
+    GRAIN_TILES[seed] = c;
+  }
+  return ctx.createPattern(GRAIN_TILES[seed], 'repeat');
+}
+
+// handwriting: per-word jitter on baseline/rotation, light double-pass for marker bleed
+function hand(ctx, lines, x, y, font, color, seed, lh, opts = {}) {
+  const r = H.rng(seed);
+  ctx.save(); ctx.font = font; ctx.fillStyle = color; ctx.textBaseline = 'middle';
+  lines.forEach((ln, li) => {
+    const words = ln.split(' ');
+    const sp = ctx.measureText(' ').width * 0.9;
+    const total = words.reduce((a, w) => a + ctx.measureText(w).width, 0) + sp * (words.length - 1);
+    let cx = x - total / 2 + r.range(-4, 4);
+    const cy = y + (li - (lines.length - 1) / 2) * lh;
+    words.forEach((w) => {
+      const ww = ctx.measureText(w).width;
+      ctx.save(); ctx.translate(cx + ww / 2, cy + r.range(-2, 2)); ctx.rotate(r.range(-0.045, 0.045));
+      ctx.textAlign = 'center';
+      ctx.globalAlpha = 0.35; ctx.fillText(w, 0.7, 0.5);
+      ctx.globalAlpha = opts.alpha || 0.93; ctx.fillText(w, 0, 0);
+      ctx.restore();
+      cx += ww + sp;
+    });
+  });
+  ctx.restore();
+}
+// wobbly marker line
+function mline(ctx, pts, w, color, r, close) {
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  pts.forEach((p, i) => { const x = p[0] + r.range(-0.8, 0.8), y = p[1] + r.range(-0.8, 0.8); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  if (close) ctx.closePath();
+  ctx.stroke(); ctx.restore();
+}
+const arcPts = (cx, cy, rx, ry, a0, a1, n = 20) => { const o = []; for (let k = 0; k <= n; k++) { const a = a0 + (a1 - a0) * k / n; o.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]); } return o; };
+
+function note(ctx, o, pat) {
+  const { x, y, w, h, rot, col } = o;
+  const r = H.rng(o.seed);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  const hw = w / 2, hh = h / 2, lift = (o.lift ?? 1) * 1.35;
+  const air = Math.max(0, o.air || 0); ctx.save(); ctx.filter = `blur(${7 + air * 40}px)`; ctx.translate(air * 50, air * 70); ctx.fillStyle = `rgba(40,20,5,${0.42 - air * 0.5})`;
+  ctx.beginPath(); ctx.moveTo(-hw + 3, -hh + 5); ctx.lineTo(hw + 3, -hh + 5); ctx.lineTo(hw + 6 + 6 * lift, hh + 8 + 10 * lift); ctx.quadraticCurveTo(0, hh + 4 + 6 * lift, -hw + 1, hh + 6 + 9 * lift); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.filter = 'blur(1.5px)'; ctx.fillStyle = 'rgba(40,20,5,0.3)'; ctx.fillRect(-hw + 1, -hh + 2, w, h * 0.3); ctx.restore();
+  const bc = 5 * lift;
+  const shape = () => { ctx.beginPath(); ctx.moveTo(-hw, -hh); ctx.lineTo(hw, -hh); ctx.lineTo(hw + 0.5, hh - bc); ctx.quadraticCurveTo(hw * 0.2, hh + bc * 0.4, -hw, hh - bc * 0.4); ctx.closePath(); };
+  shape(); ctx.fillStyle = col; ctx.fill();
+  ctx.save(); shape(); ctx.clip();
+  ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.16; ctx.fillStyle = pat; ctx.fillRect(-hw, -hh, w, h + 10);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  const ag = ctx.createLinearGradient(0, -hh, 0, -hh + h * 0.2);
+  ag.addColorStop(0, 'rgba(90,60,0,0.07)'); ag.addColorStop(0.9, 'rgba(90,60,0,0.05)'); ag.addColorStop(1, 'rgba(255,255,255,0.10)');
+  ctx.fillStyle = ag; ctx.fillRect(-hw, -hh, w, h * 0.2 + 1);
+  const cg = ctx.createLinearGradient(0, hh * 0.25, 0, hh + 4);
+  cg.addColorStop(0, 'rgba(255,255,255,0)'); cg.addColorStop(0.55, `rgba(255,255,240,${0.14 * lift})`); cg.addColorStop(0.85, `rgba(60,30,0,${0.1 * lift})`); cg.addColorStop(1, `rgba(60,30,0,${0.2 * lift})`);
+  ctx.fillStyle = cg; ctx.fillRect(-hw, -hh, w, h + 10);
+  const rg = ctx.createRadialGradient(hw, hh, 2, hw, hh, w * 0.45); rg.addColorStop(0, `rgba(60,30,0,${0.16 * lift})`); rg.addColorStop(1, 'rgba(60,30,0,0)');
+  ctx.fillStyle = rg; ctx.fillRect(-hw, -hh, w, h + 10);
+  const lg = ctx.createLinearGradient(-hw, -hh, hw, hh); lg.addColorStop(0, 'rgba(255,255,255,0.10)'); lg.addColorStop(1, 'rgba(0,0,0,0.06)');
+  ctx.fillStyle = lg; ctx.fillRect(-hw, -hh, w, h + 10);
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(80,50,10,0.18)'; ctx.lineWidth = 0.8; shape(); ctx.stroke();
+  if (o.draw) { ctx.save(); ctx.translate(0, o.pin ? 8 : 0); o.draw(ctx, r, hw, hh); ctx.restore(); }
+  ctx.restore();
+}
+
+function tape(ctx, x, y, w, h, rot, seed) {
+  const r = H.rng(seed);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  const edge = (x0, sgn) => { const pts = []; for (let k = 0; k <= 8; k++) pts.push([x0 + sgn * r.range(0, 3.5), -h / 2 + k * h / 8]); return pts; };
+  const L = edge(-w / 2, 1), R = edge(w / 2, -1);
+  const path = () => { ctx.beginPath(); L.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); R.slice().reverse().forEach((p) => ctx.lineTo(...p)); ctx.closePath(); };
+  ctx.save(); ctx.filter = 'blur(2px)'; ctx.translate(2, 3); path(); ctx.fillStyle = 'rgba(40,25,5,0.18)'; ctx.fill(); ctx.restore();
+  path(); ctx.fillStyle = 'rgba(232,218,170,0.62)'; ctx.fill();
+  ctx.save(); path(); ctx.clip();
+  for (let k = 0; k < 40; k++) { ctx.fillStyle = `rgba(255,255,255,${r.range(0, 0.12)})`; ctx.fillRect(r.range(-w / 2, w / 2), r.range(-h / 2, h / 2), r.range(4, 18), 1); }
+  const g = ctx.createLinearGradient(0, -h / 2, 0, h / 2); g.addColorStop(0, 'rgba(255,255,255,0.25)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(120,90,30,0.12)');
+  ctx.fillStyle = g; ctx.fillRect(-w / 2 - 4, -h / 2, w + 8, h);
+  ctx.restore();
+  ctx.restore();
+}
+
+function pinShadow(ctx, x, y) {
+  ctx.save(); ctx.filter = 'blur(3px)'; ctx.fillStyle = 'rgba(30,15,0,0.45)';
+  ctx.beginPath(); ctx.ellipse(x + 9, y + 12, 10, 8, 0.5, 0, TAU); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.strokeStyle = 'rgba(30,15,0,0.35)'; ctx.lineWidth = 1.6; ctx.filter = 'blur(0.8px)';
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 16, y + 20); ctx.stroke(); ctx.restore();
+}
+function pinHead(ctx, x, y, col) {
+  const c = H.hex(col);
+  ctx.save();
+  let g = ctx.createRadialGradient(x - 4, y - 4, 1, x, y, 12);
+  g.addColorStop(0, H.rgba(H.mix(c, [255, 255, 255], 0.35))); g.addColorStop(0.6, H.rgba(c)); g.addColorStop(1, H.rgba(H.mix(c, [0, 0, 0], 0.5)));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 11, 0, TAU); ctx.fill();
+  g = ctx.createRadialGradient(x - 4, y - 5, 0.5, x - 1, y - 2, 9);
+  g.addColorStop(0, 'rgba(255,255,255,0.95)'); g.addColorStop(0.25, H.rgba(H.mix(c, [255, 255, 255], 0.25))); g.addColorStop(1, H.rgba(H.mix(c, [0, 0, 0], 0.35)));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x - 1, y - 2, 7.5, 0, TAU); ctx.fill();
+  ctx.strokeStyle = H.rgba(H.mix(c, [0, 0, 0], 0.55), 0.6); ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(x, y, 11, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+function yarn(ctx, a, b, sag, prog, r) {
+  if (prog <= 0) return;
+  const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2 + sag;
+  const pts = [];
+  const n = 60, m = Math.max(1, Math.round(n * prog));
+  for (let k = 0; k <= m; k++) { const t = k / n, u = 1 - t; pts.push([u * u * a[0] + 2 * u * t * mx + t * t * b[0], u * u * a[1] + 2 * u * t * my + t * t * b[1]]); }
+  const path = (dx = 0, dy = 0) => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0] + dx, p[1] + dy) : ctx.moveTo(p[0] + dx, p[1] + dy)); };
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.filter = 'blur(2.5px)'; ctx.strokeStyle = 'rgba(30,10,0,0.4)'; ctx.lineWidth = 3; path(5, 9); ctx.stroke(); ctx.filter = 'none';
+  ctx.strokeStyle = '#a8121b'; ctx.lineWidth = 3.4; path(); ctx.stroke();
+  ctx.strokeStyle = '#d8323a'; ctx.lineWidth = 2; path(-0.4, -0.5); ctx.stroke();
+  ctx.setLineDash([2.2, 3.2]); ctx.strokeStyle = 'rgba(255,150,140,0.75)'; ctx.lineWidth = 1.1; path(-0.6, -0.8); ctx.stroke();
+  ctx.lineDashOffset = 2.6; ctx.strokeStyle = 'rgba(90,0,0,0.5)'; ctx.lineWidth = 1; path(0.8, 0.8); ctx.stroke();
+  ctx.setLineDash([]);
+  for (let k = 0; k < 6; k++) { const p = pts[Math.floor(r() * pts.length)]; ctx.strokeStyle = 'rgba(200,40,40,0.5)'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0] + r.range(-4, 4), p[1] + r.range(-4, 4)); ctx.stroke(); }
+  ctx.restore();
+}
+
+function bigCork() {
+  if (BIGCORK) return BIGCORK;
+  const L = H.layer(XW, XH), c = L.getContext('2d'), img = c.createImageData(XW, XH), d = img.data, nz = H.makeNoise(12);
+  const A = [176, 128, 78], B = [214, 170, 112], Dk = [120, 78, 40];
+  for (let y = 0; y < XH; y++) for (let x = 0; x < XW; x++) {
+    const g1 = nz.n2(x * 0.21, y * 0.21), h = ((x * 374761393 + y * 668265263) ^ 0x5bd1e995) >>> 0, rr = ((h ^ (h >>> 13)) * 1274126177 >>> 0) / 4294967296;
+    const g2 = nz.n2(x * 0.55 + 40, y * 0.55);
+    const v = H.clamp(0.5 + g1 * 0.8 + g2 * 0.45 + (rr - 0.5) * 0.3), low = nz.n2(x * 0.006, y * 0.006) * 0.1;
+    const pore = g2 > 0.42 ? H.clamp((g2 - 0.42) * 5) * 0.85 : (rr > 0.95 ? 0.6 : 0);
+    const rr2 = (((h * 2246822519) ^ (h >>> 16)) >>> 0) / 4294967296;
+    const i = (y * XW + x) * 4, s = 1 + low + (rr2 - 0.5) * 0.12;
+    d[i] = H.lerp(A[0] + (B[0] - A[0]) * v, Dk[0], pore) * s; d[i + 1] = H.lerp(A[1] + (B[1] - A[1]) * v, Dk[1], pore) * s; d[i + 2] = H.lerp(A[2] + (B[2] - A[2]) * v, Dk[2], pore) * s; d[i + 3] = 255;
+  }
+  c.putImageData(img, 0, 0);
+  { const r = H.rng(77); for (let k = 0; k < 260; k++) { const x = r() * XW, y = r() * XH, rad = r.range(0.9, 1.8); c.fillStyle = 'rgba(40,20,5,0.6)'; c.beginPath(); c.arc(x, y, rad, 0, Math.PI * 2); c.fill(); c.fillStyle = 'rgba(255,230,190,0.18)'; c.beginPath(); c.arc(x - rad * 0.6, y - rad * 0.6, rad * 0.7, 0, Math.PI * 2); c.fill(); } }
+  const f = 26;
+  const wood = (x, y, w, h, vert) => {
+    const g = vert ? c.createLinearGradient(x, 0, x + w, 0) : c.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, '#7a4e2a'); g.addColorStop(0.4, '#9a6a3c'); g.addColorStop(1, '#5a361b');
+    c.fillStyle = g; c.fillRect(x, y, w, h);
+    c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip(); c.strokeStyle = 'rgba(60,30,10,0.35)'; c.lineWidth = 0.9;
+    const len = vert ? h : w, n = Math.ceil(len / 6);
+    for (let k = 0; k < 10; k++) { c.beginPath(); for (let s2 = 0; s2 <= n; s2++) { const q = s2 / n; const px = vert ? x + 2 + k * 2.4 + Math.sin(q * len / 40 + k) * 0.9 : x + q * w; const py = vert ? y + q * h : y + 2 + k * 2.4 + Math.sin(q * len / 40 + k) * 0.9; s2 ? c.lineTo(px, py) : c.moveTo(px, py); } c.stroke(); }
+    c.restore();
+  };
+  wood(0, 0, XW, f, false); wood(0, XH - f, XW, f, false); wood(0, 0, f, XH, true); wood(XW - f, 0, f, XH, true);
+  c.strokeStyle = 'rgba(20,10,0,0.35)'; c.lineWidth = 8; c.filter = 'blur(5px)'; c.strokeRect(f + 3, f + 3, XW - 2 * f - 6, XH - 2 * f - 6); c.filter = 'none';
+  BIGCORK = L; return L;
+}
+// write-on: reveal content left to right like a marker moving
+function wr(ctx, p, x0, y0, w, h, fn) { if (p <= 0) return; ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, w * Math.min(1, p), h); ctx.clip(); fn(); ctx.restore(); }
+function arrowM(ctx, pts, p, col, w, r) {
+  if (p <= 0) return;
+  const n = Math.max(2, Math.round(pts.length * Math.min(1, p)));
+  const seg = pts.slice(0, n);
+  mline(ctx, seg, w, col, r);
+  if (p >= 1) { const a = pts[pts.length - 1], b = pts[pts.length - 3] || pts[0], an = Math.atan2(a[1] - b[1], a[0] - b[0]); mline(ctx, [[a[0] + Math.cos(an + 2.6) * 22, a[1] + Math.sin(an + 2.6) * 22], a, [a[0] + Math.cos(an - 2.6) * 22, a[1] + Math.sin(an - 2.6) * 22]], w, col, r); }
+}
+const qpts = (a, c, b, n = 24) => { const o = []; for (let k = 0; k <= n; k++) { const t = k / n, m = 1 - t; o.push([m * m * a[0] + 2 * m * t * c[0] + t * t * b[0], m * m * a[1] + 2 * m * t * c[1] + t * t * b[1]]); } return o; };
+
+// ===================== new doodles for this story (same marker recipe as the reference doodles) =====================
+function cup(c, x, y, s, col, r) { // coffee cup: tapered body, rim, handle, steam
+  const w = Math.max(1.8, 2.1 * Math.min(s, 1.25));
+  mline(c, [[x - 11 * s, y - 8 * s], [x - 8 * s, y + 10 * s], [x + 8 * s, y + 10 * s], [x + 11 * s, y - 8 * s]], w, col, r);
+  mline(c, [[x - 11 * s, y - 8 * s], [x + 11 * s, y - 8 * s]], w, col, r);
+  mline(c, arcPts(x + 11 * s, y + 1 * s, 6 * s, 5 * s, -1.5, 1.5, 8), w, col, r);
+  mline(c, [[x - 3 * s, y - 12 * s], [x - 1 * s, y - 16 * s], [x - 4 * s, y - 20 * s]], w * 0.7, col, r);
+}
+function upArrow(c, x, y, s, col, r) { mline(c, [[x, y + 22 * s], [x, y - 22 * s]], 4 * s, col, r); mline(c, [[x - 12 * s, y - 8 * s], [x, y - 24 * s], [x + 12 * s, y - 8 * s]], 4 * s, col, r); }
+function check(c, x, y, s, col, r) { mline(c, [[x - 18 * s, y], [x - 6 * s, y + 14 * s], [x + 20 * s, y - 20 * s]], 6 * s, col, r); }
+
+
+// ===================== TOPIC POOL =====================
+// Every topic fills the same 8-beat wall: hook, chain (3 notes), name, compare (2 notes + key card), list (3 notes),
+// equation (a op b = c), fix (2 notes), takeaway. vo = one narration line per beat. Numbers are illustrative.
+// To add a topic, copy one object and change the text. Keep big values short (about 5 characters).
+const TOPICS = [
+  { id: 'inflation',
+    caption: 'Why does your money buy less every year? Inflation, explained in under a minute.',
+    tags: '#Inflation #PersonalFinance #MoneyTips #Finance #Economics',
+    vo: [
+      'Why does your money buy less every year? Here is the simple answer.',
+      'A coffee costs four dollars today. If prices rise three percent a year, it costs about five thirty-eight in ten years.',
+      'That slow rise in prices has a name: inflation.',
+      'So one hundred dollars buys twenty-five coffees today, but only about nineteen in ten years. That is roughly twenty-six percent less buying power.',
+      'Why do prices rise? People want more, making things costs more, and extra cash chases the same stuff.',
+      'And cash in the bank? If it earns one percent while prices rise three percent, your real gain is about minus two percent.',
+      'The fix: earn raises that keep pace with prices, and let your money grow.',
+      'Prices climb, so make your money grow faster.'],
+    hook: ['Why does money', 'buy less?'],
+    chain: { notes: [{ label: 'TODAY', big: '$4.00', icon: 'cup' }, { label: 'YEAR 5', big: '$4.64', icon: 'cup' }, { label: 'YEAR 10', big: '$5.38', icon: 'cup' }], arrows: ['+3%/yr', '+3%/yr'] },
+    name: { word: 'INFLATION', sub: 'prices creep up' },
+    cmp: { a: { title: '$100 today', icon: 'cup', big: '25', sub: 'cups' }, mid: '10 yrs', b: { title: '$100 later', icon: 'cup', big: '~19', sub: 'cups' }, key: { big: '-26%', sub: 'buying power' }, good: false },
+    list: { head: 'Why prices rise?', items: [{ t: 'DEMAND', l: ['everyone', 'wants more'], icon: 'up' }, { t: 'COSTS', l: ['wages &', 'materials'], icon: 'up' }, { t: 'MORE CASH', l: ['chasing the', 'same stuff'], icon: 'up' }] },
+    eq: { head: 'Saving in cash?', a: { t: 'INTEREST', v: '1%' }, op: '-', b: { t: 'INFLATION', v: '3%' }, c: { t: 'REAL GAIN', v: '-2%', s: 'poorer!' }, bad: true },
+    fix: { head: 'The fix', a: { t: 'EARN MORE', l: ['raises that', 'match prices'] }, b: { t: 'GROW IT', l: ['invest to', 'beat 3%'] } },
+    end: ['Prices climb.', 'Grow faster.'] },
+
+  { id: 'compound',
+    caption: 'Why starting early matters: compound interest in under a minute.',
+    tags: '#CompoundInterest #Investing #PersonalFinance #MoneyTips #Saving',
+    vo: [
+      'Want a simple way to grow your money? Let time do the work.',
+      'Put away one hundred dollars. At seven percent growth a year, it becomes about one ninety-seven in ten years, and seven sixty-one in thirty.',
+      'Growth that earns more growth is called compound interest.',
+      'A hundred dollars a month at seven percent: start at twenty-five and get about two hundred sixty-two thousand by sixty-five. Start at thirty-five and get about one hundred twenty-two thousand.',
+      'Three things power it: time, the growth rate, and leaving your earnings invested.',
+      'Over forty years you put in forty-eight thousand dollars. Growth adds about two hundred fourteen thousand more.',
+      'So start now, even small, and do not cash out early.',
+      'Time is the secret sauce. Start early and let it compound.'],
+    hook: ['Why start', 'saving early?'],
+    chain: { notes: [{ label: 'TODAY', big: '$100', icon: 'coin' }, { label: 'YEAR 10', big: '$197', icon: 'stack' }, { label: 'YEAR 30', big: '$761', icon: 'bag' }], arrows: ['+7%/yr', '+7%/yr'] },
+    name: { word: 'COMPOUND', sub: 'interest on interest' },
+    cmp: { a: { title: 'START AT 25', icon: 'stack', big: '$262k', sub: 'at 65' }, mid: '10 yrs', b: { title: 'START AT 35', icon: 'coin', big: '$122k', sub: 'at 65' }, key: { big: '-54%', sub: 'for waiting' }, good: false },
+    list: { head: 'What powers it?', items: [{ t: 'TIME', l: ['the longer', 'the better'], icon: 'clock' }, { t: 'RATE', l: ['higher growth,', 'bigger result'], icon: 'chart' }, { t: 'REINVEST', l: ['keep earnings', 'invested'], icon: 'stack' }] },
+    eq: { head: 'The 40-year math', a: { t: 'YOU ADD', v: '$48k' }, op: '+', b: { t: 'GROWTH', v: '$214k' }, c: { t: 'TOTAL', v: '$262k', s: 'wow' }, bad: false },
+    fix: { head: 'Make it work', a: { t: 'START NOW', l: ['even $25 a', 'month counts'] }, b: { t: 'STAY PUT', l: ['do not cash', 'out early'] } },
+    end: ['Start early.', 'Let it compound.'] },
+
+  { id: 'rule72',
+    caption: 'The rule of 72: how fast does your money double? A quick mental shortcut.',
+    tags: '#RuleOf72 #Investing #PersonalFinance #MoneyTips #FinancialLiteracy',
+    vo: [
+      'Here is a mental shortcut: how long does it take your money to double?',
+      'At three percent it takes about twenty-four years. At six percent, twelve years. At nine percent, only eight.',
+      'It is called the rule of seventy-two.',
+      'Ten thousand dollars at six percent doubles to twenty thousand in twelve years, and to forty thousand in twenty-four. Four times, just by waiting.',
+      'Handy for savings, to see how long to double. Handy for debt, to see how fast it doubles. And handy for prices.',
+      'Just divide seventy-two by the rate. Seventy-two divided by six is twelve years.',
+      'Use it to compare rates quickly and to spot debts that double fast.',
+      'Divide seventy-two by the rate.'],
+    hook: ['How fast does', 'money double?'],
+    chain: { notes: [{ label: 'AT 3%', big: '24 yr', icon: 'clock' }, { label: 'AT 6%', big: '12 yr', icon: 'clock' }, { label: 'AT 9%', big: '8 yr', icon: 'clock' }], arrows: ['faster', 'faster'] },
+    name: { word: 'RULE OF 72', sub: 'years to double' },
+    cmp: { a: { title: 'IN 12 YRS', icon: 'stack', big: '$20k', sub: 'from $10k' }, mid: 'x2', b: { title: 'IN 24 YRS', icon: 'bag', big: '$40k', sub: 'at 6%' }, key: { big: '4x', sub: 'in 24 years' }, good: true },
+    list: { head: 'Use it for', items: [{ t: 'SAVINGS', l: ['how long to', 'double it'], icon: 'coin' }, { t: 'DEBT', l: ['how fast it', 'doubles'], icon: 'card' }, { t: 'PRICES', l: ['how fast they', 'double'], icon: 'cup' }] },
+    eq: { head: 'The formula', a: { t: 'MAGIC', v: '72' }, op: '/', b: { t: 'RATE %', v: '6' }, c: { t: 'YEARS', v: '12', s: 'to double' }, bad: false },
+    fix: { head: 'Quick tips', a: { t: 'COMPARE', l: ['rates fast,', 'in your head'] }, b: { t: 'SPOT TRAPS', l: ['high-rate debt', 'doubles fast'] } },
+    end: ['Divide 72', 'by the rate.'] },
+
+  { id: 'budget',
+    caption: 'The 50/30/20 budget: a simple way to split every paycheck.',
+    tags: '#Budgeting #503020 #PersonalFinance #MoneyTips #Saving',
+    vo: [
+      'Not sure where your paycheck goes? Try this simple budget.',
+      'Say you take home three thousand dollars a month. Fifty percent, fifteen hundred, goes to needs. Thirty percent, nine hundred, to wants. Twenty percent, six hundred, to saving.',
+      'It is called the fifty thirty twenty rule.',
+      'Saving six hundred dollars a month adds up to seven thousand two hundred dollars in one year.',
+      'Needs are rent, food and bills. Wants are fun, eating out and trips. Savings cover your emergency fund, debt and future.',
+      'Needs plus wants are eighty percent, saving is twenty, and together that is every dollar.',
+      'Automate your savings on payday, and tweak the percentages to fit your life.',
+      'Give every dollar a job.'],
+    hook: ['Where does', 'your pay go?'],
+    chain: { notes: [{ label: '50% NEEDS', big: '$1.5k', icon: 'house' }, { label: '30% WANTS', big: '$900', icon: 'cup' }, { label: '20% SAVE', big: '$600', icon: 'stack' }], arrows: ['then', 'then'] },
+    name: { word: '50/30/20', sub: 'a simple budget rule' },
+    cmp: { a: { title: 'EACH MONTH', icon: 'stack', big: '$600', sub: 'saved' }, mid: 'x 12', b: { title: 'IN 1 YEAR', icon: 'bag', big: '$7.2k', sub: 'saved' }, key: { big: '+$7.2k', sub: 'every year' }, good: true },
+    list: { head: 'What goes where?', items: [{ t: 'NEEDS', l: ['rent, food,', 'bills'], icon: 'house' }, { t: 'WANTS', l: ['fun, eating', 'out, trips'], icon: 'cup' }, { t: 'SAVE', l: ['emergency, debt,', 'future'], icon: 'stack' }] },
+    eq: { head: 'It adds up', a: { t: 'NEEDS+WANTS', v: '80%' }, op: '+', b: { t: 'SAVE', v: '20%' }, c: { t: 'EVERY $', v: '100%', s: 'covered' }, bad: false },
+    fix: { head: 'Make it stick', a: { t: 'AUTOMATE', l: ['move savings', 'on payday'] }, b: { t: 'ADJUST', l: ['tweak the %', 'to fit you'] } },
+    end: ['Give every', 'dollar a job.'] },
+
+  { id: 'emergency',
+    caption: 'What is an emergency fund and how big should it be? A quick guide.',
+    tags: '#EmergencyFund #Saving #PersonalFinance #MoneyTips #FinancialSecurity',
+    vo: [
+      'What happens when life throws a surprise bill at you?',
+      'Build an emergency fund in steps. First, one thousand dollars. Then three months of expenses. Then six.',
+      'That is an emergency fund: cash set aside for surprises.',
+      'Say the car needs a thousand dollar repair. Without a fund, it goes on a card as debt. With a fund, you just pay it and stay calm.',
+      'It covers job loss, car and home repairs, and unexpected medical bills.',
+      'A simple target: your monthly bills times the number of months. Three thousand dollars times three is nine thousand.',
+      'Build it with small automatic transfers, and keep it in its own savings account.',
+      'Save for the unexpected.'],
+    hook: ['Surprise bill?', 'Are you ready?'],
+    chain: { notes: [{ label: 'STEP 1', big: '$1k', icon: 'coin' }, { label: 'STEP 2', big: '3 mo', icon: 'stack' }, { label: 'STEP 3', big: '6 mo', icon: 'bag' }], arrows: ['then', 'then'] },
+    name: { word: 'EMERGENCY', sub: 'cash for surprises' },
+    cmp: { a: { title: 'NO FUND', icon: 'card', big: 'DEBT', sub: 'on a card' }, mid: 'repair', b: { title: 'WITH FUND', icon: 'umbrella', big: 'PAID', sub: 'no stress' }, key: { big: 'CALM', sub: 'no card debt' }, good: true },
+    list: { head: 'What counts?', items: [{ t: 'JOB LOSS', l: ['months without', 'a paycheck'], icon: 'clock' }, { t: 'REPAIRS', l: ['car, home,', 'appliances'], icon: 'house' }, { t: 'MEDICAL', l: ['bills you did', 'not plan'], icon: 'shield' }] },
+    eq: { head: 'How much?', a: { t: 'BILLS', v: '$3k' }, op: 'x', b: { t: 'MONTHS', v: '3' }, c: { t: 'FUND', v: '$9k', s: 'goal' }, bad: false },
+    fix: { head: 'Build it', a: { t: 'AUTOSAVE', l: ['small amounts', 'every payday'] }, b: { t: 'SEPARATE', l: ['keep it in its', 'own account'] } },
+    end: ['Save for the', 'unexpected.'] },
+
+  { id: 'credit',
+    caption: 'What is a credit score and what moves it? The basics in under a minute.',
+    tags: '#CreditScore #Credit #PersonalFinance #MoneyTips #FinancialLiteracy',
+    vo: [
+      'What is a credit score, and why does it matter?',
+      'It is a number from three hundred to eight fifty. Below five eighty is poor, around six seventy is good, and eight hundred plus is exceptional.',
+      'Lenders use it to judge how risky you are to lend to.',
+      'A low score usually means higher interest rates. A high score usually means lower rates, and that can save you a lot of money.',
+      'The biggest factors: paying on time, about thirty-five percent. How much you owe, thirty percent. And the age of your credit history, fifteen percent.',
+      'Credit usage is your balance divided by your limit. Three hundred divided by a thousand is thirty percent.',
+      'Easy wins: pay on time, every time, and keep your balances low.',
+      'Good habits build good credit.'],
+    hook: ['What is a', 'credit score?'],
+    chain: { notes: [{ label: 'POOR', big: '<580', icon: 'card' }, { label: 'GOOD', big: '670+', icon: 'card' }, { label: 'GREAT', big: '800+', icon: 'shield' }], arrows: ['climb', 'climb'] },
+    name: { word: 'CREDIT SCORE', sub: 'a 300 to 850 grade' },
+    cmp: { a: { title: 'LOW SCORE', icon: 'card', big: 'HIGH', sub: 'interest rate' }, mid: 'vs', b: { title: 'HIGH SCORE', icon: 'shield', big: 'LOW', sub: 'interest rate' }, key: { big: 'SAVE $$', sub: 'on every loan' }, good: true },
+    list: { head: 'What counts most?', items: [{ t: 'ON TIME', l: ['payments: 35%', 'of your score'], icon: 'check' }, { t: 'USAGE', l: ['balances: 30%', 'keep them low'], icon: 'card' }, { t: 'AGE', l: ['history: 15%', 'older is better'], icon: 'clock' }] },
+    eq: { head: 'Credit usage', a: { t: 'BALANCE', v: '$300' }, op: '/', b: { t: 'LIMIT', v: '$1k' }, c: { t: 'USAGE', v: '30%', s: 'keep it low' }, bad: false },
+    fix: { head: 'Easy wins', a: { t: 'ON TIME', l: ['set autopay,', 'never miss'] }, b: { t: 'KEEP LOW', l: ['use under 30%', 'of your limit'] } },
+    end: ['Good habits', 'build good credit.'] },
+
+  { id: 'diversify',
+    caption: 'Do not put all your eggs in one basket: diversification explained simply.',
+    tags: '#Diversification #Investing #PersonalFinance #MoneyTips #IndexFunds',
+    vo: [
+      'Why do smart investors say, do not put all your eggs in one basket?',
+      'One stock is one bet. Ten stocks is ten bets. A broad index fund can hold five hundred companies or more.',
+      'Spreading your money around is called diversification.',
+      'With one stock, a single bad day can hurt a lot. With many stocks, the ride is smoother. Less risk, but never zero risk.',
+      'A mix can include stocks for growth, bonds for steadiness, and cash for near-term needs.',
+      'Split one thousand dollars across ten investments, and each holds just one hundred.',
+      'Broad index funds keep it simple, and a quick check once a year keeps the mix on track.',
+      'Do not bet it all on one.'],
+    hook: ['Eggs in one', 'basket?'],
+    chain: { notes: [{ label: 'ONE STOCK', big: '1', icon: 'coin' }, { label: 'A FEW', big: '10', icon: 'stack' }, { label: 'INDEX FUND', big: '500+', icon: 'bag' }], arrows: ['add', 'add'] },
+    name: { word: 'DIVERSIFY', sub: 'do not bet it all on one' },
+    cmp: { a: { title: 'ONE STOCK', icon: 'chart', big: 'WILD', sub: 'big swings' }, mid: 'spread', b: { title: 'MANY STOCKS', icon: 'shield', big: 'SMOOTH', sub: 'calmer ride' }, key: { big: 'LESS RISK', sub: 'never zero' }, good: true },
+    list: { head: 'What to mix?', items: [{ t: 'STOCKS', l: ['growth over', 'long periods'], icon: 'chart' }, { t: 'BONDS', l: ['steadier,', 'pays interest'], icon: 'shield' }, { t: 'CASH', l: ['safe for', 'near-term needs'], icon: 'coin' }] },
+    eq: { head: 'Spread it out', a: { t: 'MONEY', v: '$1k' }, op: '/', b: { t: 'PIECES', v: '10' }, c: { t: 'EACH', v: '$100', s: 'per pick' }, bad: false },
+    fix: { head: 'Keep it simple', a: { t: 'INDEX FUNDS', l: ['broad, low fee,', 'easy to hold'] }, b: { t: 'REBALANCE', l: ['check the mix', 'once a year'] } },
+    end: ['Do not bet it', 'all on one.'] },
+
+  { id: 'snowball',
+    caption: 'Debt snowball vs avalanche: two simple ways to get out of debt.',
+    tags: '#DebtFree #DebtSnowball #PersonalFinance #MoneyTips #Budgeting',
+    vo: [
+      'Drowning in debt? Here is a simple way out.',
+      'Say you have three debts: five hundred dollars, two thousand, and five thousand. List them from smallest to largest.',
+      'Paying the smallest first is called the debt snowball.',
+      'The snowball clears small debts first for quick wins. The avalanche attacks the highest interest rate first and saves the most interest. Either works if you stick with it.',
+      'Why the snowball works: small debts disappear fast, each win builds momentum, and you focus on one target at a time.',
+      'Say your minimum is fifty dollars and you add twenty-five extra. Now you are putting seventy-five dollars on the next debt.',
+      'Get going: list every debt with its balance and rate, then pay extra on one while paying minimums on the rest.',
+      'Pick a method and pay it down.'],
+    hook: ['How to crush', 'your debt'],
+    chain: { notes: [{ label: 'DEBT 1', big: '$500', icon: 'card' }, { label: 'DEBT 2', big: '$2k', icon: 'card' }, { label: 'DEBT 3', big: '$5k', icon: 'card' }], arrows: ['next', 'next'] },
+    name: { word: 'SNOWBALL', sub: 'smallest debt first' },
+    cmp: { a: { title: 'SNOWBALL', icon: 'stack', big: 'WINS', sub: 'smallest first' }, mid: 'or', b: { title: 'AVALANCHE', icon: 'chart', big: 'SAVES', sub: 'highest rate first' }, key: { big: 'PICK ONE', sub: 'and stick to it' }, good: true },
+    list: { head: 'Why it works', items: [{ t: 'WINS', l: ['small debts', 'vanish fast'], icon: 'check' }, { t: 'MOMENTUM', l: ['each win fuels', 'the next'], icon: 'chart' }, { t: 'FOCUS', l: ['one target', 'at a time'], icon: 'clock' }] },
+    eq: { head: 'Snowball it', a: { t: 'MINIMUM', v: '$50' }, op: '+', b: { t: 'EXTRA', v: '$25' }, c: { t: 'NEXT DEBT', v: '$75', s: 'per month' }, bad: false },
+    fix: { head: 'Get going', a: { t: 'LIST DEBTS', l: ['balance and', 'interest rate'] }, b: { t: 'PAY EXTRA', l: ['on one debt,', 'minimums on rest'] } },
+    end: ['Pick a method.', 'Pay it down.'] },
+
+  { id: 'apyapr',
+    caption: 'APR vs APY: they sound alike but they are not the same. Quick explainer.',
+    tags: '#APY #APR #Saving #PersonalFinance #MoneyTips',
+    vo: [
+      'APR or APY? They sound alike, but they are not the same.',
+      'Put one hundred dollars at twelve percent. Simple interest gives one twelve. Compounded monthly, it gives about one thirteen.',
+      'APY includes compounding. APR does not.',
+      'A twelve percent APR, compounded monthly, is really about a twelve point seven percent APY. A small but real boost.',
+      'Saving? Look for the higher APY. Borrowing? Look for the lower APR. And always read the fees.',
+      'Rough math: one hundred dollars plus about thirteen dollars of interest is about one thirteen after a year.',
+      'Savers chase the best APY, and borrowers chase the lowest APR.',
+      'Save at a high APY. Borrow at a low APR.'],
+    hook: ['APR or APY?', 'What is the gap?'],
+    chain: { notes: [{ label: 'DEPOSIT', big: '$100', icon: 'coin' }, { label: 'SIMPLE 12%', big: '$112', icon: 'stack' }, { label: 'MONTHLY', big: '$113', icon: 'bag' }], arrows: ['+12%', '+12%'] },
+    name: { word: 'APY', sub: 'APR plus compounding' },
+    cmp: { a: { title: 'APR', icon: 'coin', big: '12%', sub: 'stated rate' }, mid: 'monthly', b: { title: 'APY', icon: 'stack', big: '12.7%', sub: 'real yearly rate' }, key: { big: '+0.7%', sub: 'from compounding' }, good: true },
+    list: { head: 'Which to use?', items: [{ t: 'SAVING', l: ['look for the', 'higher APY'], icon: 'stack' }, { t: 'BORROWING', l: ['look for the', 'lower APR'], icon: 'card' }, { t: 'FEES', l: ['read the', 'fine print'], icon: 'shield' }] },
+    eq: { head: 'Rough math', a: { t: 'DEPOSIT', v: '$100' }, op: '+', b: { t: 'INTEREST', v: '$13' }, c: { t: 'AFTER 1 YR', v: '$113', s: 'about' }, bad: false },
+    fix: { head: 'Shop smart', a: { t: 'SAVERS', l: ['chase the', 'best APY'] }, b: { t: 'BORROWERS', l: ['chase the', 'lowest APR'] } },
+    end: ['Save: high APY.', 'Borrow: low APR.'] },
+
+  { id: 'cardinterest',
+    caption: 'Why does credit card debt grow so fast? Interest explained in under a minute.',
+    tags: '#CreditCards #Debt #Interest #PersonalFinance #MoneyTips',
+    vo: [
+      'Why does credit card debt grow so fast?',
+      'Owe one thousand dollars at twenty percent APR and pay nothing. After a year you owe about twelve nineteen, and after two years about fourteen eighty-seven.',
+      'That growing cost is called interest.',
+      'Pay only the minimum and the debt can last for years. Pay the full statement balance and you usually owe no interest at all.',
+      'Three things drive the cost: a higher rate, a bigger balance, and more time.',
+      'Monthly interest is roughly your balance times the monthly rate. One thousand dollars times one point seven percent is about seventeen dollars.',
+      'To escape it, pay more than the minimum, and consider switching to a lower rate if you can.',
+      'Borrowing costs real money.'],
+    hook: ['Why does card', 'debt grow?'],
+    chain: { notes: [{ label: 'OWE', big: '$1k', icon: 'card' }, { label: 'YEAR 1', big: '$1.2k', icon: 'card' }, { label: 'YEAR 2', big: '$1.5k', icon: 'card' }], arrows: ['+20%', '+20%'] },
+    name: { word: 'INTEREST', sub: 'the cost of borrowing' },
+    cmp: { a: { title: 'MINIMUM ONLY', icon: 'clock', big: 'YEARS', sub: 'to pay off' }, mid: 'vs', b: { title: 'IN FULL', icon: 'check', big: '$0', sub: 'interest, usually' }, key: { big: 'AVOID IT', sub: 'pay in full' }, good: true },
+    list: { head: 'What drives cost?', items: [{ t: 'RATE', l: ['higher APR =', 'pricier'], icon: 'chart' }, { t: 'BALANCE', l: ['more owed =', 'more interest'], icon: 'card' }, { t: 'TIME', l: ['longer = more', 'interest paid'], icon: 'clock' }] },
+    eq: { head: 'Monthly cost', a: { t: 'BALANCE', v: '$1k' }, op: 'x', b: { t: 'RATE', v: '1.7%' }, c: { t: 'INTEREST', v: '$17', s: 'a month' }, bad: true },
+    fix: { head: 'Escape it', a: { t: 'PAY MORE', l: ['than the', 'minimum'] }, b: { t: 'SWITCH', l: ['to a lower rate', 'if you can'] } },
+    end: ['Borrowing costs', 'real money.'] },
+];
+
+// ===================== more doodles (same marker recipe as the reference doodles) =====================
+function icon(c, name, x, y, s, col, r) {
+  const w = Math.max(1.8, 2.1 * Math.min(s, 1.25));
+  const L = (pts, ww, close) => mline(c, pts, ww || w, col, r, close);
+  switch (name) {
+    case 'cup': cup(c, x, y, s, col, r); break;
+    case 'up': upArrow(c, x, y, s, col, r); break;
+    case 'check': check(c, x, y, s * 1.1, col, r); break;
+    case 'coin':
+      L(arcPts(x, y, 17 * s, 17 * s, 0, TAU, 22), w, true); L(arcPts(x, y, 12 * s, 12 * s, 0, TAU, 18), w * 0.55, true);
+      hand(c, ['$'], x, y + 1, '400 ' + Math.round(20 * s) + 'px "Permanent Marker"', col, 7, 20); break;
+    case 'stack':
+      for (let k = 0; k < 3; k++) { const yy = y + (1 - k) * 9 * s; L(arcPts(x, yy, 18 * s, 6 * s, 0, TAU, 18), w, true); }
+      L([[x - 18 * s, y - 9 * s], [x - 18 * s, y + 9 * s]], w); L([[x + 18 * s, y - 9 * s], [x + 18 * s, y + 9 * s]], w); break;
+    case 'chart':
+      L([[x - 18 * s, y - 16 * s], [x - 18 * s, y + 16 * s], [x + 20 * s, y + 16 * s]]);
+      L([[x - 12 * s, y + 8 * s], [x - 2 * s, y - 2 * s], [x + 6 * s, y + 4 * s], [x + 18 * s, y - 12 * s]], w * 1.1);
+      L([[x + 10 * s, y - 12 * s], [x + 18 * s, y - 12 * s], [x + 18 * s, y - 4 * s]]); break;
+    case 'house':
+      L([[x - 20 * s, y - 2 * s], [x, y - 18 * s], [x + 20 * s, y - 2 * s]]);
+      L([[x - 14 * s, y - 4 * s], [x - 14 * s, y + 16 * s], [x + 14 * s, y + 16 * s], [x + 14 * s, y - 4 * s]]);
+      L([[x - 4 * s, y + 16 * s], [x - 4 * s, y + 6 * s], [x + 4 * s, y + 6 * s], [x + 4 * s, y + 16 * s]], w * 0.8); break;
+    case 'shield':
+      L([[x - 16 * s, y - 16 * s], [x + 16 * s, y - 16 * s], [x + 16 * s, y + 2 * s], [x, y + 18 * s], [x - 16 * s, y + 2 * s]], w, true);
+      L([[x - 7 * s, y - 1 * s], [x - 2 * s, y + 5 * s], [x + 8 * s, y - 8 * s]], w * 0.9); break;
+    case 'card':
+      L([[x - 20 * s, y - 12 * s], [x + 20 * s, y - 12 * s], [x + 20 * s, y + 12 * s], [x - 20 * s, y + 12 * s]], w, true);
+      L([[x - 20 * s, y - 5 * s], [x + 20 * s, y - 5 * s]], w * 1.8); L([[x - 14 * s, y + 6 * s], [x - 4 * s, y + 6 * s]], w * 0.8); break;
+    case 'clock':
+      L(arcPts(x, y, 17 * s, 17 * s, 0, TAU, 22), w, true); L([[x, y], [x, y - 11 * s]], w); L([[x, y], [x + 8 * s, y + 4 * s]], w); break;
+    case 'umbrella':
+      L(arcPts(x, y - 2 * s, 20 * s, 16 * s, Math.PI, TAU, 14), w); L([[x - 20 * s, y - 2 * s], [x + 20 * s, y - 2 * s]], w);
+      L([[x, y - 2 * s], [x, y + 16 * s]], w); L(arcPts(x - 5 * s, y + 16 * s, 5 * s, 4 * s, 0, Math.PI, 8), w); break;
+    case 'bag':
+      L(arcPts(x, y + 4 * s, 15 * s, 14 * s, 0, TAU, 20), w, true); L([[x - 6 * s, y - 9 * s], [x + 6 * s, y - 9 * s]], w);
+      hand(c, ['$'], x, y + 5, '400 ' + Math.round(16 * s) + 'px "Permanent Marker"', col, 8, 18); break;
+  }
+}
+
+// auto-fit handwriting: shrink the font until the widest line fits maxW
+const PM = 'Permanent Marker', KA = 'Kalam', CA = 'Caveat';
+function fit(c, lines, wt, fam, size, maxW) {
+  c.save(); let s = size;
+  for (;;) { c.font = wt + ' ' + s + 'px "' + fam + '"'; let w = 0; for (const l of lines) w = Math.max(w, c.measureText(l).width); if (w <= maxW || s <= 26) break; s -= 2; }
+  c.restore(); return wt + ' ' + s + 'px "' + fam + '"';
+}
+const hf = (c, lines, x, y, wt, fam, size, maxW, color, seed, lh) => hand(c, lines, x, y, fit(c, lines, wt, fam, size, maxW), color, seed, lh);
+
+// ===================== TIMELINE =====================
+// The picture is authored on a base clock (0 to 25 s) in 8 segments that each end with the camera at rest. Each segment
+// plays at normal speed, then holds its last frame until its narration line has finished. Real time T maps to base time t.
+const SEG = [[0, 1.9], [1.9, 5.8], [5.8, 7.8], [7.8, 11.9], [11.9, 15.2], [15.2, 18.9], [18.9, 21.8], [21.8, 25]];
+const VOICE_OFF = 0.35, VOICE_TAIL = 0.5, END_HOLD = 0.8;
+let TL = null;
+function buildTL(v) {
+  const E = [], R = [], starts = []; let t = 0;
+  for (let i = 0; i < 8; i++) {
+    const d = SEG[i][1] - SEG[i][0], r = v && v[i] > 0 ? Math.max(d, VOICE_OFF + v[i] + VOICE_TAIL) : d;
+    E.push(t); R.push(r); starts.push(t + VOICE_OFF); t += r;
+  }
+  return { E, R, starts, total: t + (v ? END_HOLD : 0) };
+}
+function baseOf(T) { // real time -> base time
+  let i = 7; for (let k = 0; k < 8; k++) if (T < TL.E[k] + TL.R[k]) { i = k; break; }
+  const d = SEG[i][1] - SEG[i][0];
+  return SEG[i][0] + Math.min(Math.max(0, T - TL.E[i]), d);
+}
+function realOf(t) { // base time -> real time (for the sound score)
+  let i = 7; for (let k = 0; k < 8; k++) if (t < SEG[k][1]) { i = k; break; }
+  return TL.E[i] + (t - SEG[i][0]);
+}
+let TOPIC = TOPICS[0];
+TL = buildTL(null);
+function loadTopic(id) {
+  TOPIC = TOPICS.find((x) => x.id === id) || TOPICS[0]; TL = buildTL(null);
+  return { id: TOPIC.id, title: TOPIC.hook.join(' '), vo: TOPIC.vo, caption: TOPIC.caption, tags: TOPIC.tags };
+}
+function setVoiceDurations(v) { TL = buildTL(v); return { starts: TL.starts, total: TL.total }; }
+
+// ===================== CAMERA =====================
+const K = [[0, 560, 260, 1.25], [1.9, 560, 260, 1.25], [2.8, 1560, 600, 1.0], [7.8, 1560, 600, 1.0], [8.7, 2450, 620, 1.0], [11.9, 2450, 620, 1.0],
+  [12.8, 2560, 1200, 1.0], [15.2, 2560, 1200, 1.0], [16.0, 1500, 1200, 1.0], [18.9, 1500, 1200, 1.0], [19.8, 640, 1060, 1.0], [21.8, 640, 1060, 1.0],
+  [22.7, 900, 1086, 0.7], [99, 900, 1086, 0.7]];
+function cam(t, W, H_) {
+  let ki = 0; while (ki < K.length - 2 && t > K[ki + 1][0]) ki++;
+  const [ta, ax, ay, az] = K[ki], [tb, bx, by, bz] = K[ki + 1], e = H.ease.inOut(H.clamp((t - ta) / (tb - ta)));
+  const z = Math.exp(H.lerp(Math.log(az), Math.log(bz), e)), hw = W / 2 / z, hh = H_ / 2 / z;
+  return { z, cx: H.clamp(H.lerp(ax, bx, e), hw, XW - hw), cy: H.clamp(H.lerp(ay, by, e), hh, XH - hh) };
+}
+
+// ===================== THE EXPLAINER =====================
+function explainer(ctx, W, H_, T) {
+  const t = baseOf(T), gt = T, P = TOPIC;
+  const pat = grainPattern(ctx, 3);
+  const YEL = '#fbe36a', PNK = '#ff8db5', ORG = '#ffb04f', GRN = '#b6e27a', BLU = '#86d0f2', GREEN = '#1d7a33';
+  const cm = cam(t, W, H_), z = cm.z;
+  const cx = cm.cx + Math.sin(gt * 0.9) * 3, cy = cm.cy + Math.cos(gt * 0.7) * 2; // tiny sway keeps held frames alive
+  ctx.save(); ctx.translate(W / 2, H_ / 2); ctx.scale(z, z); ctx.translate(-cx, -cy);
+  ctx.drawImage(bigCork(), 0, 0);
+
+  const slap = (t0) => { const a = H.clamp((t - t0) / 0.3); return a <= 0 ? 0 : 1 + 0.32 * (1 - H.ease.back(a)); };
+  const put = (n, t0) => { const s = slap(t0); if (!s) return false; n.air = s - 1; ctx.save(); ctx.translate(n.x, n.y); ctx.scale(s, s); ctx.translate(-n.x, -n.y); note(ctx, n, pat); ctx.restore(); return true; };
+  const pin = (x, y, col, t0) => { const k = (t - t0) / 0.14; if (k < 0) return; pinShadow(ctx, x, y); const sc = 1 + 0.9 * Math.pow(1 - H.clamp(k), 2); ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); ctx.translate(-x, -y); pinHead(ctx, x, y, col); ctx.restore(); };
+  const icard = (t0, x, y, w, h, rot, fn) => {
+    const s = slap(t0); if (!s) return false;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s);
+    ctx.save(); ctx.filter = `blur(${7 + (s - 1) * 40}px)`; ctx.fillStyle = 'rgba(40,20,5,0.4)'; ctx.fillRect(-w / 2 + 6 + (s - 1) * 60, -h / 2 + 10 + (s - 1) * 80, w, h); ctx.restore();
+    ctx.fillStyle = '#fbfaf3'; ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.12; ctx.fillStyle = pat; ctx.fillRect(-w / 2, -h / 2, w, h); ctx.restore();
+    ctx.fillStyle = 'rgba(220,60,70,0.7)'; ctx.fillRect(-w / 2, -h / 2 + h * 0.17, w, 1.6);
+    ctx.fillStyle = 'rgba(80,140,210,0.5)'; for (let k = 0; k < 12; k++) { const yy = -h / 2 + h * 0.27 + k * 24; if (yy < h / 2) ctx.fillRect(-w / 2, yy, w, 1); }
+    fn(ctx); ctx.restore(); return true;
+  };
+
+  // ===== red yarn trail: leads the camera from region to region (each starts when its segment's camera move starts) =====
+  yarn(ctx, [560, 110], [1140, 409], 60, H.clamp((t - 1.9) / 0.9), H.rng(61));
+  yarn(ctx, [1980, 409], [2100, 364], 20, H.clamp((t - 5.2) / 0.4), H.rng(62));
+  yarn(ctx, [2800, 364], [2560, 999], 90, H.clamp((t - 11.9) / 0.8), H.rng(63));
+  yarn(ctx, [2155, 1209], [1900, 1119], 30, H.clamp((t - 15.3) / 0.6), H.rng(64));
+  yarn(ctx, [1100, 1119], [620, 844], 50, H.clamp((t - 18.9) / 0.7), H.rng(65));
+  yarn(ctx, [250, 844], [560, 1194], 50, H.clamp((t - 21.8) / 0.6), H.rng(66));
+
+  // ===== BEAT 1 (0-1.9): hook card =====
+  icard(0.1, 560, 260, 560, 300, -0.03, (c) => {
+    wr(c, (t - 0.35) / 0.55, -280, -150, 560, 150, () => hf(c, [P.hook[0]], 0, -60, '400', PM, 54, 510, INK, 41, 54));
+    wr(c, (t - 0.85) / 0.45, -280, -10, 560, 120, () => hf(c, [P.hook[1]], 0, 30, '400', PM, 62, 510, INK, 42, 54));
+    if (t > 1.3) arrowM(c, qpts([-200, 92], [0, 104], [200, 86]), (t - 1.3) / 0.3, RED, 5, H.rng(43));
+  });
+  if (t > 0.4) { tape(ctx, 300, 120, 90, 30, -0.6, 31); tape(ctx, 820, 104, 90, 30, 0.55, 32); }
+  pin(560, 110, '#d22b2b', 1.55);
+
+  // ===== BEAT 2 (1.9-5.8): chain of three notes =====
+  const CH = P.chain, XS = [1140, 1560, 1980], ROT = [-0.04, 0.03, -0.03], CCOL = [YEL, BLU, PNK], CT0 = [2.5, 3.9, 4.9];
+  const CPIN = ['#d22b2b', '#2a62c9', '#f0c419'], CNUM = [INK, INK, RED];
+  CH.notes.forEach((n, i) => {
+    const t0 = CT0[i], seed = 201 + i * 10;
+    put({ x: XS[i], y: 520, w: 250, h: 250, rot: ROT[i], col: CCOL[i], seed, lift: 0.8, pin: [0, 0, CPIN[i]], draw(c) {
+      hf(c, [n.label], 0, -90, '400', PM, 34, 225, INK, seed + 1, 30);
+      icon(c, n.icon || 'coin', 0, -22, 2.2, INK, H.rng(seed + 2));
+      wr(c, (t - t0 - 0.3) / 0.3, -125, 20, 250, 100, () => hf(c, [n.big], 0, 66, '400', PM, 70, 215, CNUM[i], seed + 3, 60));
+    } }, t0);
+    pin(XS[i], 409, CPIN[i], t0 + 0.3);
+  });
+  { const R = H.rng(230);
+    [[3.4, 1350, 1285, 1415], [4.4, 1770, 1705, 1835]].forEach(([ta, lx, x0, x1], i) => {
+      arrowM(ctx, qpts([x0, 520], [(x0 + x1) / 2, 492], [x1, 520], 12), (t - ta) / 0.4, RED, 6, R);
+      const lb = CH.arrows[i];
+      if (lb) wr(ctx, (t - ta - 0.15) / 0.3, lx - 80, 400, 160, 70, () => hf(ctx, [lb], lx, 440, '700', CA, 46, 140, BLUE, 231 + i, 30));
+    }); }
+
+  // ===== BEAT 3 (5.8-7.8): the name for it =====
+  put({ x: 1560, y: 830, w: 520, h: 190, rot: -0.02, col: ORG, seed: 301, lift: 0.8, pin: [0, 0, '#d22b2b'], draw(c) {
+    wr(c, (t - 6.1) / 0.5, -260, -95, 520, 100, () => hf(c, [P.name.word], 0, -22, '400', PM, 64, 480, INK, 302, 56));
+    wr(c, (t - 6.6) / 0.5, -260, 14, 520, 70, () => hf(c, [P.name.sub], 0, 46, '700', CA, 40, 480, BLUE, 303, 26));
+    if (t > 7.2) mline(c, [[-190, 74], [-60, 68], [60, 74], [190, 66]], 5, RED, H.rng(304));
+  } }, 6.0);
+  pin(1560, 749, '#d22b2b', 6.3);
+  arrowM(ctx, qpts([1790, 735], [1900, 735], [1950, 655], 14), (t - 6.9) / 0.35, RED, 6, H.rng(305));
+
+  // ===== BEAT 4 (7.8-11.9): compare two notes, then the key number =====
+  const CM = P.cmp, KCOL = CM.good ? GREEN : RED;
+  const cmpNote = (x, rot, col, seed, t0, n, bigCol, pinCol) => {
+    put({ x, y: 520, w: 300, h: 340, rot, col, seed, lift: 0.8, pin: [0, 0, pinCol], draw(c) {
+      wr(c, (t - t0 - 0.15) / 0.3, -150, -170, 300, 60, () => hf(c, [n.title], 0, -124, '400', PM, 36, 270, INK, seed + 1, 30));
+      wr(c, (t - t0 - 0.4) / 0.5, -150, -110, 300, 110, () => icon(c, n.icon, 0, -52, 2.6, INK, H.rng(seed + 2)));
+      wr(c, (t - t0 - 0.9) / 0.3, -150, 0, 300, 170, () => { hf(c, [n.big], 0, n.sub ? 46 : 70, '400', PM, 80, 270, bigCol, seed + 3, 70); if (n.sub) hf(c, [n.sub], 0, 122, '700', CA, 46, 270, BLUE, seed + 4, 30); });
+    } }, t0);
+  };
+  cmpNote(2100, -0.03, YEL, 401, 8.6, CM.a, INK, '#2a62c9'); pin(2100, 364, '#2a62c9', 8.9);
+  arrowM(ctx, qpts([2265, 520], [2450, 490], [2635, 520], 16), (t - 9.6) / 0.4, RED, 7, H.rng(410));
+  wr(ctx, (t - 9.7) / 0.3, 2370, 410, 180, 70, () => hf(ctx, [CM.mid], 2450, 440, '700', CA, 50, 170, BLUE, 411, 30));
+  cmpNote(2800, 0.03, BLU, 421, 9.9, CM.b, KCOL, '#f0c419'); pin(2800, 364, '#f0c419', 10.2);
+  icard(11.0, 2450, 860, 600, 190, 0.02, (c) => {
+    wr(c, (t - 11.1) / 0.3, -300, -95, 600, 120, () => hf(c, [CM.key.big], 0, -14, '400', PM, 110, 540, KCOL, 431, 100));
+    wr(c, (t - 11.35) / 0.3, -300, 40, 600, 60, () => hf(c, [CM.key.sub], 0, 64, '700', CA, 42, 540, BLUE, 432, 30));
+    if (t > 11.4) mline(c, arcPts(0, -12, 230, 70, -0.4, -0.4 + TAU * 1.06 * H.clamp((t - 11.4) / 0.35), 30), 5, RED, H.rng(433));
+  });
+
+  // ===== BEAT 5 (11.9-15.2): list of three =====
+  const LS = P.list;
+  icard(12.6, 2560, 1060, 520, 150, -0.02, (c) => { wr(c, (t - 12.75) / 0.5, -260, -60, 520, 120, () => hf(c, [LS.head], 0, 4, '400', PM, 46, 480, INK, 501, 40)); });
+  pin(2560, 999, '#d22b2b', 12.9);
+  const LX = [2250, 2600, 2950], LR = [-0.03, 0.03, -0.02], LC = [YEL, PNK, GRN], LT = [13.2, 13.6, 14.0], LP = ['#d22b2b', '#2a62c9', '#f0c419'];
+  LS.items.forEach((it, i) => {
+    const t0 = LT[i], seed = 511 + i * 10;
+    put({ x: LX[i], y: 1330, w: 270, h: 270, rot: LR[i], col: LC[i], seed, lift: 0.8, pin: [0, 0, LP[i]], draw(c) {
+      wr(c, (t - t0 - 0.1) / 0.3, -135, -135, 270, 60, () => hf(c, [it.t], 0, -76, '400', PM, 38, 240, INK, seed + 1, 30));
+      wr(c, (t - t0 - 0.35) / 0.3, -135, -40, 270, 90, () => hf(c, it.l, 0, -6, '700', KA, 32, 240, BLUE, seed + 2, 36));
+      if (t > t0 + 0.6) icon(c, it.icon || 'up', 0, 82, 1.0, RED, H.rng(seed + 3));
+    } }, t0);
+    pin(LX[i] - 95, 1209, LP[i], t0 + 0.3);
+  });
+  { const R = H.rng(540);
+    arrowM(ctx, qpts([2440, 1140], [2330, 1150], [2262, 1188], 12), (t - 13.0) / 0.3, RED, 6, R);
+    arrowM(ctx, qpts([2560, 1140], [2575, 1160], [2595, 1188], 12), (t - 13.4) / 0.3, RED, 6, R);
+    arrowM(ctx, qpts([2680, 1140], [2790, 1150], [2940, 1188], 12), (t - 13.8) / 0.3, RED, 6, R); }
+
+  // ===== BEAT 6 (15.2-18.9): equation  a op b = c =====
+  const EQ = P.eq, ECOL = EQ.bad ? RED : GREEN;
+  icard(16.1, 1500, 1000, 560, 110, 0.015, (c) => { wr(c, (t - 16.2) / 0.5, -280, -50, 560, 100, () => hf(c, [EQ.head], 0, 4, '400', PM, 46, 520, INK, 601, 40)); });
+  const eqNote = (x, rot, col, seed, t0, n, vt, vcol, pinCol, extra) => {
+    put({ x, y: 1230, w: 250, h: 250, rot, col, seed, lift: 0.8, pin: [0, 0, pinCol], draw(c) {
+      hf(c, [n.t], 0, -80, '400', PM, 34, 225, INK, seed + 1, 30);
+      wr(c, (t - vt) / 0.3, -125, -35, 250, 120, () => hf(c, [n.v], 0, 12, '400', PM, 92, 220, vcol, seed + 2, 80));
+      if (extra) extra(c);
+    } }, t0);
+    pin(x, 1119, pinCol, t0 + 0.3);
+  };
+  const opShape = (op, ox, oy, seed) => {
+    const R = H.rng(seed), L = (a, b) => mline(ctx, [a, b], 9, INK, R);
+    if (op === '-') L([ox - 32, oy], [ox + 32, oy - 2]);
+    else if (op === '+') { L([ox - 32, oy], [ox + 32, oy - 2]); L([ox, oy - 32], [ox + 2, oy + 32]); }
+    else if (op === 'x') { L([ox - 24, oy - 24], [ox + 24, oy + 24]); L([ox + 24, oy - 24], [ox - 24, oy + 24]); }
+    else if (op === '/') { L([ox - 32, oy], [ox + 32, oy - 2]); ctx.fillStyle = INK; [[ox, oy - 28], [ox, oy + 28]].forEach(([px, py]) => { ctx.beginPath(); ctx.arc(px, py, 7, 0, TAU); ctx.fill(); }); }
+    else { L([ox - 32, oy - 16], [ox + 32, oy - 18]); L([ox - 32, oy + 18], [ox + 32, oy + 16]); }
+  };
+  eqNote(1100, -0.03, YEL, 611, 16.5, EQ.a, 16.7, INK, '#2a62c9');
+  wr(ctx, (t - 17.0) / 0.2, 1250, 1180, 100, 100, () => opShape(EQ.op, 1300, 1230, 621));
+  eqNote(1500, 0.03, BLU, 631, 17.1, EQ.b, 17.4, INK, '#d22b2b');
+  wr(ctx, (t - 17.7) / 0.2, 1650, 1180, 100, 100, () => opShape('=', 1700, 1230, 641));
+  eqNote(1900, -0.02, PNK, 651, 18.0, EQ.c, 18.25, ECOL, '#f2f2ee', (c) => {
+    if (EQ.c.s) wr(c, (t - 18.5) / 0.25, -125, 70, 250, 60, () => hf(c, [EQ.c.s], 0, 96, '700', CA, 40, 220, BLUE, 654, 30));
+    if (t > 18.45) mline(c, arcPts(0, 8, 112, 54, -0.4, -0.4 + TAU * 1.06 * H.clamp((t - 18.45) / 0.3), 30), 5, RED, H.rng(655));
+  });
+
+  // ===== BEAT 7 (18.9-21.8): the fix =====
+  const FX = P.fix;
+  icard(19.7, 435, 770, 440, 110, -0.02, (c) => { wr(c, (t - 19.8) / 0.4, -220, -50, 440, 100, () => hf(c, [FX.head], 0, 4, '400', PM, 56, 400, INK, 701, 40)); });
+  const fixNote = (x, rot, col, seed, t0, n, pinCol, ct) => {
+    put({ x, y: 960, w: 260, h: 260, rot, col, seed, lift: 0.8, pin: [0, 0, pinCol], draw(c) {
+      wr(c, (t - t0 - 0.1) / 0.3, -130, -130, 260, 60, () => hf(c, [n.t], 0, -82, '400', PM, 36, 230, INK, seed + 1, 30));
+      wr(c, (t - t0 - 0.4) / 0.4, -130, -40, 260, 100, () => hf(c, n.l, 0, 4, '700', KA, 32, 230, BLUE, seed + 2, 38));
+      if (t > ct) check(c, 70, 92, 1, GREEN, H.rng(seed + 3));
+    } }, t0);
+    pin(x, 844, pinCol, t0 + 0.3);
+  };
+  fixNote(250, -0.04, GRN, 711, 20.0, FX.a, '#3fae4a', 21.2);
+  fixNote(620, 0.03, ORG, 721, 20.5, FX.b, '#d22b2b', 21.5);
+  arrowM(ctx, qpts([395, 975], [435, 950], [480, 975], 10), (t - 20.7) / 0.3, RED, 5, H.rng(730));
+
+  // ===== BEAT 8 (21.8-25): takeaway =====
+  put({ x: 560, y: 1330, w: 820, h: 300, rot: -0.02, col: ORG, seed: 801, lift: 0.7, pin: [0, 0, '#d22b2b'], draw(c) {
+    wr(c, (t - 23.0) / 0.4, -410, -150, 820, 120, () => hf(c, [P.end[0]], 0, -50, '400', PM, 84, 760, INK, 802, 70));
+    wr(c, (t - 23.35) / 0.4, -410, 0, 820, 130, () => hf(c, [P.end[1]], 0, 52, '400', PM, 84, 760, INK, 803, 70));
+    if (t > 23.8) mline(c, [[-250, 112], [-80, 106], [100, 112], [260, 104]], 6, RED, H.rng(804));
+  } }, 22.9);
+  pin(560, 1194, '#d22b2b', 23.15);
+
+  ctx.restore();
+  // lamp + vignette + grain (screen space), same strength as the reference
+  { const g = ctx.createRadialGradient(330, 120, 50, 400, 200, 1100); g.addColorStop(0, 'rgba(255,240,210,0.18)'); g.addColorStop(0.5, 'rgba(255,240,210,0)'); g.addColorStop(1, 'rgba(40,20,0,0.3)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H_); }
+  H.vignette(ctx, W, H_, 0.35, '30,15,0');
+  H.grain(ctx, W, H_, 0.04, 8 + Math.floor(gt * 12));
+}
+
+// ===================== SOUND SCORE =====================
+// Authored on the base clock; every start time is mapped to real time (realOf) so sounds follow the holds. A note slapped
+// at t0 first hits the board at t0 + 0.11; a pin at t0 seats at t0 + 0.14. Pans follow the same camera as the picture.
+function scoreSound(k) {
+  const P = TOPIC;
+  { const k0 = k, sn = (t) => (Math.round(realOf(t) * 48000) + 0.25) / 48000; k = { ...k0, play: (n, t, o) => k0.play(n, sn(t), o), tone: (t, o) => k0.tone(sn(t), o), noise: (t, o) => k0.noise(sn(t), o) }; }
+  const W = 1280, LAND = 0.11, SEAT = 0.14;
+  const pan = (x, t) => { const c = cam(t, 1280, 720); return H.clamp((x - c.cx) * c.z / (W / 2), -1, 1) * 0.6; };
+  const slapN = (t0, x, size = 0, g = 1, minor = false) => {
+    const t = t0 + LAND, p = pan(x, t);
+    k.play('slap', t, { gain: (0.3 + 0.2 * size) * g, pan: p, minor });
+    k.noise(t, { dur: 0.08, color: 'pink', filter: 'lowpass', f: 450 + 250 * size, gain: (0.25 + 0.2 * size) * g, a: 0.002, pan: p, minor });
+    k.tone(t, { f: [[0, 150 - 40 * size], [0.07, 65]], dur: 0.1, gain: (0.1 + 0.12 * size) * g, pan: p, minor });
+  };
+  const pinIn = (t0, x, g = 1, minor = true) => {
+    const t = t0 + SEAT, p = pan(x, t);
+    k.noise(t, { dur: 0.035, filter: 'bandpass', f: 1300, q: 1.6, gain: 0.3 * g, a: 0.001, pan: p, minor });
+    k.tone(t, { f: [[0, 260], [0.05, 140]], dur: 0.07, gain: 0.16 * g, pan: p, minor });
+  };
+  const mk = (a, b, x, g = 1, minor = true) => { const p = pan(x, a); k.noise(a, { dur: 0.02, filter: 'bandpass', f: 1500, q: 1.4, gain: 0.18 * g, a: 0.001, pan: p, minor }); k.play('stroke', a, { material: 'marker', dur: b - a, gain: g, pan: p, minor }); };
+  const write = (s, a, d, x, g = 0.85, minor = true) => { const n = s.length, re = /\S+/g; let m; while ((m = re.exec(s))) mk(a + d * m.index / n, a + d * (m.index + m[0].length) / n, x, g, minor); };
+  const yarnPull = (a, d, x0, x1) => {
+    k.noise(a, { dur: d, color: 'pink', filter: 'bandpass', f: [[0, 500], [d, 900]], q: 0.9, gain: 0.08, a: d * 0.3, hold: d * 0.4, pan: (pan(x0, a) + pan(x1, a + d)) / 2, minor: true });
+    k.tone(a + d, { f: 'A2', type: 'triangle', dur: 0.35, gain: 0.12, a: 0.003, pan: pan(x1, a + d) });
+    k.tone(a + d, { f: 'A3', dur: 0.2, gain: 0.03, a: 0.003, pan: pan(x1, a + d) });
+  };
+  const tickRun = (a, x, n) => { for (let i = 0; i < n; i++) k.play('count', a + 0.45 * (1 - Math.pow(1 - i / n, 1.6)), { gain: 0.7, pan: pan(x, a), minor: true }); };
+
+  // the one long sound: a quiet room bed (real time). Voiceover mode drops beds automatically.
+  k.bed('room', Math.min(window.SOUND_FROM || 0, TL.total - 0.5), TL.total, { gain: 0.45 });
+
+  // ---- BEAT 1: hook card
+  slapN(0.1, 560, 1, 0.9);
+  k.play('tape', 0.4, { dur: 0.12, gain: 0.5, pan: pan(300, 0.4), minor: true }); k.play('tape', 0.47, { dur: 0.1, gain: 0.45, pan: pan(820, 0.47), minor: true });
+  write(P.hook[0], 0.35, 0.55, 560, 0.95); write(P.hook[1], 0.85, 0.45, 560, 1.0, false);
+  mk(1.3, 1.6, 560, 1.1, false); pinIn(1.55, 560, 1.1, false);
+  yarnPull(1.9, 0.9, 560, 1140);
+
+  // ---- BEAT 2: chain
+  [[2.5, 1140, 0.5], [3.9, 1560, 0.5], [4.9, 1980, 0.8]].forEach(([t0, x, sz], i) => {
+    slapN(t0, x, sz, 1); pinIn(t0 + 0.3, x); write(P.chain.notes[i].big, t0 + 0.3, 0.3, x, 0.95, false);
+  });
+  [[3.4, 3.8, 1350], [4.4, 4.8, 1770]].forEach(([a, b, x], i) => { mk(a, b, x, 0.9); if (P.chain.arrows[i]) write(P.chain.arrows[i], a + 0.15, 0.3, x, 0.7); });
+  k.play('tock', 5.62, { f: 300, gain: 0.4, pan: pan(1980, 5.62) });
+  yarnPull(5.2, 0.4, 1980, 2100);
+
+  // ---- BEAT 3: the name
+  slapN(6.0, 1560, 0.8, 1); pinIn(6.3, 1560);
+  write(P.name.word, 6.1, 0.5, 1560, 1.1, false); write(P.name.sub, 6.6, 0.5, 1560, 0.8);
+  mk(6.9, 7.25, 1850, 0.9); mk(7.2, 7.35, 1560, 0.9);
+  k.play('ding', 7.4, { f: 'E5', gain: 0.3, pan: pan(1560, 7.4) });
+
+  // ---- BEAT 4: compare, then the big hit on the key number
+  const CM = P.cmp;
+  slapN(8.6, 2100, 0.7, 1); pinIn(8.9, 2100);
+  write(CM.a.title, 8.75, 0.3, 2100, 0.8); tickRun(9.0, 2100, 5); write(CM.a.big, 9.0 + 0.9, 0.3, 2100, 0.8);
+  mk(9.6, 10.0, 2450, 1.0); write(CM.mid, 9.7, 0.3, 2450, 0.7);
+  slapN(9.9, 2800, 0.7, 1); pinIn(10.2, 2800);
+  write(CM.b.title, 10.05, 0.3, 2800, 0.8); tickRun(10.3, 2800, 4); write(CM.b.big, 10.8, 0.3, 2800, 0.8);
+  slapN(11.0, 2450, 1, 1.2);
+  k.play('impact', 11.11, { gain: 1.35, pan: pan(2450, 11.11) });
+  write(CM.key.big, 11.1, 0.3, 2450, 1.4, false); write(CM.key.sub, 11.35, 0.3, 2450, 0.7);
+  mk(11.4, 11.75, 2450, 1.2, false);
+  if (CM.good) k.play('success', 11.5, { f: 'G5', gain: 0.35, pan: pan(2450, 11.5) }); else k.play('error', 11.5, { f: 'A3', gain: 0.35, pan: pan(2450, 11.5) });
+
+  // ---- BEAT 5: list of three
+  yarnPull(11.9, 0.8, 2800, 2560);
+  slapN(12.6, 2560, 0.8, 1); pinIn(12.9, 2560);
+  write(P.list.head, 12.75, 0.5, 2560, 0.9);
+  mk(13.0, 13.3, 2350, 0.8); mk(13.4, 13.7, 2575, 0.8); mk(13.8, 14.1, 2800, 0.8);
+  [[13.2, 2250], [13.6, 2600], [14.0, 2950]].forEach(([t0, x], i) => {
+    const it = P.list.items[i];
+    slapN(t0, x, 0.5, 1); pinIn(t0 + 0.3, x - 95);
+    write(it.t, t0 + 0.1, 0.3, x, 0.8); write(it.l.join(' '), t0 + 0.35, 0.3, x, 0.65);
+    mk(t0 + 0.6, t0 + 0.7, x, 0.7);
+  });
+
+  // ---- BEAT 6: equation
+  const EQ = P.eq;
+  yarnPull(15.3, 0.6, 2155, 1900);
+  slapN(16.1, 1500, 0.8, 1); write(EQ.head, 16.2, 0.5, 1500, 0.9);
+  slapN(16.5, 1100, 0.5, 1); pinIn(16.8, 1100); write(EQ.a.v, 16.7, 0.3, 1100, 1.0);
+  mk(17.0, 17.2, 1300, 0.9);
+  slapN(17.1, 1500, 0.5, 1); pinIn(17.4, 1500); write(EQ.b.v, 17.4, 0.3, 1500, 1.0);
+  mk(17.7, 17.9, 1700, 0.9);
+  slapN(18.0, 1900, 0.7, 1.1); pinIn(18.3, 1900);
+  write(EQ.c.v, 18.25, 0.25, 1900, 1.3, false);
+  if (EQ.bad) k.play('error', 18.3, { f: 'F3', gain: 0.55, pan: pan(1900, 18.3) }); else k.play('success', 18.3, { f: 'E5', gain: 0.45, pan: pan(1900, 18.3) });
+  if (EQ.c.s) write(EQ.c.s, 18.5, 0.25, 1900, 0.8);
+  mk(18.45, 18.75, 1900, 1.2, false);
+
+  // ---- BEAT 7: the fix, two checks
+  const FX = P.fix;
+  yarnPull(18.9, 0.7, 1100, 620);
+  slapN(19.7, 435, 0.6, 1); write(FX.head, 19.8, 0.4, 435, 0.9);
+  slapN(20.0, 250, 0.5, 1); pinIn(20.3, 250); write(FX.a.t, 20.1, 0.3, 250, 0.8); write(FX.a.l.join(' '), 20.4, 0.4, 250, 0.7);
+  slapN(20.5, 620, 0.5, 1); pinIn(20.8, 620); write(FX.b.t, 20.6, 0.3, 620, 0.8); write(FX.b.l.join(' '), 20.9, 0.4, 620, 0.7);
+  mk(20.7, 21.0, 435, 0.8);
+  mk(21.2, 21.35, 250, 1.0, false); k.play('success', 21.35, { f: 'G5', gain: 0.4, pan: pan(250, 21.35) });
+  mk(21.5, 21.65, 620, 1.0, false); k.play('success', 21.65, { f: 'C6', gain: 0.5, pan: pan(620, 21.65) });
+
+  // ---- BEAT 8: camera pulls back, takeaway lands, resolving chord
+  yarnPull(21.8, 0.6, 250, 560);
+  k.play('whoosh', 21.85, { dur: 0.8, gain: 0.35 });
+  slapN(22.9, 560, 1, 1.15); pinIn(23.15, 560, 1.2, false);
+  write(P.end[0], 23.0, 0.4, 560, 1.2, false); write(P.end[1], 23.35, 0.4, 560, 1.2, false);
+  mk(23.8, 23.95, 560, 1.1, false);
+  ['C5', 'E5', 'G5'].forEach((f, i) => k.play('ding', 23.85 + i * 0.08, { f, gain: 0.38 - i * 0.06, pan: (i - 1) * 0.25 }));
+}
+
+// ===================== exports for the automated render (Selenium) =====================
+window.TOPIC_IDS = TOPICS.map((x) => x.id);
+window.loadTopic = loadTopic;
+window.setVoiceDurations = setVoiceDurations;
+window.scoreSound = scoreSound;
+Object.defineProperty(window, 'DURATION', { get: () => TL.total });
+
+// ===================== PLAYER =====================
+(async function () {
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d', { willReadFrequently: true });
+  const playBtn = document.getElementById('play'), seekEl = document.getElementById('seek'), timeEl = document.getElementById('time');
+  const sndBtn = document.getElementById('snd'), loopBtn = document.getElementById('loop'), loading = document.getElementById('loading'), topicEl = document.getElementById('topic');
+  let cur = 0, playing = false, tPrev = 0, loop = true, soundOn = true, stopSound = () => {};
+  const mmss = (t) => Math.floor(t / 60) + ':' + (t % 60).toFixed(1).padStart(4, '0');
+  TOPICS.forEach((x) => { const o = document.createElement('option'); o.value = x.id; o.textContent = x.id; topicEl.appendChild(o); });
+  const wanted = new URLSearchParams(location.search).get('topic'); if (wanted) { loadTopic(wanted); topicEl.value = TOPIC.id; }
+
+  const specs = ['400 30px "Permanent Marker"', '700 28px "Kalam"', '700 30px "Caveat"', '400 22px "Gloria Hallelujah"', '400 22px "Rock Salt"'];
+  try { await Promise.all(specs.map((f) => document.fonts.load(f, 'AaZz09$%+-~'))); await document.fonts.ready; } catch (e) {}
+  await new Promise((r) => setTimeout(r, 30));
+  bigCork();
+
+  function draw(T) {
+    seekEl.max = TL.total; explainer(ctx, 1280, 720, T);
+    seekEl.value = T; timeEl.textContent = mmss(T) + ' / ' + mmss(TL.total);
+  }
+  window.seek = (T) => { cur = H.clamp(T, 0, TL.total); draw(cur); };
+
+  function startSound() {
+    stopSound(); stopSound = () => {};
+    window.SOUND_FROM = cur;
+    if (soundOn && playing) stopSound = SOUND.live(scoreSound, cur, { voiceover: false });
+  }
+  function pause() { playing = false; stopSound(); stopSound = () => {}; playBtn.textContent = 'Play'; playBtn.setAttribute('aria-label', 'Play'); }
+  function play() {
+    if (cur >= TL.total - 0.01) cur = 0;
+    playing = true; tPrev = performance.now(); playBtn.textContent = 'Pause'; playBtn.setAttribute('aria-label', 'Pause');
+    startSound(); requestAnimationFrame(tick);
+  }
+  function tick(now) {
+    if (!playing) return;
+    cur += (now - tPrev) / 1000; tPrev = now;
+    if (cur >= TL.total) {
+      if (loop) { cur = cur % TL.total; startSound(); }
+      else { cur = TL.total; draw(cur); pause(); return; }
+    }
+    draw(cur);
+    requestAnimationFrame(tick);
+  }
+
+  playBtn.onclick = () => (playing ? pause() : play());
+  cv.onclick = () => (playing ? pause() : play());
+  seekEl.oninput = () => { cur = parseFloat(seekEl.value); draw(cur); if (playing) { tPrev = performance.now(); startSound(); } };
+  topicEl.onchange = () => { const was = playing; pause(); loadTopic(topicEl.value); cur = 0; draw(0); if (was) play(); };
+  sndBtn.onclick = () => { soundOn = !soundOn; sndBtn.setAttribute('aria-pressed', soundOn); if (!soundOn) { stopSound(); stopSound = () => {}; } else if (playing) startSound(); };
+  loopBtn.onclick = () => { loop = !loop; loopBtn.setAttribute('aria-pressed', loop); };
+  document.addEventListener('keydown', (e) => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); playing ? pause() : play(); } });
+
+  // ---- hooks used by the Selenium render ----
+  window.frameJPEG = (T) => { window.seek(T); return cv.toDataURL('image/jpeg', 0.93).split(',')[1]; };
+  window.renderAudioBase64 = async (vo) => { // 48 kHz stereo, 16-bit little-endian, base64
+    window.SOUND_FROM = 0;
+    const r = await SOUND.renderOffline(scoreSound, TL.total, 48000, { voiceover: !!vo });
+    const n = r.inter.length, i16 = new Int16Array(n);
+    for (let i = 0; i < n; i++) i16[i] = Math.max(-1, Math.min(1, r.inter[i])) * 32767;
+    const u8 = new Uint8Array(i16.buffer); let s = ''; const CH = 0x8000;
+    for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
+    return btoa(s);
+  };
+
+  draw(0);
+  window._ready = true;
+  loading.style.display = 'none';
+})();
+</script>
+</body>
+</html>
