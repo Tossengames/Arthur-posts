@@ -1,4 +1,4 @@
-name: ✝️ Post Bible Reel to Facebook
+name: ✝️ Post Bible Reel to Facebook + YouTube
 
 on:
   workflow_dispatch:
@@ -11,6 +11,11 @@ on:
         description: "Render only: do not post and do not remember the topic"
         type: boolean
         default: false
+      yt_privacy:
+        description: "YouTube privacy for this run"
+        type: choice
+        default: "public"
+        options: [public, unlisted, private]
   schedule:
     - cron: "0 14 * * *"   # once a day at 14:00 UTC (change the hour to suit your audience)
 
@@ -39,7 +44,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: pip-bible-v1
+          key: pip-bible-v2
 
       - name: Cache Piper binary and voice
         uses: actions/cache@v4
@@ -53,7 +58,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install Python deps
-        run: pip install selenium requests edge-tts
+        run: pip install selenium requests edge-tts google-auth google-auth-oauthlib google-api-python-client
 
       - name: Download Piper binary and voice (backup voice)
         run: |
@@ -94,7 +99,7 @@ jobs:
             echo "Voice model already cached."
           fi
 
-      - name: Render and Post to Facebook
+      - name: Render and Post (Facebook + YouTube)
         run: |
           python3 << 'PYEOF'
           import os, sys, json, math, time, random, subprocess, base64, re, glob, tempfile, asyncio, datetime
@@ -215,6 +220,93 @@ jobs:
             d = duration_of(path)
             return random.uniform(0, max(0, d - 12)) if d > 15 else 0
 
+          # ── PLATFORM UPLOADERS ────────────────────────────────
+          def post_facebook(video_path, info, token, page_id):
+            description = (f"{info['caption']}\n\n{info['tags']}\n\n"
+                           "Scripture: King James Version (public domain). Read the full passage in your Bible.")
+            with open(video_path, "rb") as f:
+              response = requests.post(
+                f"https://graph-video.facebook.com/v18.0/{page_id}/videos",
+                data={"description": description, "access_token": token},
+                files={"source": ("reel.mp4", f, "video/mp4")},
+                timeout=900)
+            print(f"  Facebook response: {response.status_code}")
+            if response.status_code != 200:
+              raise RuntimeError(f"Facebook post failed: {response.text}")
+            return response.json().get("id")
+
+          def yt_build_text(info):
+            hook = re.sub(r"[<>]", "", info["title"]).strip()
+            suffix = " #Shorts"
+            if len(hook) + len(suffix) > 100:
+              hook = hook[:100 - len(suffix) - 1].rstrip() + "\u2026"
+            title = hook + suffix
+            desc = (f"{info['caption']}\n\n"
+                    "Scripture: King James Version (public domain). Read the full passage in your Bible.\n"
+                    "Subscribe for a new Bible reel every day.\n\n"
+                    f"{info['tags']} #Shorts")
+            tags = ["bible", "bible verse", "jesus", "kjv", "scripture", "faith", "christian shorts",
+                    "bible story", "watercolor", info["id"]]
+            comment = info["caption"].split("\n\n", 1)[-1] + "\n\nWhat does this verse mean to you? \U0001F447"
+            return title, desc[:4900], tags, comment
+
+          def post_youtube(video_path, info, privacy):
+            from googleapiclient.discovery import build
+            from googleapiclient.http import MediaFileUpload
+            from google.oauth2.credentials import Credentials
+
+            creds = Credentials(
+              token=os.environ.get("YT_ACCESS_TOKEN") or None,
+              refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
+              token_uri="https://oauth2.googleapis.com/token",
+              client_id=os.environ.get("YT_CLIENT_ID"),
+              client_secret=os.environ.get("YT_CLIENT_SECRET"),
+            )
+            youtube = build("youtube", "v3", credentials=creds)
+            title, desc, tags, comment = yt_build_text(info)
+            print(f"  YouTube title: {title}")
+
+            request = youtube.videos().insert(
+              part="snippet,status",
+              body={
+                "snippet": {"title": title, "description": desc, "tags": tags, "categoryId": "27",
+                            "defaultLanguage": "en", "defaultAudioLanguage": "en"},
+                "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False},
+              },
+              media_body=MediaFileUpload(video_path, mimetype="video/mp4", resumable=True),
+            )
+            response = None
+            while response is None:
+              status, response = request.next_chunk()
+              if status: print(f"  YouTube upload progress: {int(status.progress() * 100)}%")
+            vid = response.get("id", "")
+            print(f"  Uploaded: https://youtube.com/shorts/{vid}")
+
+            # these two are nice-to-have: a failure here never fails the upload
+            for attempt in range(4):
+              try:
+                time.sleep(20)
+                youtube.commentThreads().insert(
+                  part="snippet",
+                  body={"snippet": {"videoId": vid, "topLevelComment": {"snippet": {"textOriginal": comment}}}},
+                ).execute()
+                print("  Comment posted")
+                break
+              except Exception as ex:
+                print(f"::warning::YouTube comment attempt {attempt + 1} failed: {ex}")
+            try:
+              pl = json.loads(os.environ.get("YT_PLAYLISTS") or "{}")
+              pid = pl.get("bible_reel")          # optional: add {"bible_reel": "PLAYLIST_ID"} to the YT_PLAYLISTS secret
+              if pid:
+                youtube.playlistItems().insert(
+                  part="snippet",
+                  body={"snippet": {"playlistId": pid, "resourceId": {"kind": "youtube#video", "videoId": vid}}},
+                ).execute()
+                print("  Added to playlist")
+            except Exception as ex:
+              print(f"::warning::YouTube playlist add failed: {ex}")
+            return vid
+
           # ── DECIDE WHETHER TO RUN ─────────────────────────────
           today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
           event = os.environ.get("GITHUB_EVENT_NAME", "")
@@ -226,8 +318,16 @@ jobs:
 
           fb_token   = os.environ.get("FB_PAGE_TOKEN")
           fb_page_id = os.environ.get("FB_PAGE_ID")
-          if not dry and (not fb_token or not fb_page_id):
-            raise RuntimeError("FB_PAGE_TOKEN or FB_PAGE_ID secret is missing")
+          yt_privacy = (os.environ.get("YT_PRIVACY") or "public").strip().lower()
+          if yt_privacy not in ("public", "unlisted", "private"): yt_privacy = "public"
+
+          fb_enabled = bool(fb_token and fb_page_id)
+          yt_enabled = all(os.environ.get(k) for k in ("YT_REFRESH_TOKEN", "YT_CLIENT_ID", "YT_CLIENT_SECRET"))
+          print(f"Facebook configured: {fb_enabled} | YouTube configured: {yt_enabled} (privacy: {yt_privacy})")
+          if not dry and not fb_enabled and not yt_enabled:
+            raise RuntimeError("No platform configured: set FB_PAGE_TOKEN + FB_PAGE_ID and/or YT_REFRESH_TOKEN + YT_CLIENT_ID + YT_CLIENT_SECRET")
+          if not dry and not fb_enabled: print("::warning::Facebook secrets missing - skipping Facebook")
+          if not dry and not yt_enabled: print("::warning::YouTube secrets missing - skipping YouTube")
 
           # ── OPEN THE PAGE, PICK THE TOPIC ─────────────────────
           opts = Options()
@@ -276,6 +376,8 @@ jobs:
             tl = driver.execute_script("return window.setVoiceDurations(arguments[0]);", durs)
             starts, total = tl["starts"], float(tl["total"])
             print(f"Video length: {total:.1f}s")
+            if total >= 180:
+              print("::warning::Video is 3 minutes or longer - YouTube will not treat it as a Short")
 
             if any(seg_wavs):
               parts, cursor, n = [], 0.0, 0
@@ -348,33 +450,53 @@ jobs:
             print("Dry run: not posting.")
             sys.exit(0)
 
-          # ── POST ──────────────────────────────────────────────
-          description = (f"{info['caption']}\n\n{info['tags']}\n\n"
-                         "Scripture: King James Version (public domain). Read the full passage in your Bible.")
-          print("Posting to Facebook...")
-          with open(final_mp4, "rb") as f:
-            response = requests.post(
-              f"https://graph-video.facebook.com/v18.0/{fb_page_id}/videos",
-              data={"description": description, "access_token": fb_token},
-              files={"source": ("reel.mp4", f, "video/mp4")})
-          print(f"Response: {response.status_code}")
-          if response.status_code != 200:
-            raise RuntimeError(f"Post failed: {response.text}")
-          fb_id = response.json().get("id")
-          print(f"Posted! ID: {fb_id}")
+          # ── POST TO BOTH PLATFORMS (independent: one failing never blocks the other) ──
+          fb_id = yt_id = None
+          errors = []
 
-          hist.append({"id": info["id"], "date": today, "fb_id": fb_id})
-          save_hist(hist)
-          print("Remembered topic in posted.json. Done!")
+          if fb_enabled:
+            print("Posting to Facebook...")
+            try:
+              fb_id = post_facebook(final_mp4, info, fb_token, fb_page_id)
+              print(f"  Facebook posted! ID: {fb_id}")
+            except Exception as e:
+              errors.append(f"Facebook: {e}")
+              print(f"::error::Facebook failed: {e}")
+
+          if yt_enabled:
+            print("Posting to YouTube...")
+            try:
+              yt_id = post_youtube(final_mp4, info, yt_privacy)
+              print(f"  YouTube posted! ID: {yt_id}")
+            except Exception as e:
+              errors.append(f"YouTube: {e}")
+              print(f"::error::YouTube failed: {e}")
+
+          # remember the topic if at least one platform got it
+          if fb_id or yt_id:
+            hist.append({"id": info["id"], "date": today, "fb_id": fb_id, "yt_id": yt_id})
+            save_hist(hist)
+            print("Remembered topic in posted.json.")
+
+          if errors:
+            print("Finished with errors: " + " | ".join(errors))
+            sys.exit(1)          # the run shows red so you notice; the commit step below still runs
+          print("Done!")
           PYEOF
         env:
-          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-          FB_PAGE_ID:    ${{ secrets.FB_PAGE_ID }}
-          FORCE_TOPIC:   ${{ inputs.topic }}
-          DRY_RUN:       ${{ inputs.dry_run }}
+          FB_PAGE_TOKEN:    ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID:       ${{ secrets.FB_PAGE_ID }}
+          YT_ACCESS_TOKEN:  ${{ secrets.YT_ACCESS_TOKEN }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_CLIENT_ID:     ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_PLAYLISTS:     ${{ secrets.YT_PLAYLISTS }}
+          YT_PRIVACY:       ${{ inputs.yt_privacy }}
+          FORCE_TOPIC:      ${{ inputs.topic }}
+          DRY_RUN:          ${{ inputs.dry_run }}
 
       - name: Remember the posted topic (commit posted.json)
-        if: ${{ success() && inputs.dry_run != true }}
+        if: ${{ !cancelled() && inputs.dry_run != true }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -382,7 +504,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "Nothing new to remember."
           else
-            git commit -m "Remember posted topic"
+            git commit -m "Remember posted topic [skip ci]"
             git pull --rebase origin "${GITHUB_REF_NAME}" || true
             git push
           fi
