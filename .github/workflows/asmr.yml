@@ -1,9 +1,9 @@
-name: 🧠 Post ASMR to Facebook
+name: 🧠 Post ASMR to Facebook I was using this for bilateral shorts
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 8 * * *"
+  #  - cron: "0 8 * * *"
 
 jobs:
   record:
