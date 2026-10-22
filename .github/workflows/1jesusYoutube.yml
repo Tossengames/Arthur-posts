@@ -16,7 +16,7 @@ name: bible-shorts-post
         type: choice
         options: [auto, sunrise_gold, midnight_stars, stained_glass, parchment, watercolor, minimal_dark, dawn_sky]
   schedule:
-    - cron: "0 13 * * *"   # once a day, 9 AM EST / 13:00 UTC
+  #  - cron: "0 13 * * *"   # once a day, 9 AM EST / 13:00 UTC
 
 permissions:
   contents: write
