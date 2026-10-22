@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: "0 14 * * *"   # once a day at 14:00 UTC (change the hour to suit your audience)
+  #  - cron: "0 14 * * *"   # once a day at 14:00 UTC (change the hour to suit your audience)
 
 permissions:
   contents: write           # lets the job commit posted.json back to the repo
