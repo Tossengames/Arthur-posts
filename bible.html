@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Gospel Washes (Bible Reels, Watercolor)</title>
+<title>Bible Reels (Elias)</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=block">
 <style>
   html,body{margin:0;height:100%;background:#16120e;color:#f3ead8;font:15px system-ui,sans-serif}
@@ -25,8 +25,9 @@
   <div id="bar">
     <button id="play" aria-label="Play">Play</button>
     <select id="topic" aria-label="Topic"></select>
+    <button id="newcol" aria-label="New colors">Colors</button>
     <input id="seek" type="range" min="0" max="30" step="0.01" value="0" aria-label="Scrub">
-    <span id="time">0:00.0</span>
+    <span id="time">0:00.0</span><span style="opacity:.6;font-size:12px">v3 one narrator</span>
     <button id="snd" aria-pressed="true" aria-label="Sound on or off">Sound</button>
     <button id="loop" aria-pressed="true" aria-label="Loop on or off">Loop</button>
   </div>
@@ -259,11 +260,20 @@
 // ===================== WATERCOLOR ENGINE (portrait 720x1280 for Reels) =====================
 const CW = 720, CH = 1280, TAU = Math.PI * 2;
 const cl = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const clr = (v, a, b) => (v < a ? a : v > b ? b : v);          // clamp to any range (used by the characters)
 const lerp = (a, b, u) => a + (b - a) * u;
 const win = (t, a, b) => cl((t - a) / (b - a));
 const ez = (u) => H.ease.inOut(cl(u));
 const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
-const rgbs = (a) => `rgb(${a[0]},${a[1]},${a[2]})`;
+const rgbs = (a) => `rgb(${Math.round(a[0])},${Math.round(a[1])},${Math.round(a[2])})`;
+const backOut = (u) => { u = cl(u); const k = 1.70158; u -= 1; return 1 + (k + 1) * u * u * u + k * u * u; };
+const wrapH = (h) => ((h % 360) + 360) % 360;
+const hsl = (h, s, l, a = 1) => `hsla(${wrapH(h).toFixed(1)},${s.toFixed(1)}%,${l.toFixed(1)}%,${a})`;
+function h2r(h, s, l) { // hsl to [r,g,b]
+  h = wrapH(h); s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(255 * f(0)), Math.round(255 * f(8)), Math.round(255 * f(4))];
+}
 
 function deform(pts, r, depth, amt) {
   let p = pts;
@@ -389,17 +399,50 @@ function wcStroke(c, pts, w, col, prog = 1, { head = true, alpha = 0.75, taper =
   c.restore();
 }
 
-// ---------- palettes (one per mood; the paper tint changes too) ----------
-const PALS = {
-  dawn:  { paper: [252, 246, 234], s1: [246, 206, 150], s2: [150, 186, 222], warm: [244, 190, 120], gr: [150, 176, 110], gr2: [110, 140, 90], ink: [48, 50, 92], acc: [190, 52, 62] },
-  day:   { paper: [251, 248, 240], s1: [140, 190, 226], s2: [86, 130, 196], warm: [246, 214, 130], gr: [120, 170, 100], gr2: [80, 130, 86], ink: [44, 52, 112], acc: [190, 40, 60] },
-  dusk:  { paper: [250, 243, 238], s1: [236, 160, 130], s2: [110, 100, 170], warm: [244, 176, 120], gr: [120, 130, 110], gr2: [80, 90, 100], ink: [46, 40, 92], acc: [184, 46, 70] },
-  night: { paper: [244, 244, 248], s1: [70, 84, 150], s2: [34, 42, 104], warm: [250, 214, 140], gr: [50, 70, 90], gr2: [34, 50, 70], ink: [30, 34, 84], acc: [188, 48, 60] },
-  storm: { paper: [246, 247, 248], s1: [110, 128, 148], s2: [56, 74, 104], warm: [226, 214, 176], gr: [70, 100, 110], gr2: [40, 70, 86], ink: [34, 44, 84], acc: [190, 50, 56] },
-  gold:  { paper: [253, 248, 232], s1: [252, 220, 120], s2: [240, 170, 80], warm: [250, 214, 120], gr: [170, 180, 100], gr2: [120, 150, 80], ink: [70, 50, 60], acc: [176, 70, 50] },
-  earth: { paper: [250, 244, 230], s1: [236, 200, 150], s2: [190, 150, 110], warm: [232, 190, 130], gr: [190, 160, 110], gr2: [150, 120, 84], ink: [70, 48, 44], acc: [170, 60, 44] },
-  garden:{ paper: [250, 248, 238], s1: [176, 206, 150], s2: [96, 150, 120], warm: [240, 214, 130], gr: [110, 160, 90], gr2: [70, 120, 80], ink: [36, 70, 66], acc: [180, 56, 60] },
+// ===================== COLOR HARMONY (a new palette every video, always matching) =====================
+// Three rich hue families, four harmony schemes, no muddy yellow-green skies.
+const ARCS = [[190, 250, 'Sapphire'], [262, 322, 'Amethyst'], [345, 395, 'Ember']];
+const SCHEMES = {
+  analogous:  { glow: 38,  ground: -28, adj: 'Silken' },
+  complement: { glow: 180, ground: 24,  adj: 'Radiant' },
+  split:      { glow: 150, ground: 208, adj: 'Stained-glass' },
+  triad:      { glow: 120, ground: 240, adj: 'Jewel' },
 };
+const MOODDIM = { night: 0.5, storm: 0.4, dusk: 0.15 };
+const safeHue = (h) => { h = wrapH(h); if (h > 62 && h < 135) h = h < 98 ? 48 : 165; return h; };
+function makePalette(seed, mood) {
+  const r = H.rng(seed), arc = r.pick(ARCS), h = wrapH(r.range(arc[0], arc[1]));
+  const sk = r.pick(Object.keys(SCHEMES)), Sc = SCHEMES[sk], g = safeHue(h + Sc.glow), gr = safeHue(h + Sc.ground);
+  const d = MOODDIM[mood] || 0, L = (x) => x * (1 - d), Sa = (x) => x * (1 - d * (mood === 'storm' ? 0.7 : 0.2));
+  const p = { id: 'p' + seed, seed, mood, name: `${Sc.adj} ${arc[2]}`, h, g, gr };
+  p.top = hsl(h, Sa(60), L(14 + r.range(0, 6)));
+  p.mid = hsl(h + 10, Sa(64), L(30 + r.range(0, 6)));
+  p.low = hsl(g, Sa(80), L(56 + r.range(0, 6)));
+  p.hor = hsl(g + 8, Sa(92), L(72 + r.range(0, 4)));
+  p.sun = hsl(g + 14, 100, mood === 'night' ? 84 : 90);
+  p.far = hsl(h + 12, Sa(44), L(26 + r.range(0, 4)));
+  p.farMist = hsl(g, Sa(60), L(52));
+  p.mid2 = hsl(gr, Sa(36), L(25));
+  p.near = hsl(gr, Sa(42), L(16));
+  p.gold = hsl(44, 92, 64); p.goldD = hsl(36, 80, 42); p.rayA = hsl(g, 100, 76);
+  p.sunX = r.range(220, 500);
+  p.ink = h2r(h, 58, 15); p.acc = h2r(g, 66, 36); p.paper = h2r(h, 38, 96); p.warm = h2r(44, 88, 72);
+  return p;
+}
+// watercolor vignettes borrow the same hues, shifted by story tone
+function scenePal(pal, tone) {
+  const h = pal.h, g = pal.g, gr = pal.gr;
+  const base = { s1: h2r(g, 70, 70), s2: h2r(h, 50, 50), warm: h2r(44, 88, 70), gr: h2r(gr, 34, 56), gr2: h2r(gr, 34, 40) };
+  const T = {
+    storm: { s1: h2r(h, 16, 54), s2: h2r(h, 30, 32), warm: h2r(44, 40, 76), gr: h2r(gr, 26, 42), gr2: h2r(gr, 28, 30) },
+    night: { s1: h2r(h, 45, 38), s2: h2r(h, 55, 22), warm: h2r(46, 90, 76), gr: h2r(gr, 28, 28), gr2: h2r(gr, 28, 20) },
+    gold:  { s1: h2r(46, 92, 72), s2: h2r(36, 88, 62), warm: h2r(46, 95, 70), gr: h2r(gr, 30, 58), gr2: h2r(gr, 32, 42) },
+    dawn:  { s1: h2r(g, 80, 74), s2: h2r(h, 55, 64) },
+    dusk:  { s1: h2r(g, 70, 62), s2: h2r(h, 45, 40), gr: h2r(gr, 28, 46), gr2: h2r(gr, 30, 32) },
+    earth: { s1: h2r(32, 60, 74), s2: h2r(26, 45, 56), warm: h2r(36, 70, 70), gr: h2r(36, 35, 60), gr2: h2r(30, 35, 44) },
+  };
+  return Object.assign({}, base, T[tone] || {});
+}
 
 // ---------- scene library (640x460 watercolor vignettes; no faces) ----------
 const SC = {};
@@ -433,7 +476,6 @@ const cross = (c, x, y, s, col, seed) => {
   exWash(c, [P(x - 9 * s, y - 150 * s), P(x + 9 * s, y - 150 * s), P(x + 9 * s, y), P(x - 9 * s, y)], col, { layers: 18, alpha: 0.1, amt: 0.05, seed });
   exWash(c, [P(x - 58 * s, y - 118 * s), P(x + 58 * s, y - 118 * s), P(x + 58 * s, y - 100 * s), P(x - 58 * s, y - 100 * s)], col, { layers: 18, alpha: 0.1, amt: 0.05, seed: seed + 1 });
 };
-const nightBase = (c, p, w, h, s) => { sky(c, p, w, h, s); stars(c, w, h, s + 5, 14); land(c, p, 0, 0); };
 SC.hill = (c, p, w, h) => {
   sky(c, p, w, h, 10); sun(c, p, 470, 110, 44, 12);
   land(c, [[0, 300], [160, 248], [330, 284], [500, 232], [w, 280], [w, h], [0, h]], 14, p.gr2, 0.05);
@@ -537,10 +579,11 @@ SC.light = (c, p, w, h) => {
 const coinStack = (c, x, y, n, seed) => { for (let i = 0; i < n; i++) { const yy = y - i * 15; exWash(c, disc(x, yy + 8, 48, 16, seed + i * 3), [200, 150, 50], { layers: 12, alpha: 0.09, amt: 0.05, seed: seed + i * 3 + 1 }); exWash(c, disc(x, yy, 48, 16, seed + i * 3 + 2), [240, 196, 80], { layers: 12, alpha: 0.1, amt: 0.05, seed: seed + i * 3 + 3 }); } };
 SC.coins = (c, p, w, h) => { sky(c, p, w, h, 420); land(c, [[0, 330], [w, 330], [w, h], [0, h]], 422, [176, 130, 84], 0.08); coinStack(c, 170, 400, 3, 430); coinStack(c, 320, 420, 5, 450); coinStack(c, 470, 400, 2, 470); };
 
+let PAL = null;                       // the palette for this video
 const SCENEC = {};
-function sceneCanvas(kind, pal) {
-  const key = kind + '|' + pal;
-  if (!SCENEC[key]) SCENEC[key] = mk(640, 460, (c, w, h) => SC[kind](c, PALS[pal], w, h), 2.6, 5);
+function sceneCanvas(kind, tone) {
+  const key = kind + '|' + (tone || 'base') + '|' + PAL.id;
+  if (!SCENEC[key]) SCENEC[key] = mk(640, 460, (c, w, h) => SC[kind](c, scenePal(PAL, tone), w, h), 2.6, 5);
   return SCENEC[key];
 }
 const WASHC = {};
@@ -553,7 +596,7 @@ function washCanvas(it) {
   return WASHC[key];
 }
 
-// ---------- paper, tooth and finishing ----------
+// ---------- paper tooth ----------
 function grid(W, H_, cell, r) {
   const gw = Math.ceil(W / cell) + 2, gh = Math.ceil(H_ / cell) + 2, g = new Float32Array(gw * gh);
   for (let i = 0; i < g.length; i++) g[i] = r();
@@ -574,20 +617,237 @@ function tooth() {
   }
   c.putImageData(im, 0, 0); TOOTH = cv; return cv;
 }
-const PAPERS = {};
-function paperFor(name) {
-  if (PAPERS[name]) return PAPERS[name];
-  const p = PALS[name], cv = H.layer(CW, CH), c = cv.getContext('2d');
-  c.fillStyle = rgbs(p.paper); c.fillRect(0, 0, CW, CH);
-  const r = H.rng(404); c.save(); c.globalCompositeOperation = 'multiply';
-  const ev = c.createLinearGradient(0, 0, 0, CH); ev.addColorStop(0, 'rgba(232,214,182,0.5)'); ev.addColorStop(0.15, 'rgba(250,240,222,0.1)'); ev.addColorStop(0.85, 'rgba(250,240,222,0.1)'); ev.addColorStop(1, 'rgba(228,208,172,0.55)');
-  c.fillStyle = ev; c.fillRect(0, 0, CW, CH);
-  for (let k = 0; k < 12; k++) {
-    const warm = r() < 0.5, x0 = r.range(0, CW), y0 = r.range(0, CH), rx = r.range(120, 260), ry = r.range(80, 200);
-    c.save(); c.translate(x0, y0); c.scale(1, ry / rx); const g = c.createRadialGradient(0, 0, 0, 0, 0, rx);
-    g.addColorStop(0, warm ? 'rgba(236,214,170,0.2)' : 'rgba(214,214,226,0.16)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(-rx, -rx, rx * 2, rx * 2); c.restore();
+
+// ===================== MAJESTIC STAGE: sky, panel, frame =====================
+const PX = 56, PY = 108, PW = 608, PH = 830;          // the parchment panel the text sits on
+function rrp(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+function ridge(c, base, amp, fill, r, n) {
+  const pts = []; for (let i = 0; i <= n; i++) pts.push([i * CW / n, base - amp * (0.3 + 0.7 * r())]);
+  c.beginPath(); c.moveTo(0, CH); c.lineTo(0, pts[0][1]);
+  for (let i = 0; i < n; i++) { const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2; c.quadraticCurveTo(pts[i][0], pts[i][1], mx, my); }
+  c.lineTo(CW, pts[n][1]); c.lineTo(CW, CH); c.closePath(); c.fillStyle = fill; c.fill();
+}
+function makeSprite(c0, c1, rad) {
+  const s = H.layer(rad * 2, rad * 2), c = s.getContext('2d'), g = c.createRadialGradient(rad, rad, 0, rad, rad, rad);
+  g.addColorStop(0, c0); g.addColorStop(1, c1); c.fillStyle = g; c.fillRect(0, 0, rad * 2, rad * 2); return s;
+}
+let BG = null, PANELC = null, SPR = {}, BGSTARS = [], CLOUDS = [], MOTES = [];
+function buildBG(pal) {
+  const cv = H.layer(CW, CH), c = cv.getContext('2d'), r = H.rng(pal.seed + 5), yH = 1010;
+  const g = c.createLinearGradient(0, 0, 0, yH);
+  g.addColorStop(0, pal.top); g.addColorStop(0.38, pal.mid); g.addColorStop(0.72, pal.low); g.addColorStop(1, pal.hor);
+  c.fillStyle = g; c.fillRect(0, 0, CW, CH);
+  const sy = yH - 40, sg = c.createRadialGradient(pal.sunX, sy, 4, pal.sunX, sy, 640);
+  sg.addColorStop(0, pal.sun); sg.addColorStop(0.16, hsl(pal.g, 100, 82, 0.7)); sg.addColorStop(1, hsl(pal.g, 100, 70, 0));
+  c.fillStyle = sg; c.fillRect(0, 0, CW, CH);
+  c.fillStyle = pal.sun; c.beginPath(); c.arc(pal.sunX, sy, 50, 0, TAU); c.fill();
+  const fg = c.createLinearGradient(0, yH - 130, 0, yH + 60); fg.addColorStop(0, pal.far); fg.addColorStop(1, pal.farMist);
+  ridge(c, yH + 30, 130, fg, r, 12);
+  ridge(c, yH + 120, 80, pal.mid2, r, 10);
+  const gg = c.createLinearGradient(0, 1150, 0, CH); gg.addColorStop(0, pal.mid2); gg.addColorStop(0.3, pal.near); gg.addColorStop(1, hsl(pal.gr, 40, 8));
+  c.fillStyle = gg; c.beginPath(); c.moveTo(0, 1192); c.quadraticCurveTo(CW * 0.5, 1150, CW, 1192); c.lineTo(CW, CH); c.lineTo(0, CH); c.closePath(); c.fill();
+  c.fillStyle = pal.near;
+  for (let x = 0; x < CW; x += 11) { const h = 10 + r() * 22, y = 1186 - 36 * Math.sin((x / CW) * Math.PI) + 8; c.beginPath(); c.moveTo(x, y + 6); c.lineTo(x + 4, y - h); c.lineTo(x + 9, y + 6); c.fill(); }
+  c.save(); c.shadowColor = 'rgba(0,0,0,.5)'; c.shadowBlur = 44; c.shadowOffsetY = 16; c.fillStyle = '#000'; rrp(c, PX, PY, PW, PH, 38); c.fill(); c.restore(); // soft shadow under the panel
+  return cv;
+}
+function buildPanel(pal) {
+  const cv = H.layer(CW, CH), c = cv.getContext('2d'), r = H.rng(pal.seed + 15);
+  const top = rgbs(H.mix(pal.paper, [255, 250, 236], 0.55)), bot = rgbs(H.mix(pal.paper, [228, 210, 178], 0.4));
+  const g = c.createLinearGradient(0, PY, 0, PY + PH); g.addColorStop(0, top); g.addColorStop(1, bot);
+  c.save(); rrp(c, PX, PY, PW, PH, 38); c.fillStyle = g; c.fill(); c.clip();
+  for (let k = 0; k < 9; k++) { // faint warm and cool stains, like handmade paper
+    const x0 = r.range(PX, PX + PW), y0 = r.range(PY, PY + PH), rad = r.range(90, 220), warm = r() < 0.5, gr = c.createRadialGradient(x0, y0, 0, x0, y0, rad);
+    gr.addColorStop(0, warm ? 'rgba(236,214,170,0.22)' : 'rgba(210,214,230,0.18)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = gr; c.fillRect(x0 - rad, y0 - rad, rad * 2, rad * 2);
   }
-  c.restore(); PAPERS[name] = cv; return cv;
+  c.restore();
+  c.strokeStyle = pal.gold; c.lineWidth = 5; rrp(c, PX, PY, PW, PH, 38); c.stroke();
+  c.strokeStyle = H.rgba(pal.ink, 0.28); c.lineWidth = 1.6; rrp(c, PX + 11, PY + 11, PW - 22, PH - 22, 29); c.stroke();
+  c.fillStyle = pal.gold;
+  for (const [x, y] of [[CW / 2, PY], [CW / 2, PY + PH], [PX, PY + PH / 2], [PX + PW, PY + PH / 2]]) { c.beginPath(); c.moveTo(x, y - 11); c.lineTo(x + 11, y); c.lineTo(x, y + 11); c.lineTo(x - 11, y); c.closePath(); c.fill(); }
+  return cv;
+}
+function buildSkyFx(pal) {
+  const r = H.rng(pal.seed + 21);
+  SPR.cloud = (() => { const s = H.layer(380, 150), c = s.getContext('2d'), rr2 = H.rng(pal.seed + 9); for (let i = 0; i < 9; i++) { const x = 60 + rr2() * 260, y = 50 + rr2() * 50, rad = 40 + rr2() * 36, g = c.createRadialGradient(x, y, 0, x, y, rad); g.addColorStop(0, hsl(pal.g, 85, 86, 0.55)); g.addColorStop(1, hsl(pal.g, 85, 86, 0)); c.fillStyle = g; c.fillRect(x - rad, y - rad, rad * 2, rad * 2); } return s; })();
+  SPR.mote = makeSprite(hsl(44, 100, 80, 0.9), hsl(44, 100, 70, 0), 14);
+  BGSTARS = Array.from({ length: 80 }, () => { const z = r(); return z < 0.5 ? { x: r() * CW, y: r() * 104, s: 0.8 + r() * 1.8, ph: r() * 6.28 } : z < 0.85 ? { x: r() < 0.5 ? r() * 52 : CW - r() * 52, y: r() * 900, s: 0.8 + r() * 1.8, ph: r() * 6.28 } : { x: r() * CW, y: r() * 900, s: 0.8 + r() * 1.8, ph: r() * 6.28 }; });
+  CLOUDS = Array.from({ length: 5 }, () => ({ x0: r() * (CW + 420), y: 40 + r() * 700, s: 0.6 + r() * 0.8, v: 5 + r() * 9 }));
+  MOTES = Array.from({ length: 34 }, () => ({ x: r() * CW, y0: r() * CH, v: 8 + r() * 22, ph: r() * 6.28, s: 0.4 + r() * 0.9 }));
+}
+function drawSkyFx(c, T) {
+  const pal = PAL, dark = pal.mood === 'night' || pal.mood === 'storm' ? 1 : 0.7;
+  for (const s of BGSTARS) { const tw = 0.5 + 0.5 * Math.sin(T * 1.6 + s.ph); c.fillStyle = `rgba(255,248,225,${((0.25 + 0.65 * tw) * dark).toFixed(3)})`; c.beginPath(); c.arc(s.x, s.y, s.s, 0, TAU); c.fill(); }
+  c.save(); c.globalCompositeOperation = 'lighter'; const sx = pal.sunX, sy = 970;
+  for (let i = 0; i < 12; i++) {
+    const a = -Math.PI / 2 + (i - 5.5) * 0.21 + Math.sin(T * 0.15 + i) * 0.03, len = 1250, wd = 0.05 + 0.02 * Math.sin(T * 0.3 + i * 2);
+    const g = c.createLinearGradient(sx, sy, sx + Math.cos(a) * len, sy + Math.sin(a) * len); g.addColorStop(0, pal.rayA); g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.globalAlpha = 0.2; c.fillStyle = g; c.beginPath(); c.moveTo(sx, sy);
+    c.lineTo(sx + Math.cos(a - wd) * len, sy + Math.sin(a - wd) * len); c.lineTo(sx + Math.cos(a + wd) * len, sy + Math.sin(a + wd) * len); c.closePath(); c.fill();
+  }
+  c.restore();
+  for (const cd of CLOUDS) { const span = CW + 700, x = ((cd.x0 + cd.v * T) % span) - 400; c.globalAlpha = 0.7; c.drawImage(SPR.cloud, x, cd.y, 380 * cd.s, 150 * cd.s); }
+  for (const m of MOTES) { const span = CH + 80, y = (((m.y0 - m.v * T) % span) + span) % span - 40, tw = 0.5 + 0.5 * Math.sin(T * 1.8 + m.ph), sz = 28 * m.s; c.globalAlpha = 0.2 + 0.6 * tw; c.drawImage(SPR.mote, m.x + Math.sin(T * 0.6 + m.ph) * 22 - sz / 2, y - sz / 2, sz, sz); }
+  c.globalAlpha = 1;
+}
+function drawFrame(c, pal) {
+  c.save(); c.strokeStyle = pal.gold; c.globalAlpha = 0.92; c.lineWidth = 3.5; rrp(c, 14, 14, CW - 28, CH - 28, 28); c.stroke();
+  c.lineWidth = 1.3; rrp(c, 27, 27, CW - 54, CH - 54, 18); c.stroke(); c.fillStyle = pal.gold;
+  for (const [x, y] of [[CW / 2, 14], [CW / 2, CH - 14], [14, CH / 2], [CW - 14, CH / 2], [14, 14], [CW - 14, 14], [14, CH - 14], [CW - 14, CH - 14]]) { c.beginPath(); c.moveTo(x, y - 9); c.lineTo(x + 9, y); c.lineTo(x, y + 9); c.lineTo(x - 9, y); c.closePath(); c.fill(); }
+  c.restore();
+}
+
+// ===================== CHARACTERS (Elias is the host; the others only react) =====================
+const CHARS = {
+  elias: { name: 'Shepherd Elias', skin: '#d8a173', hair: '#f0ebe0', beard: 'long', beardCol: '#f0ebe0', wear: 'elder', prop: 'staff', scale: 1.0, male: 1 },
+};
+const HELD = { staff: [-74, -200], scroll: [-46, -214], net: [-62, -206] };
+const EMO = {
+  warm:      { brow: 0,    by: 0,  smile: 0.8,  eye: 1,    asym: 0, o: 0 },
+  worried:   { brow: 0.7,  by: -2, smile: -0.6, eye: 1.1,  asym: 0, o: 0 },
+  surprised: { brow: 0.2,  by: -9, smile: 0,    eye: 1.35, asym: 0, o: 1 },
+  awe:       { brow: 0.2,  by: -8, smile: 0.5,  eye: 1.25, asym: 0, o: 0 },
+  curious:   { brow: 0.25, by: -4, smile: 0.4,  eye: 1.1,  asym: 1, o: 0 },
+  serious:   { brow: -0.3, by: 0,  smile: 0,    eye: 0.95, asym: 0, o: 0 },
+};
+const GEST = { idle: [62, -168], open: [102, -224], point: [130, -302], raise: [74, -394], clasp: [16, -205], wave: [100, -352] };
+function charCols(pal, i) {
+  const HU = [pal.h, pal.g, pal.gr], rh = HU[(i + 1) % 3] + i * 22, ch = HU[(i + 2) % 3] + 10;
+  return { robe: hsl(rh, 46, 44), robeD: hsl(rh, 50, 29), robeL: hsl(rh, 54, 60), cloth: hsl(ch, 52, 70), clothD: hsl(ch, 50, 50), sash: pal.gold };
+}
+function drawArm(c, sx, sy, hx, hy, out, sleeve, skin) {
+  const l1 = 92, l2 = 86; let dx = hx - sx, dy = hy - sy, d = Math.hypot(dx, dy); const mx = l1 + l2 - 2;
+  if (d > mx) { hx = sx + dx * mx / d; hy = sy + dy * mx / d; dx = hx - sx; dy = hy - sy; d = mx; }
+  d = Math.max(d, 26);
+  const a = Math.atan2(dy, dx), ang = Math.acos(clr((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1));
+  const e1 = { x: sx + Math.cos(a + ang) * l1, y: sy + Math.sin(a + ang) * l1 }, e2 = { x: sx + Math.cos(a - ang) * l1, y: sy + Math.sin(a - ang) * l1 };
+  const sc1 = (e1.x - sx) * out + (e1.y - sy) * 0.5, sc2 = (e2.x - sx) * out + (e2.y - sy) * 0.5, el = sc1 > sc2 ? e1 : e2;
+  c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = sleeve; c.lineWidth = 30;
+  c.beginPath(); c.moveTo(sx, sy); c.lineTo(el.x, el.y); c.lineTo(hx, hy); c.stroke();
+  c.strokeStyle = 'rgba(255,255,255,.14)'; c.lineWidth = 8; c.beginPath(); c.moveTo(sx - out * 5, sy); c.lineTo(el.x - out * 5, el.y); c.stroke();
+  c.fillStyle = skin; c.beginPath(); c.arc(hx, hy, 14, 0, TAU); c.fill();
+}
+function drawStaff(c) {
+  c.strokeStyle = hsl(30, 45, 30); c.lineWidth = 9; c.lineCap = 'round'; c.beginPath(); c.moveTo(-74, 4); c.lineTo(-74, -420); c.stroke();
+  c.beginPath(); c.moveTo(-74, -420); c.bezierCurveTo(-74, -458, -40, -458, -40, -424); c.stroke();
+}
+function drawScroll(c, h) {
+  c.save(); c.translate(h[0], h[1]); c.rotate(-0.22);
+  c.fillStyle = hsl(42, 55, 88); c.fillRect(-42, -22, 84, 44);
+  c.strokeStyle = 'rgba(80,50,20,.35)'; c.lineWidth = 2.5; for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(-32, -12 + i * 9); c.lineTo(32 - (i % 2) * 10, -12 + i * 9); c.stroke(); }
+  c.fillStyle = hsl(30, 50, 34); c.beginPath(); c.ellipse(-44, 0, 7, 25, 0, 0, TAU); c.ellipse(44, 0, 7, 25, 0, 0, TAU); c.fill();
+  c.restore();
+}
+function drawNet(c, h, t) {
+  const sw = Math.sin(t * 1.5) * 4; c.save();
+  c.beginPath(); c.moveTo(h[0] - 30, h[1]); c.lineTo(h[0] + 32, h[1]); c.lineTo(h[0] + 8 + sw, h[1] + 120); c.lineTo(h[0] - 14 + sw, h[1] + 120); c.closePath();
+  c.fillStyle = 'rgba(0,0,0,.18)'; c.fill(); c.clip(); c.strokeStyle = 'rgba(245,235,205,.7)'; c.lineWidth = 2;
+  for (let i = -12; i < 14; i++) { c.beginPath(); c.moveTo(h[0] + i * 12, h[1]); c.lineTo(h[0] + i * 12 + 70, h[1] + 130); c.moveTo(h[0] + i * 12 + 70, h[1]); c.lineTo(h[0] + i * 12, h[1] + 130); c.stroke(); }
+  c.restore();
+}
+function drawHead(c, R, t, pal) {
+  const ch = R.ch, st = R.st, K = R.cols, hy = -362, e = st.e;
+  if (ch.wear === 'elder') { c.fillStyle = K.clothD; for (const s of [-1, 1]) { c.beginPath(); c.moveTo(s * 54, hy - 12); c.lineTo(s * 74, hy + 62); c.lineTo(s * 30, hy + 54); c.closePath(); c.fill(); } }
+  if (ch.wear === 'wrap') { const kx = Math.sin(t * 2 + R.ph) * 5; c.fillStyle = K.clothD; c.beginPath(); c.moveTo(-40, hy - 36); c.quadraticCurveTo(-78 + kx, hy - 26, -88 + kx, hy + 20); c.quadraticCurveTo(-60, hy - 6, -34, hy - 14); c.closePath(); c.fill(); }
+  c.fillStyle = ch.skin; c.beginPath(); c.arc(-45, hy + 6, 9, 0, TAU); c.arc(45, hy + 6, 9, 0, TAU); c.fill();
+  c.beginPath(); c.arc(0, hy, 46, 0, TAU); c.fill();
+  const hg = c.createRadialGradient(-14, hy - 16, 4, 0, hy, 52); hg.addColorStop(0, 'rgba(255,255,255,.22)'); hg.addColorStop(1, 'rgba(80,30,10,.16)');
+  c.fillStyle = hg; c.beginPath(); c.arc(0, hy, 46, 0, TAU); c.fill();
+  if (ch.beard) {
+    const bs = Math.sin(t * 1.3 + R.ph) * 3 + st.mouth * Math.sin(t * 9) * 2; c.fillStyle = ch.beardCol; c.beginPath();
+    if (ch.beard === 'long') { c.moveTo(-42, hy + 10); c.bezierCurveTo(-46, hy + 50, -26, hy + 86, bs, hy + 124); c.bezierCurveTo(26 + bs, hy + 86, 46, hy + 50, 42, hy + 10); }
+    else { c.moveTo(-42, hy + 10); c.bezierCurveTo(-46, hy + 36, -24, hy + 58, 0, hy + 60); c.bezierCurveTo(24, hy + 58, 46, hy + 36, 42, hy + 10); }
+    c.quadraticCurveTo(24, hy + 30, 0, hy + 31); c.quadraticCurveTo(-24, hy + 30, -42, hy + 10); c.fill();
+    c.beginPath(); c.ellipse(-10, hy + 17, 12, 5, -0.2, 0, TAU); c.ellipse(10, hy + 17, 12, 5, 0.2, 0, TAU); c.fill();
+  }
+  if (ch.wear === 'elder') {
+    c.fillStyle = K.cloth; c.beginPath(); c.moveTo(-54, hy - 6); c.bezierCurveTo(-58, hy - 76, 58, hy - 76, 54, hy - 6); c.quadraticCurveTo(0, hy - 30, -54, hy - 6); c.fill();
+    c.strokeStyle = '#2a2430'; c.lineWidth = 6; c.beginPath(); c.ellipse(0, hy - 34, 49, 12, 0, Math.PI * 0.05, Math.PI * 0.95); c.stroke();
+  } else if (ch.wear === 'wrap') {
+    c.fillStyle = K.cloth; c.beginPath(); c.moveTo(-50, hy - 8); c.bezierCurveTo(-62, hy - 74, 62, hy - 74, 50, hy - 8); c.quadraticCurveTo(0, hy - 26, -50, hy - 8); c.fill();
+    c.strokeStyle = K.clothD; c.lineWidth = 5; c.lineCap = 'round'; for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(-40 + i * 24, hy - 50); c.lineTo(-22 + i * 24, hy - 18); c.stroke(); }
+  } else if (ch.wear === 'cap') {
+    c.fillStyle = ch.hair; c.beginPath(); c.moveTo(-46, hy + 2); c.bezierCurveTo(-52, hy - 52, 52, hy - 52, 46, hy + 2); c.quadraticCurveTo(0, hy - 30, -46, hy + 2); c.fill();
+    c.fillStyle = K.cloth; c.beginPath(); c.ellipse(0, hy - 40, 32, 20, 0, Math.PI, TAU); c.fill();
+    c.strokeStyle = pal.gold; c.lineWidth = 4; c.beginPath(); c.moveTo(-32, hy - 40); c.lineTo(32, hy - 40); c.stroke();
+  }
+  const ey = hy - 2, es = e.eye * (1 - 0.9 * st.blink);
+  c.fillStyle = '#2a1a16';
+  for (const s of [-1, 1]) { c.beginPath(); c.ellipse(s * 17, ey, 5.2 * Math.min(1.2, e.eye), 6.4 * es + 0.8, 0, 0, TAU); c.fill(); }
+  if (es > 0.3) { c.fillStyle = '#fff'; for (const s of [-1, 1]) { c.beginPath(); c.arc(s * 17 + 1.6, ey - 2, 1.7, 0, TAU); c.fill(); } }
+  c.strokeStyle = ch.wear === 'elder' ? '#a49c90' : '#3a2a22'; c.lineWidth = 4; c.lineCap = 'round';
+  for (const s of [-1, 1]) { c.beginPath(); c.moveTo(s * 28, hy - 18 + e.by); c.lineTo(s * 8, hy - 18 + e.by - e.brow * 8 - (e.asym > 0.5 && s > 0 ? 5 : 0)); c.stroke(); }
+  c.fillStyle = 'rgba(230,110,110,.22)'; c.beginPath(); c.ellipse(-27, hy + 14, 9, 6, 0, 0, TAU); c.ellipse(27, hy + 14, 9, 6, 0, 0, TAU); c.fill();
+  c.strokeStyle = 'rgba(90,40,20,.35)'; c.lineWidth = 3; c.beginPath(); c.moveTo(0, hy + 2); c.quadraticCurveTo(-5, hy + 10, 0, hy + 12); c.stroke();
+  const my = hy + 25, o = Math.max(st.mouth, st.speaking ? 0 : e.o * 0.55);
+  if (o > 0.07) {
+    c.fillStyle = '#4d1f26'; c.beginPath(); c.ellipse(0, my + 2 + o * 3, 8 + o * 5 * (e.o > 0.5 && !st.speaking ? 0.4 : 1), 2.5 + o * 11, 0, 0, TAU); c.fill();
+    c.fillStyle = '#d4707c'; c.beginPath(); c.ellipse(0, my + 2 + o * 8, 5, Math.max(1, o * 4), 0, 0, TAU); c.fill();
+  } else {
+    c.strokeStyle = '#5a2a2a'; c.lineWidth = 3.5; c.beginPath(); c.moveTo(-11, my); c.quadraticCurveTo(0, my + e.smile * 11, 11, my); c.stroke();
+  }
+}
+function drawChar(c, R, t, pal) {
+  const ch = R.ch, st = R.st, K = R.cols, u = clr((t - R.enterAt) / 0.85, 0, 1);
+  if (u <= 0) return;
+  const sc = R.sc * (0.72 + 0.28 * backOut(u)) * (1 + 0.045 * st.hl);
+  c.save(); c.translate(R.x, R.y + st.bob + (1 - u) * 40); c.scale(R.flip * sc, sc); c.globalAlpha = clr(u * 2.2, 0, 1);
+  c.fillStyle = 'rgba(0,0,0,.30)'; c.beginPath(); c.ellipse(0, 8, 96, 14, 0, 0, TAU); c.fill();
+  if (ch.prop === 'staff') drawStaff(c);
+  const sw = Math.sin(t * 1.25 + R.ph) * 3, rg = c.createLinearGradient(-84, 0, 84, 0);
+  rg.addColorStop(0, K.robeD); rg.addColorStop(0.55, K.robe); rg.addColorStop(1, K.robeL);
+  c.fillStyle = rg; c.beginPath(); c.moveTo(-38, -302); c.bezierCurveTo(-54, -220, -72 + sw, -110, -86 + sw, -4); c.quadraticCurveTo(0, 12, 86 + sw, -4); c.bezierCurveTo(72 + sw, -110, 54, -220, 38, -302); c.quadraticCurveTo(0, -320, -38, -302); c.closePath(); c.fill();
+  c.strokeStyle = 'rgba(255,255,255,.2)'; c.lineWidth = 2.5; c.stroke();
+  c.strokeStyle = 'rgba(0,0,0,.14)'; c.lineWidth = 3; for (const fx of [-30, 6, 38]) { c.beginPath(); c.moveTo(fx * 0.5, -190); c.quadraticCurveTo(fx * 1.1 + sw * 0.5, -100, fx * 1.4 + sw, -10); c.stroke(); }
+  c.fillStyle = K.sash; c.beginPath(); c.moveTo(-52, -196); c.quadraticCurveTo(0, -176, 52, -196); c.lineTo(54, -176); c.quadraticCurveTo(0, -156, -54, -176); c.closePath(); c.fill();
+  const held = HELD[ch.prop], base = held || [-62, -168], idle = [Math.sin(t * 1.4 + R.ph) * 2, Math.sin(t * 1.1 + R.ph) * 2];
+  const lh = held ? [base[0] + idle[0], base[1] + idle[1]] : [lerp(base[0], -16, st.clasp) + idle[0], lerp(base[1], -205, st.clasp) + idle[1]];
+  drawArm(c, -40, -292, lh[0], lh[1], -1, K.robeD, ch.skin);
+  if (ch.prop === 'scroll') drawScroll(c, lh); else if (ch.prop === 'net') drawNet(c, lh, t);
+  drawArm(c, 40, -292, st.rx, st.ry, 1, K.robeD, ch.skin);
+  c.fillStyle = ch.skin; c.fillRect(-11, -322, 22, 26);
+  c.save(); c.translate(0, -312); c.rotate(st.tilt); c.translate(0, 312); drawHead(c, R, t, pal); c.restore();
+  c.restore();
+}
+
+// ---- pose = pure function of the video time, so every frame is reproducible ----
+const SCENE_EMO = { storm: 'worried', sea: 'worried', calm: 'awe', torches: 'worried', sword: 'serious', cross: 'serious', tomb: 'serious', tombOpen: 'awe', night: 'serious', light: 'awe' };
+const KDEF = { tell: ['open', null], verse: ['point', 'serious'], words: ['raise', 'awe'], ask: ['open', 'curious'], note: ['open', 'warm'], end: ['clasp', 'warm'] };
+function buildBM(T) {
+  const out = [{ act: 'open', emo: 'warm' }];                 // the cover
+  T.beats.forEach((b) => { const d = KDEF[b.k]; out.push({ act: b.act || d[0], emo: b.emo || d[1] || SCENE_EMO[b.scene] || 'warm' }); });
+  return out;
+}
+const reactEmo = (e) => (['worried', 'surprised', 'awe', 'curious'].includes(e) ? e : 'warm');
+const reactGest = (e) => (e === 'worried' ? 'clasp' : e === 'awe' || e === 'surprised' ? 'raise' : 'idle');
+const tiltOf = (e) => (e === 'curious' ? 0.12 : e === 'worried' ? -0.06 : 0);
+function speakAmt(T, i) {
+  if (LAY[i].cover) return 0;
+  let a, b;
+  if (VD && VD[i] > 0) { a = TL.starts[i]; b = a + VD[i]; } else { a = TL.E[i] + 0.5; b = TL.E[i] + LAY[i].d - 0.6; }
+  if (b <= a) return 0;
+  return H.smooth(a, a + 0.08, T) * (1 - H.smooth(b - 0.1, b, T));
+}
+function poseAt(R, T, loc) {
+  const i = loc.i, k = ez(loc.rt / 0.6), cur = BM[i] || BM[0], prev = BM[Math.max(0, i - 1)] || cur;
+  const gc = R.host ? cur.act : reactGest(cur.emo), gp = R.host ? prev.act : reactGest(prev.emo);
+  const ec = R.host ? cur.emo : reactEmo(cur.emo), ep = R.host ? prev.emo : reactEmo(prev.emo);
+  const Gc = GEST[gc] || GEST.idle, Gp = GEST[gp] || GEST.idle, spk = R.host ? speakAmt(T, i) : 0;
+  let rx = lerp(Gp[0], Gc[0], k), ry = lerp(Gp[1], Gc[1], k);
+  if (gc === 'open') { rx += Math.sin(T * 3 + R.ph) * 8; ry += Math.sin(T * 2.1 + R.ph) * 6; }
+  if (gc === 'wave') rx += Math.sin(T * 7) * 18;
+  if (gc === 'point') ry += Math.sin(T * 2.4) * 4;
+  const e = {}; for (const f of ['brow', 'by', 'smile', 'eye', 'asym', 'o']) e[f] = lerp(EMO[ep][f], EMO[ec][f], k);
+  const per = 3.4 + (R.ph % 1.1), bp = (T + R.ph * 1.3) % per, blink = bp < 0.16 ? Math.sin(bp / 0.16 * Math.PI) : 0;
+  const mouth = spk > 0 ? (0.25 + 0.75 * Math.abs(Math.sin(T * 13 + R.ph * 3)) * (0.6 + 0.4 * Math.sin(T * 4.1 + R.ph))) * spk : 0;
+  return {
+    bob: Math.sin(T * 1.7 + R.ph) * 2.5 + spk * Math.sin(T * 5.2 + R.ph) * 2.2, tilt: lerp(tiltOf(ep), tiltOf(ec), k) + spk * Math.sin(T * 2.2) * 0.03,
+    blink, mouth, speaking: spk > 0.05, hl: spk, clasp: lerp(gp === 'clasp' ? 1 : 0, gc === 'clasp' ? 1 : 0, k), rx, ry, e,
+  };
+}
+let ROLES = [], BM = [], VD = null;
+function buildCast(T, pal) {   // one narrator, always Elias
+  return [{ id: 'elias', ch: CHARS.elias, host: true, x: 360, y: 1252, flip: 1, sc: 0.78, ph: 0.3, enterAt: -1, cols: charCols(pal, 0), st: null }];
 }
 
 // ---------- text layout ----------
@@ -600,6 +860,7 @@ function wrapLines(str, size, maxW, weight = '700') {
   return out;
 }
 const GRAY = 'rgb(96,92,100)', GRAY2 = 'rgb(112,100,96)', GREEN = 'rgb(46,104,52)', SIENNA = 'rgb(150,80,44)';
+const LEFT = 92, RIGHT = 628, TXTW = 556;          // text column inside the panel
 // flow(): stack text blocks top to bottom, shrinking to fit, timed one after another
 function flow(spec, o) {
   const top = o.top, bottom = o.bottom; let f = 1, rows, endY;
@@ -608,7 +869,7 @@ function flow(spec, o) {
     for (const b of spec) {
       if (b.t === 'gap') { y += b.h * f; continue; }
       if (b.t === 'div') { rows.push({ b, y: y + 14 * f }); y += 30 * f; continue; }
-      const size = Math.max(36, Math.round(b.size * f)), L = wrapLines(b.s, size, b.maxW || 620, b.weight || '700');
+      const size = Math.max(36, Math.round(b.size * f)), L = wrapLines(b.s, size, b.maxW || TXTW, b.weight || '700');
       rows.push({ b, L, size, y: y + size * 0.82 });
       y += L.length * size * 1.02 + (b.after == null ? 10 : b.after) * f;
     }
@@ -620,8 +881,8 @@ function flow(spec, o) {
   const items = []; let t = o.a == null ? 0.2 : o.a;
   for (const r of rows) {
     const b = r.b, y0 = r.y + shift;
-    if (b.t === 'div') { items.push({ k: 'stroke', pts: bez([80, y0], [240, y0 + 8], [480, y0 - 6], [640, y0 + 4], 20), w: 6, col: [150, 140, 130], a: t, b: t + 0.4, head: false, alpha: 0.5 }); t += 0.5; continue; }
-    const align = b.align || 'center', x = align === 'left' ? 60 : 360, tot = r.L.join('').length || 1;
+    if (b.t === 'div') { items.push({ k: 'stroke', pts: bez([LEFT, y0], [240, y0 + 8], [480, y0 - 6], [RIGHT, y0 + 4], 20), w: 6, col: [150, 140, 130], a: t, b: t + 0.4, head: false, alpha: 0.5 }); t += 0.5; continue; }
+    const align = b.align || 'center', x = align === 'left' ? LEFT : 360, tot = r.L.join('').length || 1;
     const dur = b.dur || clampN(tot * 0.03, 0.5, 2.6); let acc = 0;
     r.L.forEach((ln, k) => {
       const a0 = t + dur * acc / tot; acc += ln.length; const b0 = t + dur * acc / tot;
@@ -637,172 +898,307 @@ function flow(spec, o) {
   }
   return { items, tEnd: t, endY: endY + shift, rows, shift };
 }
-const washBack = (p, cy, ry, a, seed) => ({ k: 'wash', pal: p.name, col: p.warm, cx: 360, cy, rx: 340, ry, a, b: a + 1.2, alpha: 0.032, seed });
+const washBack = (p, cy, ry, a, seed) => ({ k: 'wash', pal: p.id, col: p.warm, cx: 360, cy, rx: 270, ry, a, b: a + 1.2, alpha: 0.032, seed });
 
+// ---------- how a story is built ----------
+// Every story is a cover (the thumbnail frame) followed by its own mix of beats.
+//   tell   a painted scene with a short caption        verse  a KJV verse, big, with its reference
+//   words  a few big words, optionally circled         ask    a question put to the viewer
+//   note   a small aside (old English, history)        end    the closing line
+// "say" is what Elias speaks. "show" is the shorter text written on screen.
+const COVER = 1.3;                                   // seconds the cover stays up before the story starts
 function buildLayout(T) {
-  const p = Object.assign({ name: T.pal }, PALS[T.pal]), INK = rgbs(p.ink), ACC = rgbs(p.acc), B = [];
+  const p = PAL, INK = rgbs(p.ink), ACC = rgbs(p.acc), B = [];
   const done = (items, tEnd, min = 2.4) => ({ items, d: Math.max(min, tEnd + 0.8) });
-  // beat 1: hook
-  { const fl = flow([{ s: T.series.toUpperCase(), size: 48, col: GRAY, dur: 0.6, after: 26 }, { s: T.hook, size: 110, col: INK, ul: true, maxW: 630, ulCol: p.acc }], { top: 150, bottom: 640, a: 0.3 });
-    fl.items.push({ k: 'scene', kind: T.scene, pal: T.pal, x: 40, y: 668, w: 640, h: 460, a: 0.1, b: 1.7 }); B.push(done(fl.items, fl.tEnd, 2.8)); }
-  const quoteBeat = (q, ref) => {
-    const fl = flow([{ s: 'Scripture says', size: 50, col: ACC, after: 18, dur: 0.5 }, { s: '\u201C' + q + '\u201D', size: 84, col: INK, after: 26 }, { s: '\u2014 ' + ref + ' (KJV)', size: 56, col: ACC }], { top: 190, bottom: 1060, center: true, a: 0.5 });
-    return done([washBack(p, 620, 430, 0, 11), ...fl.items], fl.tEnd, 3.2);
-  };
-  const endBeat = () => {
-    const fl = flow([{ s: T.end, size: 116, col: INK, after: 30 }, { s: '\u2014 ' + T.ref + ' (KJV)', size: 52, col: ACC }], { top: 520, bottom: 1040, center: true, a: 0.9 });
-    const items = [washBack(p, 640, 440, 0, 17), { k: 'scene', kind: 'light', pal: T.pal === 'night' ? 'dawn' : T.pal, x: 100, y: 110, w: 520, h: 374, a: 0.1, b: 1.5 }, ...fl.items];
-    return done(items, fl.tEnd, 3.0);
-  };
-  if (T.fmt === 'A') {
-    const spec = [{ s: 'Context', size: 78, col: ACC, ul: true, after: 34, dur: 0.6 }];
-    T.context.forEach(([k, v]) => { spec.push({ s: k, size: 58, col: ACC, align: 'left', after: 2, dur: 0.4 }, { s: v, size: 52, col: INK, align: 'left', after: 10, maxW: 600 }, { t: 'div' }); });
-    B.push(quoteBeat(T.quote, T.ref));
-    { const fl = flow(spec, { top: 150, bottom: 1090, a: 0.2 }); B.push(done(fl.items, fl.tEnd)); }
-    { const fl = flow([{ s: 'What it means', size: 78, col: ACC, ul: true, after: 30, dur: 0.6 }, { s: T.meaning, size: 64, col: INK, maxW: 620 }], { top: 150, bottom: 700, a: 0.2 });
-      const sh = Math.min(400, 1100 - fl.endY - 40);
-      if (sh >= 220) fl.items.push({ k: 'scene', kind: T.scene2 || T.scene, pal: T.pal, x: 360 - sh * 640 / 460 / 2, y: fl.endY + 30, w: sh * 640 / 460, h: sh, a: fl.tEnd, b: fl.tEnd + 1.2 });
-      B.push(done(fl.items, fl.tEnd + (sh >= 220 ? 1.2 : 0))); }
-    { const fl = flow([{ s: T.key, size: 140, col: INK, after: 40, dur: 1.2 }, { s: '\u2014 ' + (T.keyRef || T.ref) + ' (KJV)', size: 56, col: ACC }], { top: 250, bottom: 1000, center: true, a: 0.5 });
-      const r0 = fl.rows[0]; let mw = 0; meas.font = `700 ${r0.size}px "Caveat", cursive`; r0.L.forEach((ln) => { mw = Math.max(mw, meas.measureText(ln).width); });
-      const ty = r0.y + fl.shift - r0.size * 0.8, hh = r0.L.length * r0.size * 1.02;
-      fl.items.push({ k: 'stroke', pts: ellPts(360, ty + hh / 2, Math.min(340, mw / 2 + 50), hh / 2 + 44), w: 9, col: p.acc, a: fl.tEnd, b: fl.tEnd + 0.6, head: false, alpha: 0.7, sfx: 'hit' });
-      B.push(done([washBack(p, 620, 400, 0, 13), ...fl.items], fl.tEnd + 0.6, 3.0)); }
-    { const fl = flow([{ s: 'Try this today', size: 78, col: GREEN, ul: true, ulCol: [54, 110, 56], after: 30, dur: 0.6 }, { s: T.step, size: 66, col: INK, maxW: 620 }], { top: 190, bottom: 900, a: 0.2 });
-      fl.items.push({ k: 'stroke', pts: [[300, fl.endY + 70], [338, fl.endY + 112], [420, fl.endY + 30]], w: 14, col: [60, 130, 60], a: fl.tEnd, b: fl.tEnd + 0.4, head: false, alpha: 0.85, sfx: 'ok' });
-      B.push(done(fl.items, fl.tEnd + 0.4)); }
-    B.push(endBeat());
-  } else {
-    T.panels.forEach((pn, k) => {
-      const top = (T.id.length + k) % 2 === 0, sw = 544, sh = 391, spec = [{ s: 'Scripture says', size: 46, col: ACC, after: 8, dur: 0.4 }, { s: pn.cap, size: 62, col: INK, after: 12 }, { s: '\u2014 ' + pn.ref + ' (KJV)', size: 46, col: GRAY2, after: 18 }];
-      if (pn.ctx) spec.push({ s: 'Context', size: 42, col: SIENNA, after: 4, dur: 0.4 }, { s: pn.ctx, size: 44, col: GRAY, maxW: 620 });
-      const fl = flow(spec, top ? { top: 120 + sh + 36, bottom: 1100, a: 0.8 } : { top: 130, bottom: 1100 - sh - 36, a: 0.8 });
-      const sy = top ? 120 : 1100 - sh, fx = 360 - sw / 2;
-      fl.items.push({ k: 'scene', kind: pn.scene, pal: pn.pal || T.pal, x: fx, y: sy, w: sw, h: sh, a: 0.1, b: 1.5 });
+  // the cover: everything is already painted on the very first frame, so it works as a thumbnail
+  { const fl = flow([{ s: T.series.toUpperCase(), size: 44, col: GRAY, dur: 0.6, after: 20 }, { s: T.hook, size: 118, col: INK, ul: true, ulCol: p.acc }], { top: 134, bottom: 520, a: 0.3 });
+    const sh = 360, sw = sh * 640 / 460;
+    fl.items.push({ k: 'scene', kind: T.scene, pal: T.pal, x: 360 - sw / 2, y: 548, w: sw, h: sh, a: 0.1, b: 1.7 });
+    fl.items.forEach((it) => { it.a = -2; it.b = -1; });
+    B.push({ items: fl.items, d: COVER, cover: true }); }
+  T.beats.forEach((b, i) => {
+    const tone = b.tone || T.pal;
+    if (b.k === 'tell') {
+      const top = (T.id.length + i) % 2 === 0, sw = 480, sh = 345, spec = [{ s: b.show, size: 66, col: INK, after: 12 }];
+      if (b.ref) spec.push({ s: '\u2014 ' + b.ref, size: 44, col: GRAY2 });
+      const sy = top ? 135 : 925 - sh, fl = flow(spec, top ? { top: 135 + sh + 30, bottom: 925, a: 0.8, center: true } : { top: 135, bottom: 925 - sh - 30, a: 0.8, center: true }), fx = 360 - sw / 2;
+      fl.items.push({ k: 'scene', kind: b.scene, pal: tone, x: fx, y: sy, w: sw, h: sh, a: 0.1, b: 1.5 });
       fl.items.push({ k: 'pencil', pts: [[fx - 6, sy - 6], [fx + sw + 6, sy - 4], [fx + sw + 4, sy + sh + 6], [fx - 4, sy + sh + 4], [fx - 6, sy - 6]], a: 0.2, b: 1.0 });
       B.push(done(fl.items, fl.tEnd, 3.0));
-    });
-    B.push(quoteBeat(T.quote, T.ref));
-    { const fl = flow([{ s: 'What it means', size: 72, col: ACC, ul: true, after: 24, dur: 0.6 }, { s: T.meaning, size: 58, col: INK, after: 14 }, { t: 'div' }, { s: 'Try this today', size: 62, col: GREEN, after: 6, dur: 0.6 }, { s: T.step, size: 58, col: INK }], { top: 160, bottom: 1080, a: 0.2 }); B.push(done(fl.items, fl.tEnd)); }
-    B.push(endBeat());
-  }
+    } else if (b.k === 'verse') {
+      const spec = []; if (b.label) spec.push({ s: b.label, size: 50, col: ACC, after: 18, dur: 0.5 });
+      spec.push({ s: '\u201C' + b.q + '\u201D', size: 84, col: INK, after: 26 }, { s: '\u2014 ' + b.ref + ' (KJV)', size: 46, col: ACC });
+      const fl = flow(spec, { top: 160, bottom: 900, center: true, a: 0.5 });
+      B.push(done([washBack(p, 540, 380, 0, 11 + i), ...fl.items], fl.tEnd, 3.2));
+    } else if (b.k === 'words') {
+      const spec = [{ s: b.big, size: 132, col: INK, after: 34, dur: 1.0 }]; if (b.small) spec.push({ s: b.small, size: 54, col: ACC });
+      const fl = flow(spec, { top: 230, bottom: 860, center: true, a: 0.5 });
+      if (b.circle) {
+        const r0 = fl.rows[0]; let mw = 0; meas.font = `700 ${r0.size}px "Caveat", cursive`; r0.L.forEach((ln) => { mw = Math.max(mw, meas.measureText(ln).width); });
+        const ty = r0.y + fl.shift - r0.size * 0.8, hh = r0.L.length * r0.size * 1.02;
+        fl.items.push({ k: 'stroke', pts: ellPts(360, ty + hh / 2, Math.min(262, mw / 2 + 44), hh / 2 + 40), w: 9, col: p.acc, a: fl.tEnd, b: fl.tEnd + 0.6, head: false, alpha: 0.7, sfx: 'hit' });
+        fl.tEnd += 0.6;
+      }
+      B.push(done([washBack(p, 540, 360, 0, 13 + i), ...fl.items], fl.tEnd, 3.0));
+    } else if (b.k === 'ask') {
+      const fl = flow([{ s: b.show, size: 96, col: INK, ul: true, ulCol: p.acc, after: 20 }], { top: 200, bottom: 860, center: true, a: 0.4 });
+      B.push(done([washBack(p, 540, 340, 0, 15 + i), ...fl.items], fl.tEnd, 3.0));
+    } else if (b.k === 'note') {
+      const fl = flow([{ s: b.title, size: 56, col: ACC, ul: true, after: 26, dur: 0.5 }, { s: b.show, size: 68, col: INK }], { top: 200, bottom: 880, center: true, a: 0.4 });
+      B.push(done([washBack(p, 540, 340, 0, 19 + i), ...fl.items], fl.tEnd, 3.0));
+    } else if (b.k === 'end') {
+      const fl = flow([{ s: b.show, size: 108, col: INK, after: 28 }, { s: '\u2014 ' + b.ref + ' (KJV)', size: 50, col: ACC }], { top: 470, bottom: 900, center: true, a: 0.9 });
+      B.push(done([washBack(p, 600, 380, 0, 17), { k: 'scene', kind: b.scene || 'light', pal: T.pal === 'night' ? 'dawn' : T.pal, x: 140, y: 138, w: 440, h: 316, a: 0.1, b: 1.5 }, ...fl.items], fl.tEnd, 3.0));
+    } else throw new Error('unknown beat kind: ' + b.k);
+  });
   return B;
 }
 
-// ---------- topics (KJV text, public domain; context is labelled separately from what Scripture says) ----------
+// ---------- the stories (KJV verses are public domain; the telling is Elias's own) ----------
 const TOPICS = [
-  { id: 'weary', series: 'Jesus Said', fmt: 'A', pal: 'dawn', scene: 'hill', scene2: 'light',
-    hook: 'Tired? Weighed down? Jesus has an invitation.', intro: 'Feeling worn out? Jesus once made a simple invitation to tired people.',
-    ref: 'Matthew 11:28', sref: 'Matthew eleven, twenty-eight', quote: 'Come unto me, all ye that labour and are heavy laden, and I will give you rest.',
-    context: [['Who', 'Jesus, speaking to the crowds.'], ['Just before', 'He thanked the Father in prayer (verse 25).'], ['Just after', 'He said he is \u201Cmeek and lowly in heart\u201D (verse 29).']],
-    meaning: 'Jesus does not tell the weary to fix themselves first. He invites them to come to him, and he says he is gentle and humble.',
-    key: 'Come unto me', step: 'Name one thing that is wearing you out, and tell Jesus about it in prayer today.', end: 'Come, and rest.' },
-  { id: 'peace', series: 'Jesus Said', fmt: 'A', pal: 'night', scene: 'house', scene2: 'light',
-    hook: 'Afraid? Jesus spoke to troubled hearts.', intro: 'Afraid or troubled? Here is what Jesus said to his friends on a hard night.',
-    ref: 'John 14:27', sref: 'John fourteen, twenty-seven', quote: 'Let not your heart be troubled, neither let it be afraid.',
-    context: [['Who', 'Jesus, speaking to his disciples.'], ['When', 'The evening before his crucifixion, at the table with them.'], ['Why', 'He had just told them he was leaving (John 13:33).']],
-    meaning: 'He said it to friends facing the hardest days of their lives, and promised them his own peace, not as the world gives (verse 27).',
-    key: 'my peace I give unto you', step: 'When worry starts today, say this verse out loud and hand that worry to him.', end: 'His peace. Not as the world gives.' },
-  { id: 'anxious', series: 'When You Feel Anxious', fmt: 'A', pal: 'garden', scene: 'hill', scene2: 'sheep',
-    hook: 'Anxious about tomorrow?', intro: 'Anxious about tomorrow? Listen to what Jesus taught.',
-    ref: 'Matthew 6:34', sref: 'Matthew six, thirty-four', quote: 'Take therefore no thought for the morrow: for the morrow shall take thought for the things of itself.',
-    context: [['Who', 'Jesus, teaching in the Sermon on the Mount.'], ['Old English', 'In 1611, \u201Ctake no thought\u201D meant do not be anxious.'], ['Just before', 'He pointed to birds and flowers that God cares for (verses 26 to 30).']],
-    meaning: 'Jesus is not saying never plan. He says not to carry tomorrow\u2019s worry today, because the Father who feeds the birds knows what we need (verses 26 and 32).',
-    key: 'your heavenly Father knoweth', keyRef: 'Matthew 6:32', step: 'Take one worry about tomorrow, say it to God, then do only today\u2019s task.', end: 'One day at a time.' },
-  { id: 'jeremiah', series: 'Verse in Context', fmt: 'A', pal: 'earth', scene: 'road', scene2: 'light',
-    hook: 'You know Jeremiah 29:11. Know the rest?', intro: 'You may know Jeremiah twenty-nine, eleven. But do you know who it was written to?',
-    ref: 'Jeremiah 29:11', sref: 'Jeremiah twenty-nine, eleven', quote: 'For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.',
-    context: [['Who', 'God, through the prophet Jeremiah, in a letter.'], ['To whom', 'Jews taken captive to Babylon (verse 1).'], ['The catch', 'Verse 10 says the return would come after seventy years.']],
-    meaning: 'This was a promise to a nation in exile, with a long wait. God told them to build houses, plant gardens, and seek the good of the city meanwhile (verses 5 to 7).',
-    key: 'seventy years', keyRef: 'Jeremiah 29:10', step: 'Read Jeremiah 29:4 to 14 today and notice what God asks them to do while they wait.', end: 'Read the whole letter.' },
-  { id: 'phil413', series: 'Verse in Context', fmt: 'A', pal: 'dusk', scene: 'hill', scene2: 'light',
-    hook: 'I can do all things? Look at where Paul was.', intro: 'I can do all things. Do you know where Paul was when he wrote that?',
-    ref: 'Philippians 4:13', sref: 'Philippians four, thirteen', quote: 'I can do all things through Christ which strengtheneth me.',
-    context: [['Who', 'The apostle Paul, writing to the church in Philippi.'], ['Where', 'From prison (Philippians 1:13 mentions his bonds).'], ['Just before', 'He says he has learned to be content in every state (verse 11).']],
-    meaning: 'Paul is not promising a win in everything we try. In verse 12 he says he has known both hunger and plenty, and that Christ gives strength for either.',
-    key: 'both to be full and to be hungry', keyRef: 'Philippians 4:12', step: 'Instead of asking for a win today, ask for strength to face what is in front of you.', end: 'Strength for whatever comes.' },
-  { id: 'healed', series: 'Jesus Asked', fmt: 'A', pal: 'earth', scene: 'pool', scene2: 'light',
-    hook: 'Jesus asked a man, \u201CWilt thou be made whole?\u201D', intro: 'Jesus once asked a man a surprising question.',
-    ref: 'John 5:6', sref: 'John five, six', quote: 'Wilt thou be made whole?',
-    context: [['Where', 'The pool of Bethesda in Jerusalem, with five porches (verse 2).'], ['Who', 'A man who had been sick thirty and eight years (verse 5).'], ['His answer', 'He said he had no one to put him in the pool (verse 7).']],
-    meaning: 'Jesus asked first. The man answered with his obstacle, not a plain yes, and Jesus healed him with a word (verses 7 and 8).',
-    key: 'Rise, take up thy bed, and walk', keyRef: 'John 5:8', step: 'Answer his question honestly: what do you most want him to change in you?', end: 'Take him your honest answer.' },
-  { id: 'storm', series: 'What Happened', fmt: 'B', pal: 'storm', scene: 'storm',
-    hook: 'The storm Jesus slept through.', intro: 'A storm, a sleeping Jesus, and a boat full of frightened men.',
-    panels: [
-      { scene: 'storm', cap: 'A great tempest rose on the sea, and the boat was covered with waves. But Jesus was asleep.', ref: 'Matthew 8:24', sref: 'Matthew eight, twenty-four', ctx: 'The Sea of Galilee lies among hills, and sudden storms are well known there.' },
-      { scene: 'sea', cap: 'His disciples woke him and said, \u201CLord, save us: we perish.\u201D', ref: 'Matthew 8:25', sref: 'Matthew eight, twenty-five' },
-      { scene: 'calm', pal: 'gold', cap: 'He rebuked the winds and the sea, and there was a great calm.', ref: 'Matthew 8:26', sref: 'Matthew eight, twenty-six' }],
-    ref: 'Matthew 8:27', sref: 'Matthew eight, twenty-seven', quote: 'But the men marvelled, saying, What manner of man is this, that even the winds and the sea obey him!',
-    meaning: 'Jesus was in the boat the whole time. He calmed the storm, and he asked why they were so afraid (verse 26).',
-    step: 'When fear rises today, remember who is in the boat with you, and say his name in prayer.', end: 'Even the winds and the sea obey him.' },
-  { id: 'gethsemane', series: 'What Happened', fmt: 'B', pal: 'night', scene: 'night',
-    hook: 'The night Jesus could have called angels.', intro: 'The night Jesus was arrested, he spoke about angels.',
-    panels: [
-      { scene: 'night', cap: 'In Gethsemane Jesus prayed: \u201Cnot as I will, but as thou wilt.\u201D', ref: 'Matthew 26:39', sref: 'Matthew twenty-six, thirty-nine' },
-      { scene: 'torches', cap: 'Judas arrived with a great multitude with swords and staves, and betrayed him with a kiss.', ref: 'Matthew 26:47 to 49', sref: 'Matthew twenty-six, forty-seven to forty-nine' },
-      { scene: 'sword', cap: 'When a disciple drew a sword, Jesus said, \u201CPut up again thy sword into his place.\u201D', ref: 'Matthew 26:52', sref: 'Matthew twenty-six, fifty-two', ctx: 'A Roman legion was roughly 5,000 to 6,000 soldiers.' }],
-    ref: 'Matthew 26:53', sref: 'Matthew twenty-six, fifty-three', quote: 'Thinkest thou that I cannot now pray to my Father, and he shall presently give me more than twelve legions of angels?',
-    meaning: 'Jesus said he could ask the Father for more than twelve legions of angels. He did not, and he said the scriptures must be fulfilled (verse 54).',
-    step: 'Take a quiet minute to thank Jesus for going to the cross by choice.', end: 'He had the power to stop it. He stayed.' },
-  { id: 'zacchaeus', series: 'Met Jesus', fmt: 'B', pal: 'day', scene: 'tree',
-    hook: 'The tax collector who climbed a tree.', intro: 'A rich tax collector climbed a tree to see Jesus.',
-    panels: [
-      { scene: 'tree', cap: 'Zacchaeus, a chief tax collector and a rich man, was little of stature. He ran ahead and climbed a sycomore tree to see Jesus.', ref: 'Luke 19:2 to 4', sref: 'Luke nineteen, two to four' },
-      { scene: 'house', pal: 'dawn', cap: 'Jesus looked up and said, \u201CZacchaeus, make haste, and come down; for to day I must abide at thy house.\u201D', ref: 'Luke 19:5', sref: 'Luke nineteen, five', ctx: 'The crowd grumbled that Jesus was the guest of \u201Ca man that is a sinner\u201D (verse 7).' },
-      { scene: 'coins', pal: 'earth', cap: 'Zacchaeus said he would give half his goods to the poor, and repay fourfold anyone he had wronged.', ref: 'Luke 19:8', sref: 'Luke nineteen, eight' }],
-    ref: 'Luke 19:10', sref: 'Luke nineteen, ten', quote: 'For the Son of man is come to seek and to save that which was lost.',
-    meaning: 'Jesus went to the home of the man everyone avoided. Zacchaeus gave and repaid, and Jesus said salvation had come to that house (verse 9).',
-    step: 'Think of someone others avoid, and do one kind thing for them this week.', end: 'Jesus came to seek the lost.' },
-  { id: 'prodigal', series: 'Parables', fmt: 'B', pal: 'earth', scene: 'road',
-    hook: 'The father who ran to meet his son.', intro: 'In one of the best known stories Jesus told, a father runs.',
-    panels: [
-      { scene: 'road', cap: 'A younger son asked for his share of the inheritance, journeyed to a far country, and wasted it all.', ref: 'Luke 15:12 and 13', sref: 'Luke fifteen, twelve and thirteen', ctx: 'Jesus told this to Pharisees and scribes who complained that he welcomed sinners (verses 1 and 2).' },
-      { scene: 'field', pal: 'dusk', cap: 'When a famine came, he was in need. Then he \u201Ccame to himself\u201D and decided to go home.', ref: 'Luke 15:14 to 18', sref: 'Luke fifteen, fourteen to eighteen' },
-      { scene: 'house', pal: 'dawn', cap: '\u201CWhen he was yet a great way off, his father saw him, and had compassion, and ran.\u201D', ref: 'Luke 15:20', sref: 'Luke fifteen, twenty' }],
-    ref: 'Luke 15:24', sref: 'Luke fifteen, twenty-four', quote: 'For this my son was dead, and is alive again; he was lost, and is found.',
-    meaning: 'The father ran first, before his son said a word of his speech (verses 20 and 21). Jesus used the story to show how God welcomes the lost.',
-    step: 'If you feel far from God, take one step toward home today with a short, honest prayer.', end: 'The Father is watching the road.' },
-  { id: 'sheep', series: 'Parables', fmt: 'B', pal: 'day', scene: 'sheep',
-    hook: 'The shepherd who left ninety-nine.', intro: 'Jesus told a story about a shepherd and one lost sheep.',
-    panels: [
-      { scene: 'sheep', cap: 'A man with a hundred sheep loses one of them.', ref: 'Luke 15:4', sref: 'Luke fifteen, four', ctx: 'Jesus told this to Pharisees and scribes who complained that he welcomed sinners (verses 1 and 2).' },
-      { scene: 'hill', pal: 'dusk', cap: 'He leaves the ninety and nine and goes after the lost one until he finds it.', ref: 'Luke 15:4', sref: 'Luke fifteen, four' },
-      { scene: 'light', pal: 'gold', cap: 'When he finds it, he calls his friends and neighbours together to rejoice.', ref: 'Luke 15:5 and 6', sref: 'Luke fifteen, five and six' }],
-    ref: 'Luke 15:6', sref: 'Luke fifteen, six', quote: 'Rejoice with me; for I have found my sheep which was lost.',
-    meaning: 'Jesus says there is joy in heaven over one sinner who repents, more than over ninety and nine just persons who need no repentance (verse 7).',
-    step: 'Remember you were worth the search. Thank him for it today.', end: 'Found, and celebrated.' },
-  { id: 'well', series: 'Met Jesus', fmt: 'B', pal: 'earth', scene: 'well',
-    hook: 'The woman who met Jesus at a well.', intro: 'Jesus met a woman at a well, and she went and told her whole town.',
-    panels: [
-      { scene: 'well', cap: 'Jesus, wearied with his journey, sat by the well in Samaria. A woman came to draw water.', ref: 'John 4:6 and 7', sref: 'John four, six and seven', ctx: 'The sixth hour is about noon. Jews and Samaritans normally had no dealings (verse 9).' },
-      { scene: 'light', pal: 'dawn', cap: 'He asked her for a drink, then spoke of \u201Cliving water\u201D he could give.', ref: 'John 4:7 to 10', sref: 'John four, seven to ten' },
-      { scene: 'road', pal: 'day', cap: 'She left her waterpot, went into the city, and told the men, \u201CCome, see a man.\u201D', ref: 'John 4:28 and 29', sref: 'John four, twenty-eight and twenty-nine' }],
-    ref: 'John 4:14', sref: 'John four, fourteen', quote: 'But whosoever drinketh of the water that I shall give him shall never thirst.',
-    meaning: 'Jesus spoke openly with someone others would have passed by: a Samaritan woman. After meeting him, she went and told her town (verses 28 to 30).',
-    step: 'Talk kindly today with someone you would usually skip past.', end: 'He offers living water.' },
-  { id: 'bartimaeus', series: 'Met Jesus', fmt: 'B', pal: 'dawn', scene: 'road',
-    hook: 'The blind man who would not be quiet.', intro: 'A blind beggar cried out to Jesus, and would not be silenced.',
-    panels: [
-      { scene: 'road', pal: 'earth', cap: 'Blind Bartimaeus sat by the highway side begging, and cried, \u201CJesus, thou son of David, have mercy on me.\u201D', ref: 'Mark 10:46 and 47', sref: 'Mark ten, forty-six and forty-seven', ctx: 'This happened as Jesus left Jericho, on his way up to Jerusalem.' },
-      { scene: 'light', cap: 'Many told him to be quiet, but he cried the more. Jesus stood still and called for him.', ref: 'Mark 10:48 and 49', sref: 'Mark ten, forty-eight and forty-nine' },
-      { scene: 'hill', pal: 'day', cap: 'He cast away his garment and came to Jesus. He received his sight, and followed Jesus in the way.', ref: 'Mark 10:50 to 52', sref: 'Mark ten, fifty to fifty-two' }],
-    ref: 'Mark 10:51', sref: 'Mark ten, fifty-one', quote: 'What wilt thou that I should do unto thee?',
-    meaning: 'Jesus asked him what he wanted, and Bartimaeus answered plainly: \u201CLord, that I might receive my sight.\u201D Jesus said his faith had made him whole (verse 52).',
-    step: 'Ask Jesus plainly for the one thing you need most today.', end: 'Ask him plainly.' },
-  { id: 'tomb', series: 'What Happened', fmt: 'B', pal: 'dusk', scene: 'cross',
-    hook: 'What the Gospels record on the first Easter morning.', intro: 'Here is what the Gospels record about the first Easter morning.',
-    panels: [
-      { scene: 'cross', cap: 'Jesus was crucified at Golgotha, with two others crucified beside him.', ref: 'Matthew 27:33 to 38', sref: 'Matthew twenty-seven, thirty-three to thirty-eight' },
-      { scene: 'tomb', cap: 'Joseph of Arimathaea laid his body in his own new tomb, and rolled a great stone to the door.', ref: 'Matthew 27:57 to 60', sref: 'Matthew twenty-seven, fifty-seven to sixty' },
-      { scene: 'tombOpen', pal: 'dawn', cap: 'As the first day of the week began to dawn, two women came to see the tomb, and an angel rolled back the stone.', ref: 'Matthew 28:1 and 2', sref: 'Matthew twenty-eight, one and two', ctx: 'All four Gospels record the empty tomb.' }],
-    ref: 'Matthew 28:6', sref: 'Matthew twenty-eight, six', quote: 'He is not here: for he is risen, as he said. Come, see the place where the Lord lay.',
-    meaning: 'The angel told the women that Jesus had risen, as he had said, and invited them to see the place. They were sent to tell his disciples (verses 6 and 7).',
-    step: 'This week, read one resurrection account in full: Matthew 28, Mark 16, Luke 24, or John 20.', end: 'He is risen.' },
+  { id: 'weary', series: 'Words of Jesus', pal: 'dawn', scene: 'hill', hook: 'Tired in a way sleep can\u2019t fix?',
+    ref: 'Matthew 11:28', quote: 'Come unto me, all ye that labour and are heavy laden, and I will give you rest.',
+    beats: [
+      { k: 'tell', scene: 'hill', show: 'Some tired doesn\u2019t go away when you sleep.',
+        say: 'You know the kind of tired I mean. You sleep a full night and wake up already worn out. Jesus spoke to people who felt exactly like that.' },
+      { k: 'verse', label: 'He said', q: 'Come unto me, all ye that labour and are heavy laden, and I will give you rest.', ref: 'Matthew 11:28',
+        lead: 'This is what he told them. Matthew eleven, twenty-eight.' },
+      { k: 'note', title: 'Look who he\u2019s talking to', show: 'Not the strong ones. The people carrying too much.',
+        say: 'Look at who he\u2019s talking to. Not the people who have it all figured out. The ones carrying more than they can manage. If that\u2019s you, the invitation is for you.' },
+      { k: 'tell', scene: 'field', show: 'A yoke is a wooden bar that lets two oxen pull one load together.',
+        say: 'In the next verse he says, take my yoke upon you. A yoke is the wooden bar that joins two oxen so they share one load. A lot of people read that as Jesus offering to pull alongside us.' },
+      { k: 'verse', label: 'And then', q: 'Take my yoke upon you, and learn of me; for I am meek and lowly in heart: and ye shall find rest unto your souls.', ref: 'Matthew 11:29',
+        lead: 'Then he tells them what he\u2019s like.' },
+      { k: 'end', show: 'Tell him what\u2019s heavy. Start there.', ref: 'Matthew 11:28 to 30',
+        say: 'So you don\u2019t have to clean yourself up first. Just tell him what\u2019s heavy, and start there.' },
+    ] },
+
+  { id: 'peace', series: 'Words of Jesus', pal: 'night', scene: 'house', hook: 'The night before the cross',
+    ref: 'John 14:27', quote: 'Peace I leave with you, my peace I give unto you: not as the world giveth, give I unto you.',
+    beats: [
+      { k: 'tell', scene: 'house', show: 'The night before he died, Jesus sat down with his friends.',
+        say: 'The night before he was crucified, Jesus ate with his friends. He knew what was coming. And what gets me is how he spent that night. He tried to calm them down.' },
+      { k: 'verse', label: 'John 14', q: 'Peace I leave with you, my peace I give unto you: not as the world giveth, give I unto you. Let not your heart be troubled, neither let it be afraid.', ref: 'John 14:27',
+        lead: 'This is some of what he said.' },
+      { k: 'words', big: 'Not as the world giveth.', small: 'His peace is a different kind.', circle: true,
+        say: 'Not as the world giveth. The world\u2019s kind of peace depends on things going well. What he offered was something to hold onto when things go badly. And that night, things were about to go very badly.' },
+      { k: 'tell', scene: 'torches', show: 'Within hours, they all ran.',
+        say: 'These were frightened men. Before the night was over they would scatter, and one of them would swear he never knew him. Jesus knew that. And he still gave them this.' },
+      { k: 'ask', show: 'What has your heart in knots today?',
+        say: 'So what has your heart in knots today? He told them not to be afraid, knowing full well they would be. Which makes me think he isn\u2019t surprised by our fear, either.' },
+      { k: 'end', show: 'His peace. Not the world\u2019s kind.', ref: 'John 14:27',
+        say: 'His peace. Not the world\u2019s kind. The kind that holds on in the dark.' },
+    ] },
+
+  { id: 'anxious', series: 'Words of Jesus', pal: 'garden', scene: 'hill', hook: 'Worried about tomorrow?',
+    ref: 'Matthew 6:34', quote: 'Take therefore no thought for the morrow: for the morrow shall take thought for the things of itself.',
+    beats: [
+      { k: 'tell', scene: 'hill', show: 'Tomorrow hasn\u2019t even happened yet.',
+        say: 'Funny thing about tomorrow. It hasn\u2019t happened yet, and somehow it already weighs a ton. Jesus had something to say about that.' },
+      { k: 'note', title: 'A word that changed', show: 'In 1611, \u201Ctake no thought\u201D meant \u201Cdon\u2019t worry.\u201D',
+        say: 'One quick thing first. This verse can sound strange to us. When the King James Bible was written, to take thought meant to worry. So Jesus isn\u2019t telling you to stop planning. He\u2019s saying don\u2019t let worry run your day.' },
+      { k: 'verse', label: 'Matthew 6:34', q: 'Take therefore no thought for the morrow: for the morrow shall take thought for the things of itself. Sufficient unto the day is the evil thereof.', ref: 'Matthew 6:34',
+        lead: 'Here\u2019s the line.' },
+      { k: 'tell', scene: 'light', show: 'Look at the birds. You matter more to him than they do.', ref: 'Matthew 6:26',
+        say: 'Just before that, he points at the birds. They don\u2019t plant or store up food, he says, and your heavenly Father still feeds them. Then he asks, aren\u2019t you worth more than they are?' },
+      { k: 'words', big: 'One day at a time.', small: 'Today has enough trouble of its own.',
+        say: 'The last line says each day has enough trouble of its own. I don\u2019t hear that as gloomy. I hear permission. Today\u2019s trouble is plenty. You don\u2019t have to carry tomorrow\u2019s on top of it.' },
+      { k: 'end', show: 'Do today\u2019s work. Leave tomorrow with God.', ref: 'Matthew 6:34',
+        say: 'So here\u2019s my little rule. Do today\u2019s work, and leave tomorrow with God. He\u2019ll be there when it comes.' },
+    ] },
+
+  { id: 'jeremiah', series: 'Verses We Misread', pal: 'earth', scene: 'road', hook: 'You\u2019ve seen Jeremiah 29:11 on a mug',
+    ref: 'Jeremiah 29:11', quote: 'For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.',
+    beats: [
+      { k: 'tell', scene: 'road', show: 'It\u2019s on mugs, cards, and graduation gifts.',
+        say: 'You\u2019ve probably seen Jeremiah twenty-nine, eleven on a coffee mug. Maybe a graduation card. It\u2019s a lovely verse. But it was first written to people in a very different spot than most of us.' },
+      { k: 'verse', label: 'Here it is', q: 'For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.', ref: 'Jeremiah 29:11',
+        lead: 'Here\u2019s the verse.' },
+      { k: 'tell', scene: 'field', show: 'It was a letter to families taken from their homes.',
+        say: 'It comes from a letter. The prophet Jeremiah sent it to Jewish families who had been carried off as captives to Babylon. They were far from home, and they weren\u2019t going back anytime soon.' },
+      { k: 'verse', label: 'Look at the verse before', q: 'For thus saith the LORD, That after seventy years be accomplished at Babylon I will visit you, and perform my good word toward you, in causing you to return to this place.', ref: 'Jeremiah 29:10',
+        lead: 'And right before it, God tells them how long.' },
+      { k: 'tell', scene: 'house', show: 'Build houses. Plant gardens. Pray for the city.', ref: 'Jeremiah 29:5 to 7',
+        say: 'So what were they supposed to do while they waited? God told them to build houses, plant gardens, and pray for the city where they had ended up. In other words, live your life there.' },
+      { k: 'end', show: 'A promise for people in a long wait.', ref: 'Jeremiah 29:11',
+        say: 'That changes how I read it. It isn\u2019t a promise that every plan works out this week. It\u2019s a promise to people in a long wait, that God hadn\u2019t forgotten them. If you\u2019re waiting on something right now, that one\u2019s for you.' },
+    ] },
+
+  { id: 'phil413', series: 'Verses We Misread', pal: 'dusk', scene: 'hill', hook: 'Where was Paul when he wrote this?',
+    ref: 'Philippians 4:13', quote: 'I can do all things through Christ which strengtheneth me.',
+    beats: [
+      { k: 'ask', show: 'Where was Paul when he wrote it?',
+        say: 'You\u2019ve probably seen this one on a jersey or a pair of sneakers. I can do all things through Christ. But have you ever wondered where Paul was when he wrote it?' },
+      { k: 'verse', label: 'Philippians 4', q: 'I can do all things through Christ which strengtheneth me.', ref: 'Philippians 4:13',
+        lead: 'Here\u2019s the verse.' },
+      { k: 'tell', scene: 'night', show: 'Paul was in chains.',
+        say: 'He was in prison. He mentions his chains right in chapter one. No stadium, no crowd cheering. Just a man with very little say over his own days.' },
+      { k: 'verse', label: 'The line just before', q: 'I know both how to be abased, and I know how to abound: every where and in all things I am instructed both to be full and to be hungry, both to abound and to suffer need.', ref: 'Philippians 4:12',
+        lead: 'And look at the line just before it, where he explains what he means.' },
+      { k: 'words', big: 'Strength to get through it.', small: 'Not a promise to win.', circle: true,
+        say: 'So he isn\u2019t promising you\u2019ll win every game or land every job. He\u2019s saying that whether he\u2019s full or hungry, free or in chains, Christ gives him strength to get through it. That\u2019s a different kind of promise, and I think a deeper one.' },
+      { k: 'end', show: 'Strength for whatever comes.', ref: 'Philippians 4:13',
+        say: 'Next time you see that verse, picture a man in a prison cell, calm, saying I can face this. That\u2019s what it\u2019s about.' },
+    ] },
+
+  { id: 'healed', series: 'Jesus Asked', pal: 'earth', scene: 'pool', hook: '\u201CWilt thou be made whole?\u201D',
+    ref: 'John 5:6', quote: 'Wilt thou be made whole?',
+    beats: [
+      { k: 'tell', scene: 'pool', show: 'Thirty-eight years beside a pool.', ref: 'John 5:2 to 5',
+        say: 'In Jerusalem there was a pool called Bethesda, with a crowd of sick people lying around it. One man had been there thirty-eight years.' },
+      { k: 'verse', label: 'Jesus asked him', q: 'Wilt thou be made whole?', ref: 'John 5:6',
+        lead: 'Jesus saw him, and he knew how long the man had been there. So he asked him this.' },
+      { k: 'ask', show: 'Isn\u2019t that obvious?',
+        say: 'Now that sounds like a strange question. Of course he wants to be well. But listen to how the man answers.' },
+      { k: 'verse', label: 'His answer', q: 'Sir, I have no man, when the water is troubled, to put me into the pool: but while I am coming, another steppeth down before me.', ref: 'John 5:7',
+        lead: 'He doesn\u2019t say yes. He says,' },
+      { k: 'tell', scene: 'light', show: 'Rise, take up thy bed, and walk.', ref: 'John 5:8 and 9',
+        say: 'He gives a reason, not a yes. I wonder if, after that long, hoping had become hard. And Jesus doesn\u2019t argue with him. He just says, rise, take up thy bed, and walk. And the man did.' },
+      { k: 'end', show: 'Tell him plainly what you want.', ref: 'John 5:6',
+        say: 'I think that\u2019s the invitation for us. No speech needed, just an honest answer. What do you want Jesus to change in you? Tell him plainly.' },
+    ] },
+
+  { id: 'storm', series: 'A Story from Matthew', pal: 'storm', scene: 'storm', hook: 'He slept through the storm',
+    ref: 'Matthew 8:27', quote: 'But the men marvelled, saying, What manner of man is this, that even the winds and the sea obey him!',
+    beats: [
+      { k: 'tell', scene: 'storm', show: 'The sky went black, and Jesus was asleep.',
+        say: 'Picture a small boat on a big lake. The sky goes black, the waves start coming over the sides, and Jesus is asleep in the boat.' },
+      { k: 'note', title: 'Why they were scared', show: 'Storms come up fast on the Sea of Galilee.',
+        say: 'That lake sits down among hills, and storms can drop on it quickly. Some of these men were fishermen. They had seen weather before. This one scared them.' },
+      { k: 'verse', label: 'They woke him', q: 'And his disciples came to him, and awoke him, saying, Lord, save us: we perish.', ref: 'Matthew 8:25',
+        lead: 'So they shook him awake.' },
+      { k: 'tell', scene: 'calm', tone: 'gold', show: 'He spoke, and everything went still.', ref: 'Matthew 8:26',
+        say: 'Jesus asked them why they were so afraid. Then he got up and spoke to the wind and the water, and there was a great calm.' },
+      { k: 'verse', label: 'What they said', q: 'But the men marvelled, saying, What manner of man is this, that even the winds and the sea obey him!', ref: 'Matthew 8:27',
+        lead: 'The men could hardly believe it.' },
+      { k: 'end', show: 'He was in the boat the whole time.', ref: 'Matthew 8:23 to 27',
+        say: 'Here\u2019s what stays with me. He was in the boat the whole time. The storm was real, but so was he. Whatever you\u2019re sailing through today, you\u2019re not out there alone.' },
+    ] },
+
+  { id: 'gethsemane', series: 'A Story from Matthew', pal: 'night', scene: 'night', hook: 'The night he could have stopped it',
+    ref: 'Matthew 26:53', quote: 'Thinkest thou that I cannot now pray to my Father, and he shall presently give me more than twelve legions of angels?',
+    beats: [
+      { k: 'tell', scene: 'night', show: 'A garden, late at night.',
+        say: 'After supper, Jesus took his friends to a garden called Gethsemane, and he went a little further on to pray alone. He was troubled. You can hear it in how he prays.' },
+      { k: 'verse', label: 'His prayer', q: 'And he went a little further, and fell on his face, and prayed, saying, O my Father, if it be possible, let this cup pass from me: nevertheless not as I will, but as thou wilt.', ref: 'Matthew 26:39',
+        lead: 'This is what he prayed.' },
+      { k: 'tell', scene: 'torches', show: 'Judas came with a crowd, and a kiss.',
+        say: 'Then Judas showed up with a crowd carrying swords and clubs. He had arranged a signal with them. A kiss. Listen to what Jesus said to him.' },
+      { k: 'verse', label: 'To Judas', q: 'Friend, wherefore art thou come?', ref: 'Matthew 26:50',
+        lead: 'Jesus looked at the man who was betraying him, and called him friend.' },
+      { k: 'verse', label: 'To his own men', q: 'Thinkest thou that I cannot now pray to my Father, and he shall presently give me more than twelve legions of angels?', ref: 'Matthew 26:53',
+        lead: 'When one of his men reached for a sword, Jesus stopped him.',
+        tail: 'A Roman legion was thousands of soldiers. He had more than twelve of those within reach, and he stayed.' },
+      { k: 'end', show: 'He could have stopped it. He stayed.', ref: 'Matthew 26:53',
+        say: 'He had the power to walk away. He stayed. I can\u2019t think of a better reason to say thank you.' },
+    ] },
+
+  { id: 'zacchaeus', series: 'A Story from Luke', pal: 'day', scene: 'tree', hook: 'The richest man in town climbed a tree',
+    ref: 'Luke 19:10', quote: 'For the Son of man is come to seek and to save that which was lost.',
+    beats: [
+      { k: 'tell', scene: 'tree', show: 'Short, rich, and not liked.',
+        say: 'Zacchaeus was the chief tax collector in Jericho, and he was rich. Nobody liked him. Tax collectors had a reputation for charging more than they should. And Zacchaeus was short.' },
+      { k: 'tell', scene: 'road', show: 'So he ran ahead and climbed a tree.',
+        say: 'Jesus was coming through town, the crowd was packed in, and Zacchaeus couldn\u2019t see over anybody. So he did something a man in his position probably wouldn\u2019t. He ran ahead and climbed a tree.' },
+      { k: 'verse', label: 'Then Jesus looked up', q: 'And when Jesus came to the place, he looked up, and saw him, and said unto him, Zacchaeus, make haste, and come down; for to day I must abide at thy house.', ref: 'Luke 19:5',
+        lead: 'Out of that whole crowd, Jesus stops right at his tree.' },
+      { k: 'tell', scene: 'house', tone: 'dawn', show: 'The crowd muttered.', ref: 'Luke 19:7',
+        say: 'The crowd didn\u2019t like it. They grumbled that Jesus had gone to be the guest of a sinner.' },
+      { k: 'verse', label: 'What Zacchaeus said', q: 'Behold, Lord, the half of my goods I give to the poor; and if I have taken any thing from any man by false accusation, I restore him fourfold.', ref: 'Luke 19:8',
+        lead: 'At his table, something changed. Zacchaeus stood up and told Jesus,' },
+      { k: 'end', show: 'For the Son of man is come to seek and to save that which was lost.', ref: 'Luke 19:10',
+        say: 'Nobody asked him to do that. Meeting Jesus did something to him. And Jesus said why he had come. For the Son of man is come to seek and to save that which was lost. The man everybody wrote off was exactly who he came for.' },
+    ] },
+
+  { id: 'prodigal', series: 'A Story from Luke', pal: 'earth', scene: 'road', hook: 'The father who ran',
+    ref: 'Luke 15:24', quote: 'For this my son was dead, and is alive again; he was lost, and is found.',
+    beats: [
+      { k: 'tell', scene: 'road', show: 'A son asks for his inheritance early.', ref: 'Luke 15:11 and 12',
+        say: 'Jesus told this story to people who were complaining that he welcomed sinners. A man had two sons, and the younger one asked for his share of the inheritance. Now, while his father was still alive. That was a hard thing to ask.' },
+      { k: 'tell', scene: 'field', tone: 'dusk', show: 'He wasted it all. Then a famine hit.', ref: 'Luke 15:13 to 16',
+        say: 'He left for a far country and spent everything. Then a famine came, and he ended up feeding pigs, so hungry he wished he could eat what the pigs ate.' },
+      { k: 'verse', label: 'Then something shifted', q: 'And when he came to himself, he said, How many hired servants of my father\u2019s have bread enough and to spare, and I perish with hunger!', ref: 'Luke 15:17',
+        lead: 'And then comes a quiet moment.' },
+      { k: 'verse', label: 'The father', q: 'And he arose, and came to his father. But when he was yet a great way off, his father saw him, and had compassion, and ran, and fell on his neck, and kissed him.', ref: 'Luke 15:20',
+        lead: 'He starts the long walk home, rehearsing what he\u2019ll say. But look what happens first.' },
+      { k: 'note', title: 'Notice this', show: 'He was already watching the road.',
+        say: 'Notice the father didn\u2019t wait at the gate with his arms crossed. He saw his son while he was still a long way off. Which makes me think he had been watching that road for a long time.' },
+      { k: 'end', show: 'Dead, and alive again. Lost, and found.', ref: 'Luke 15:24',
+        say: 'That\u2019s how Jesus said God feels about people who come home. Dead, and alive again. Lost, and found. If you\u2019ve been far away, take one step. He\u2019s watching the road.' },
+    ] },
+
+  { id: 'sheep', series: 'A Story from Luke', pal: 'day', scene: 'sheep', hook: 'Would you leave 99 for one?',
+    ref: 'Luke 15:6', quote: 'Rejoice with me; for I have found my sheep which was lost.',
+    beats: [
+      { k: 'ask', show: 'Would you leave 99 to find one?',
+        say: 'I\u2019ve kept sheep most of my life, so this one is close to my heart. If you had a hundred and lost one, would you leave the ninety-nine to go find it? Jesus asked people exactly that.' },
+      { k: 'verse', label: 'How he put it', q: 'What man of you, having an hundred sheep, if he lose one of them, doth not leave the ninety and nine in the wilderness, and go after that which is lost, until he find it?', ref: 'Luke 15:4',
+        lead: 'Here\u2019s how he asked it.' },
+      { k: 'tell', scene: 'sheep', show: 'A sheep doesn\u2019t get lost on purpose.',
+        say: 'A lost sheep isn\u2019t usually running away. It follows the next patch of grass, looks up, and nobody\u2019s around. That\u2019s why a shepherd goes looking. He doesn\u2019t wait for it to find its own way back.' },
+      { k: 'tell', scene: 'hill', tone: 'dusk', show: 'He doesn\u2019t scold it. He carries it.', ref: 'Luke 15:5',
+        say: 'Notice what the shepherd doesn\u2019t do. He doesn\u2019t scold it. He lifts it onto his shoulders, and the verse says he\u2019s rejoicing.' },
+      { k: 'verse', label: 'Then he calls the neighbors', q: 'And when he cometh home, he calleth together his friends and neighbours, saying unto them, Rejoice with me; for I have found my sheep which was lost.', ref: 'Luke 15:6',
+        lead: 'And when he gets home, he throws a party.' },
+      { k: 'end', show: 'Heaven celebrates when one person comes home.', ref: 'Luke 15:7',
+        say: 'Jesus says heaven is like that. Joy over one person who turns back. So if you\u2019ve ever felt you wandered too far, you\u2019re exactly the kind of person he comes looking for.' },
+    ] },
+
+  { id: 'well', series: 'A Story from John', pal: 'earth', scene: 'well', hook: 'Why Jesus stopped at a well',
+    ref: 'John 4:14', quote: 'But whosoever drinketh of the water that I shall give him shall never thirst.',
+    beats: [
+      { k: 'tell', scene: 'well', show: 'Noon, a hot day, a tired man at a well.', ref: 'John 4:6 and 7',
+        say: 'It\u2019s about noon. Jesus is worn out from walking, and he sits down by a well in Samaria. A woman comes to draw water, and he asks her for a drink.' },
+      { k: 'note', title: 'Why that was a big deal', show: 'Jews and Samaritans kept their distance.',
+        say: 'That was a big deal. Jews and Samaritans normally kept away from each other. She says so herself. John even adds a note to explain it.' },
+      { k: 'verse', label: 'What he offered her', q: 'But whosoever drinketh of the water that I shall give him shall never thirst; but the water that I shall give him shall be in him a well of water springing up into everlasting life.', ref: 'John 4:14',
+        lead: 'Then he tells her he can give her something better than well water.' },
+      { k: 'tell', scene: 'light', tone: 'dawn', show: 'He knew her story, and he stayed.', ref: 'John 4:16 to 19',
+        say: 'The conversation gets personal. Jesus mentions parts of her life he had no way of knowing. But he doesn\u2019t walk away from her. He keeps talking.' },
+      { k: 'verse', label: 'Then she ran', q: 'Come, see a man, which told me all things that ever I did: is not this the Christ?', ref: 'John 4:29',
+        lead: 'She left her water jar right there at the well, went back to town, and told everyone,' },
+      { k: 'end', show: 'One conversation. A whole town heard.', ref: 'John 4:39',
+        say: 'And John tells us many people in that town believed because of what she said. One honest conversation, and a whole town heard about it.' },
+    ] },
+
+  { id: 'bartimaeus', series: 'A Story from Mark', pal: 'dawn', scene: 'road', hook: 'The blind man who wouldn\u2019t be quiet',
+    ref: 'Mark 10:51', quote: 'What wilt thou that I should do unto thee?',
+    beats: [
+      { k: 'tell', scene: 'road', tone: 'earth', show: 'A blind man begging by the road.', ref: 'Mark 10:46 and 47',
+        say: 'Bartimaeus couldn\u2019t see, so he sat by the road outside Jericho and begged. One day he hears a big crowd go by, and someone tells him it\u2019s Jesus of Nazareth.' },
+      { k: 'verse', label: 'They told him to hush', q: 'And many charged him that he should hold his peace: but he cried the more a great deal, Thou son of David, have mercy on me.', ref: 'Mark 10:48',
+        lead: 'He starts shouting. And the people around him tell him to be quiet. Here\u2019s what he did.' },
+      { k: 'tell', scene: 'light', show: 'Out of the whole crowd, Jesus stopped for him.', ref: 'Mark 10:49',
+        say: 'And Jesus stood still. Think about that. A huge crowd, a long road, and he stops for one loud man nobody wanted to hear. He says, call him.' },
+      { k: 'note', title: 'A small detail', show: 'He threw off his cloak and jumped up.',
+        say: 'Here\u2019s a small detail I love. Bartimaeus threw off his cloak and jumped up. For a beggar, that cloak was probably one of the few things he owned. He just went.' },
+      { k: 'verse', label: 'The question', q: 'And Jesus answered and said unto him, What wilt thou that I should do unto thee? The blind man said unto him, Lord, that I might receive my sight.', ref: 'Mark 10:51',
+        lead: 'Then Jesus asks him something that seems obvious.' },
+      { k: 'end', show: 'Ask him plainly.', ref: 'Mark 10:52',
+        say: 'He answers plainly, and Jesus says his faith has made him whole. Right away he could see, and he followed Jesus down the road. So what do you need? Don\u2019t be shy about it. Ask.' },
+    ] },
+
+  { id: 'tomb', series: 'Easter', pal: 'dusk', scene: 'tombOpen', hook: 'What happened that Sunday morning',
+    ref: 'Matthew 28:6', quote: 'He is not here: for he is risen, as he said. Come, see the place where the Lord lay.',
+    beats: [
+      { k: 'tell', scene: 'cross', show: 'Friday. It looked like the end.', ref: 'Matthew 27:57 to 60',
+        say: 'On Friday, Jesus was crucified. Some of his followers watched from a distance. A man named Joseph of Arimathaea asked for the body, laid it in his own new tomb, and rolled a heavy stone across the door.' },
+      { k: 'tell', scene: 'tomb', tone: 'night', show: 'A long, quiet Saturday.',
+        say: 'Then came the Sabbath, and everything went quiet. Imagine what that day felt like for the people who loved him.' },
+      { k: 'tell', scene: 'tombOpen', tone: 'dawn', show: 'Sunday, at first light.', ref: 'Matthew 28:1 and 2',
+        say: 'Early Sunday, as it was getting light, Mary Magdalene and the other Mary went to look at the tomb. There was an earthquake, and an angel rolled the stone away.' },
+      { k: 'verse', label: 'The angel said', q: 'He is not here: for he is risen, as he said. Come, see the place where the Lord lay.', ref: 'Matthew 28:6',
+        lead: 'And the angel told the women,' },
+      { k: 'note', title: 'Read it yourself', show: 'All four Gospels tell about the empty tomb.',
+        say: 'All four Gospels tell about the empty tomb: Matthew, Mark, Luke, and John. If you want to read it for yourself, any one of them is a good place to start.' },
+      { k: 'end', show: 'He is risen.', ref: 'Matthew 28:6',
+        say: 'He is risen. That\u2019s the heart of the Christian hope, and it fits in three words.' },
+    ] },
 ];
+// what Elias says, beat by beat (the cover is silent)
 function buildVO(T) {
-  if (T.fmt === 'A') return [T.intro, `In the King James Version, ${T.sref}. ${T.quote}`, 'Some context. ' + T.context.map((r) => r[0] + '. ' + r[1]).join(' '), T.meaning, `Remember these words. ${T.key}.`, 'Try this today. ' + T.step, T.end];
-  return [T.intro, ...T.panels.map((p) => p.cap + ' ' + p.sref + '.' + (p.ctx ? ' Some context. ' + p.ctx : '')), `In the King James Version, ${T.sref}. ${T.quote}`, T.meaning + ' Try this today. ' + T.step, T.end];
+  const fix = (s) => s.replace(/\bLORD\b/g, 'Lord');
+  return ['', ...T.beats.map((b) => fix(b.k === 'verse' ? [b.lead, b.q, b.tail].filter(Boolean).join(' ') : b.say))];
 }
 
 // ---------- timeline: every beat plays at normal speed, then holds until its narration line has finished ----------
@@ -813,13 +1209,17 @@ function buildTL(v) {
   LAY.forEach((b, i) => { const r = v && v[i] > 0 ? Math.max(b.d, VOICE_OFF + v[i] + VOICE_TAIL) : b.d; E.push(t); R.push(r); starts.push(t + VOICE_OFF); t += r; });
   return { E, R, starts, total: t + (v ? END_HOLD : 0) };
 }
-function loadTopic(id) {
+function loadTopic(id, seedOverride) {
   TOPIC = TOPICS.find((x) => x.id === id) || TOPICS[0];
-  LAY = buildLayout(TOPIC); TL = buildTL(null);
-  const T = TOPIC;
-  return { id: T.id, title: T.hook, vo: buildVO(T), caption: `${T.series}: ${T.hook}\n\n\u201C${T.quote}\u201D (${T.ref}, KJV)`, tags: '#Bible #Jesus #KJV #Faith #Scripture #' + T.series.replace(/[^A-Za-z]/g, '') };
+  const T = TOPIC, qs = new URLSearchParams(location.search).get('seed');
+  const seed = seedOverride || (qs ? parseInt(qs, 10) : 0) || (Math.floor(Math.random() * 1e9) + 1);
+  PAL = makePalette(seed, T.pal);                       // a fresh, always-harmonious palette for this video
+  BG = buildBG(PAL); PANELC = buildPanel(PAL); buildSkyFx(PAL);
+  ROLES = buildCast(T, PAL); VD = null;
+  LAY = buildLayout(T); BM = buildBM(T); TL = buildTL(null);
+  return { id: T.id, title: T.hook, vo: buildVO(T), caption: `${T.series}: ${T.hook}\n\n\u201C${T.quote}\u201D (${T.ref}, KJV)`, tags: '#Bible #Jesus #KJV #Faith #Scripture #' + T.series.replace(/[^A-Za-z]/g, ''), host: 'elias', cast: ROLES.map((r) => r.id), palette: PAL.name, seed };
 }
-function setVoiceDurations(v) { TL = buildTL(v); return { starts: TL.starts, total: TL.total }; }
+function setVoiceDurations(v) { VD = v; TL = buildTL(v); return { starts: TL.starts, total: TL.total }; }
 
 // ---------- drawing ----------
 function drawItem(c, it, lt) {
@@ -831,10 +1231,10 @@ function drawItem(c, it, lt) {
     case 'wash': { const p = win(lt, it.a, it.b); if (p > 0) bloomIn(c, washCanvas(it), it.cx - it.rx - 40, it.cy - it.ry - 40, p); break; }
   }
 }
-function drawBeat(c, B, pal, lt, u) {
-  c.save(); const s = 1 + 0.035 * u;
-  c.translate(CW / 2, CH / 2); c.scale(s, s); c.translate(-CW / 2, -CH / 2);
-  c.drawImage(paperFor(pal), 0, 0);
+function drawPanelBeat(c, B, lt, u) {   // the parchment panel and everything written or painted on it
+  c.save(); const s = 1 + 0.02 * u;
+  c.translate(CW / 2, 530); c.scale(s, s); c.translate(-CW / 2, -530);
+  c.drawImage(PANELC, 0, 0);
   B.items.forEach((it) => drawItem(c, it, lt));
   c.restore();
 }
@@ -846,10 +1246,13 @@ function locate(T) {
   return { i, rt, lt: Math.min(Math.max(0, rt), LAY[i].d), u: cl(rt / TL.R[i]) };
 }
 function explainer(ctx, W, H_, T) {
-  const { i, rt, lt, u } = locate(T), pal = TOPIC.pal;
-  drawBeat(ctx, LAY[i], pal, lt, u);
+  const loc = locate(T), { i, rt, lt, u } = loc;
+  ctx.drawImage(BG, 0, 0);
+  drawSkyFx(ctx, T);
+  drawPanelBeat(ctx, LAY[i], lt, u);
   if (i > 0 && rt < TRN) { // the previous page dries away under a spreading wet bloom
-    drawBeat(OC, LAY[i - 1], pal, LAY[i - 1].d, 1);
+    OC.clearRect(0, 0, CW, CH);
+    drawPanelBeat(OC, LAY[i - 1], LAY[i - 1].d, 1);
     const k = ez(rt / TRN), r = H.rng(i * 31 + 7); OC.save(); OC.globalCompositeOperation = 'destination-out';
     for (let n = 0; n < 3; n++) {
       const cx = r.range(120, 600), cy = r.range(300, 980), R = lerp(0, 1100, k) * (0.8 + n * 0.25);
@@ -858,100 +1261,5 @@ function explainer(ctx, W, H_, T) {
     }
     OC.restore(); ctx.drawImage(OLD, 0, 0);
   }
-  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(tooth(), 0, 0); ctx.restore();
-  H.vignette(ctx, CW, CH, 0.26, '60,40,20');
-  H.grain(ctx, CW, CH, 0.022, 8 + Math.floor(T * 12) % 9);
-}
-
-// ---------- sound score (same item times as the picture) ----------
-function scoreSound(k) {
-  const total = TL.total, pan = (x) => clampN((x - 360) / 360, -1, 1) * 0.5;
-  const brush = (a, b, g = 1, pn = 0, minor = true) => {
-    k.noise(a, { dur: 0.05, color: 'pink', filter: 'lowpass', f: 700, gain: 0.16 * g, a: 0.008, pan: pn, minor });
-    k.play('stroke', a, { material: 'brush', dur: Math.max(0.1, b - a), gain: 1.5 * g, pan: pn, minor });
-  };
-  const letter = (s, a, b, g, pn) => { const re = /\S+/g; let m; while ((m = re.exec(s))) brush(a + (b - a) * m.index / s.length, a + (b - a) * (m.index + m[0].length) / s.length, g, pn); };
-  const wash = (a, b, g = 1, pn = 0, minor = true) => {
-    const d = b - a;
-    k.noise(a, { dur: d, color: 'pink', filter: 'bandpass', f: [[0, 260], [d * 0.45, 820], [d, 420]], q: 0.7, gain: 0.09 * g, a: d * 0.4, pan: pn, minor, verb: 0.1 });
-    k.noise(a + 0.03, { dur: d * 0.7, color: 'brown', filter: 'lowpass', f: 380, gain: 0.08 * g, a: d * 0.3, pan: pn, minor });
-  };
-  const dropS = (t, g = 1, pn = 0) => k.tone(t, { f: [[0, 330], [0.05, 560]], dur: 0.08, gain: 0.07 * g, a: 0.003, pan: pn, minor: true, verb: 0.2 });
-  const rinse = (t, d) => {
-    for (let i = 0; i < 3; i++) { const ti = t + i * d / 4; k.noise(ti, { dur: d / 2.2, color: 'pink', filter: 'bandpass', f: [[0, 420], [d / 5, 1100], [d / 2.2, 520]], q: 1.6, gain: 0.1, a: d / 9, pan: i % 2 ? 0.2 : -0.2, minor: true }); }
-    dropS(t + d * 0.4, 1, 0); k.play('tock', t + d, { f: 900, gain: 0.3, minor: true });
-  };
-  k.bed('room', 0, total, { gain: 0.4 });
-  k.music('pad', 0, total, { bpm: 56, gain: 0.3, chords: [['F3', 'A3', 'C4', 'E4'], ['D3', 'F3', 'A3', 'C4'], ['Bb2', 'D3', 'F3', 'A3'], ['C3', 'G3', 'C4', 'E4']] });
-  LAY.forEach((B, i) => {
-    const E = TL.E[i];
-    if (i > 0) rinse(E, 0.6);
-    B.items.forEach((it) => {
-      if (it.k === 'text') letter(it.s, E + it.a, E + it.b, 0.9, pan(it.x));
-      else if (it.k === 'stroke') {
-        brush(E + it.a, E + it.b, 1.0, 0, false);
-        if (it.sfx === 'hit') { k.play('thud', E + it.b, { f: 100, gain: 0.5 }); k.play('ding', E + it.b, { f: 'C5', gain: 0.4 }); }
-        if (it.sfx === 'ok') k.play('success', E + it.b, { f: 'A5', gain: 0.4 });
-      } else if (it.k === 'scene') wash(E + it.a, E + it.b, 1.0, 0, false);
-      else if (it.k === 'wash') wash(E + it.a, E + it.b, 0.6, 0, true);
-      else if (it.k === 'pencil') k.play('stroke', E + it.a, { material: 'pencil', dur: it.b - it.a, gain: 0.5, minor: true });
-    });
-  });
-  const tEnd = TL.E[LAY.length - 1] + LAY[LAY.length - 1].d - 0.5;
-  k.play('ding', tEnd, { f: 'F4', gain: 0.4 });
-  ['A4', 'C5', 'F5'].forEach((f, i) => k.tone(tEnd + 0.06 + i * 0.06, { f, dur: 1.4, gain: 0.07 - i * 0.01, verb: 0.3, pan: (i - 1) * 0.3 }));
-}
-
-// ===================== exports for the automated render =====================
-window.TOPIC_IDS = TOPICS.map((x) => x.id);
-window.loadTopic = loadTopic;
-window.setVoiceDurations = setVoiceDurations;
-window.scoreSound = scoreSound;
-Object.defineProperty(window, 'DURATION', { get: () => TL.total });
-
-// ===================== PLAYER =====================
-(async function () {
-  const cv = document.getElementById('c'), ctx = cv.getContext('2d', { willReadFrequently: true });
-  const playBtn = document.getElementById('play'), seekEl = document.getElementById('seek'), timeEl = document.getElementById('time');
-  const sndBtn = document.getElementById('snd'), loopBtn = document.getElementById('loop'), loading = document.getElementById('loading'), topicEl = document.getElementById('topic');
-  let cur = 0, playing = false, tPrev = 0, loop = true, soundOn = true, stopSound = () => {};
-  const mmss = (t) => Math.floor(t / 60) + ':' + (t % 60).toFixed(1).padStart(4, '0');
-  TOPICS.forEach((x) => { const o = document.createElement('option'); o.value = x.id; o.textContent = x.id; topicEl.appendChild(o); });
-  try { await Promise.all(['700 60px "Caveat"', '400 60px "Caveat"'].map((f) => document.fonts.load(f, 'AaZz09\u201C\u201D\u2014'))); await document.fonts.ready; } catch (e) {}
-  await new Promise((r) => setTimeout(r, 30));
-  const wanted = new URLSearchParams(location.search).get('topic');
-  loadTopic(wanted || TOPICS[0].id); topicEl.value = TOPIC.id;
-  function draw(T) { seekEl.max = TL.total; explainer(ctx, CW, CH, T); seekEl.value = T; timeEl.textContent = mmss(T) + ' / ' + mmss(TL.total); }
-  window.seek = (T) => { cur = H.clamp(T, 0, TL.total); draw(cur); };
-  function startSound() { stopSound(); stopSound = () => {}; if (soundOn && playing) stopSound = SOUND.live(scoreSound, cur, { voiceover: false }); }
-  function pause() { playing = false; stopSound(); stopSound = () => {}; playBtn.textContent = 'Play'; playBtn.setAttribute('aria-label', 'Play'); }
-  function play() { if (cur >= TL.total - 0.01) cur = 0; playing = true; tPrev = performance.now(); playBtn.textContent = 'Pause'; playBtn.setAttribute('aria-label', 'Pause'); startSound(); requestAnimationFrame(tick); }
-  function tick(now) {
-    if (!playing) return;
-    cur += (now - tPrev) / 1000; tPrev = now;
-    if (cur >= TL.total) { if (loop) { cur = cur % TL.total; startSound(); } else { cur = TL.total; draw(cur); pause(); return; } }
-    draw(cur); requestAnimationFrame(tick);
-  }
-  playBtn.onclick = () => (playing ? pause() : play());
-  cv.onclick = () => (playing ? pause() : play());
-  seekEl.oninput = () => { cur = parseFloat(seekEl.value); draw(cur); if (playing) { tPrev = performance.now(); startSound(); } };
-  topicEl.onchange = () => { const was = playing; pause(); loadTopic(topicEl.value); cur = 0; draw(0); if (was) play(); };
-  sndBtn.onclick = () => { soundOn = !soundOn; sndBtn.setAttribute('aria-pressed', soundOn); if (!soundOn) { stopSound(); stopSound = () => {}; } else if (playing) startSound(); };
-  loopBtn.onclick = () => { loop = !loop; loopBtn.setAttribute('aria-pressed', loop); };
-  document.addEventListener('keydown', (e) => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); playing ? pause() : play(); } });
-  window.frameJPEG = (T) => { window.seek(T); return cv.toDataURL('image/jpeg', 0.93).split(',')[1]; };
-  window.renderAudioBase64 = async (vo) => {
-    const r = await SOUND.renderOffline(scoreSound, TL.total, 48000, { voiceover: !!vo });
-    const n = r.inter.length, i16 = new Int16Array(n);
-    for (let i = 0; i < n; i++) i16[i] = Math.max(-1, Math.min(1, r.inter[i])) * 32767;
-    const u8 = new Uint8Array(i16.buffer); let s = ''; const CHK = 0x8000;
-    for (let i = 0; i < u8.length; i += CHK) s += String.fromCharCode.apply(null, u8.subarray(i, i + CHK));
-    return btoa(s);
-  };
-  draw(0);
-  window._ready = true;
-  loading.style.display = 'none';
-})();
-</script>
-</body>
-</html>
+  // host and reactors stand in front of the panel, on the hill
+  for (const R of ROLES)
