@@ -1262,4 +1262,106 @@ function explainer(ctx, W, H_, T) {
     OC.restore(); ctx.drawImage(OLD, 0, 0);
   }
   // host and reactors stand in front of the panel, on the hill
-  for (const R of ROLES)
+  for (const R of ROLES) R.st = poseAt(R, T, loc);
+  const host = ROLES[0];
+  if (host.st.hl > 0.02) { const g = ctx.createRadialGradient(host.x, host.y - 170, 10, host.x, host.y - 170, 240); g.addColorStop(0, hsl(44, 100, 72, 0.32 * host.st.hl)); g.addColorStop(1, hsl(44, 100, 72, 0)); ctx.fillStyle = g; ctx.fillRect(host.x - 260, host.y - 430, 520, 520); }
+  for (let k = ROLES.length - 1; k >= 0; k--) drawChar(ctx, ROLES[k], T, PAL);
+  drawFrame(ctx, PAL);
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(tooth(), 0, 0); ctx.restore();
+  H.vignette(ctx, CW, CH, 0.34, '20,10,30');
+  H.grain(ctx, CW, CH, 0.022, 8 + Math.floor(T * 12) % 9);
+}
+
+// ---------- sound score (same item times as the picture) ----------
+function scoreSound(k) {
+  const total = TL.total, pan = (x) => clampN((x - 360) / 360, -1, 1) * 0.5;
+  const brush = (a, b, g = 1, pn = 0, minor = true) => {
+    k.noise(a, { dur: 0.05, color: 'pink', filter: 'lowpass', f: 700, gain: 0.16 * g, a: 0.008, pan: pn, minor });
+    k.play('stroke', a, { material: 'brush', dur: Math.max(0.1, b - a), gain: 1.5 * g, pan: pn, minor });
+  };
+  const letter = (s, a, b, g, pn) => { const re = /\S+/g; let m; while ((m = re.exec(s))) brush(a + (b - a) * m.index / s.length, a + (b - a) * (m.index + m[0].length) / s.length, g, pn); };
+  const wash = (a, b, g = 1, pn = 0, minor = true) => {
+    const d = b - a;
+    k.noise(a, { dur: d, color: 'pink', filter: 'bandpass', f: [[0, 260], [d * 0.45, 820], [d, 420]], q: 0.7, gain: 0.09 * g, a: d * 0.4, pan: pn, minor, verb: 0.1 });
+    k.noise(a + 0.03, { dur: d * 0.7, color: 'brown', filter: 'lowpass', f: 380, gain: 0.08 * g, a: d * 0.3, pan: pn, minor });
+  };
+  const dropS = (t, g = 1, pn = 0) => k.tone(t, { f: [[0, 330], [0.05, 560]], dur: 0.08, gain: 0.07 * g, a: 0.003, pan: pn, minor: true, verb: 0.2 });
+  const rinse = (t, d) => {
+    for (let i = 0; i < 3; i++) { const ti = t + i * d / 4; k.noise(ti, { dur: d / 2.2, color: 'pink', filter: 'bandpass', f: [[0, 420], [d / 5, 1100], [d / 2.2, 520]], q: 1.6, gain: 0.1, a: d / 9, pan: i % 2 ? 0.2 : -0.2, minor: true }); }
+    dropS(t + d * 0.4, 1, 0); k.play('tock', t + d, { f: 900, gain: 0.3, minor: true });
+  };
+  k.bed('room', 0, total, { gain: 0.4 });
+  k.music('pad', 0, total, { bpm: 56, gain: 0.3, chords: [['F3', 'A3', 'C4', 'E4'], ['D3', 'F3', 'A3', 'C4'], ['Bb2', 'D3', 'F3', 'A3'], ['C3', 'G3', 'C4', 'E4']] });
+  LAY.forEach((B, i) => {
+    const E = TL.E[i];
+    if (i > 0) rinse(E, 0.6);
+    B.items.forEach((it) => {
+      if (it.k === 'text') letter(it.s, E + it.a, E + it.b, 0.9, pan(it.x));
+      else if (it.k === 'stroke') {
+        brush(E + it.a, E + it.b, 1.0, 0, false);
+        if (it.sfx === 'hit') { k.play('thud', E + it.b, { f: 100, gain: 0.5 }); k.play('ding', E + it.b, { f: 'C5', gain: 0.4 }); }
+        if (it.sfx === 'ok') k.play('success', E + it.b, { f: 'A5', gain: 0.4 });
+      } else if (it.k === 'scene') wash(E + it.a, E + it.b, 1.0, 0, false);
+      else if (it.k === 'wash') wash(E + it.a, E + it.b, 0.6, 0, true);
+      else if (it.k === 'pencil') k.play('stroke', E + it.a, { material: 'pencil', dur: it.b - it.a, gain: 0.5, minor: true });
+    });
+  });
+  const tEnd = TL.E[LAY.length - 1] + LAY[LAY.length - 1].d - 0.5;
+  k.play('ding', tEnd, { f: 'F4', gain: 0.4 });
+  ['A4', 'C5', 'F5'].forEach((f, i) => k.tone(tEnd + 0.06 + i * 0.06, { f, dur: 1.4, gain: 0.07 - i * 0.01, verb: 0.3, pan: (i - 1) * 0.3 }));
+}
+
+// ===================== exports for the automated render =====================
+window.TOPIC_IDS = TOPICS.map((x) => x.id);
+window.loadTopic = loadTopic;
+window.setVoiceDurations = setVoiceDurations;
+window.scoreSound = scoreSound;
+Object.defineProperty(window, 'DURATION', { get: () => TL.total });
+
+// ===================== PLAYER =====================
+(async function () {
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d', { willReadFrequently: true });
+  const playBtn = document.getElementById('play'), seekEl = document.getElementById('seek'), timeEl = document.getElementById('time');
+  const sndBtn = document.getElementById('snd'), loopBtn = document.getElementById('loop'), loading = document.getElementById('loading'), topicEl = document.getElementById('topic'), colBtn = document.getElementById('newcol');
+  let cur = 0, playing = false, tPrev = 0, loop = true, soundOn = true, stopSound = () => {};
+  const mmss = (t) => Math.floor(t / 60) + ':' + (t % 60).toFixed(1).padStart(4, '0');
+  TOPICS.forEach((x) => { const o = document.createElement('option'); o.value = x.id; o.textContent = x.id; topicEl.appendChild(o); });
+  try { await Promise.race([Promise.all(['700 60px "Caveat"', '400 60px "Caveat"'].map((f) => document.fonts.load(f, 'AaZz09\u201C\u201D\u2014'))), new Promise((r) => setTimeout(r, 2500))]); } catch (e) {}
+  await new Promise((r) => setTimeout(r, 30));
+  const wanted = new URLSearchParams(location.search).get('topic');
+  loadTopic(wanted || TOPICS[0].id); topicEl.value = TOPIC.id;
+  function draw(T) { seekEl.max = TL.total; explainer(ctx, CW, CH, T); seekEl.value = T; timeEl.textContent = mmss(T) + ' / ' + mmss(TL.total); }
+  window.seek = (T) => { cur = H.clamp(T, 0, TL.total); draw(cur); };
+  function startSound() { stopSound(); stopSound = () => {}; if (soundOn && playing) stopSound = SOUND.live(scoreSound, cur, { voiceover: false }); }
+  function pause() { playing = false; stopSound(); stopSound = () => {}; playBtn.textContent = 'Play'; playBtn.setAttribute('aria-label', 'Play'); }
+  function play() { if (cur >= TL.total - 0.01) cur = 0; playing = true; tPrev = performance.now(); playBtn.textContent = 'Pause'; playBtn.setAttribute('aria-label', 'Pause'); startSound(); requestAnimationFrame(tick); }
+  function tick(now) {
+    if (!playing) return;
+    cur += (now - tPrev) / 1000; tPrev = now;
+    if (cur >= TL.total) { if (loop) { cur = cur % TL.total; startSound(); } else { cur = TL.total; draw(cur); pause(); return; } }
+    draw(cur); requestAnimationFrame(tick);
+  }
+  playBtn.onclick = () => (playing ? pause() : play());
+  cv.onclick = () => (playing ? pause() : play());
+  seekEl.oninput = () => { cur = parseFloat(seekEl.value); draw(cur); if (playing) { tPrev = performance.now(); startSound(); } };
+  topicEl.onchange = () => { const was = playing; pause(); loadTopic(topicEl.value); cur = 0; draw(0); if (was) play(); };
+  colBtn.onclick = () => { const was = playing; pause(); loadTopic(TOPIC.id); draw(cur); if (was) play(); };   // same topic, brand new palette
+  sndBtn.onclick = () => { soundOn = !soundOn; sndBtn.setAttribute('aria-pressed', soundOn); if (!soundOn) { stopSound(); stopSound = () => {}; } else if (playing) startSound(); };
+  loopBtn.onclick = () => { loop = !loop; loopBtn.setAttribute('aria-pressed', loop); };
+  document.addEventListener('keydown', (e) => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); playing ? pause() : play(); } });
+  window.frameJPEG = (T) => { window.seek(T); return cv.toDataURL('image/jpeg', 0.93).split(',')[1]; };
+  window.renderAudioBase64 = async (vo) => {
+    const r = await SOUND.renderOffline(scoreSound, TL.total, 48000, { voiceover: !!vo });
+    const n = r.inter.length, i16 = new Int16Array(n);
+    for (let i = 0; i < n; i++) i16[i] = Math.max(-1, Math.min(1, r.inter[i])) * 32767;
+    const u8 = new Uint8Array(i16.buffer); let s = ''; const CHK = 0x8000;
+    for (let i = 0; i < u8.length; i += CHK) s += String.fromCharCode.apply(null, u8.subarray(i, i + CHK));
+    return btoa(s);
+  };
+  draw(0);
+  window._ready = true;
+  loading.style.display = 'none';
+})();
+</script>
+</body>
+</html>
