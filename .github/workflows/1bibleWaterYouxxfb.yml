@@ -17,7 +17,10 @@ on:
         default: "public"
         options: [public, unlisted, private]
   schedule:
-    - cron: "0 22 * * *"   # once a day at 14:00 UTC (change the hour to suit your audience)
+    - cron: "0 14 * * *"   # checks every day at 14:00 UTC, but only posts when MIN_DAYS_BETWEEN_POSTS has passed
+
+env:
+  MIN_DAYS_BETWEEN_POSTS: "3"   # 1 = every day, 2 = every other day, 3 = every 3 days
 
 permissions:
   contents: write           # lets the job commit posted.json back to the repo
@@ -35,32 +38,62 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check if a post is due
+        id: due
+        run: |
+          python3 - << 'PYEOF'
+          import json, os, datetime
+          need = int(os.environ.get("MIN_DAYS_BETWEEN_POSTS", "3"))
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          due = True
+          if event == "schedule" and os.path.exists("posted.json"):
+            try:
+              hist = json.load(open("posted.json")).get("posted", [])
+            except Exception:
+              hist = []
+            dates = [r.get("date") for r in hist if r.get("date")]
+            if dates:
+              last = datetime.date.fromisoformat(max(dates))
+              gap = (datetime.datetime.utcnow().date() - last).days
+              print(f"Last post: {last} ({gap} day(s) ago). Needs {need}.")
+              due = gap >= need
+          print("Post due:", due)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"due={'true' if due else 'false'}\n")
+          PYEOF
+
       - name: Install ffmpeg
+        if: steps.due.outputs.due == 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
 
       - name: Cache pip
+        if: steps.due.outputs.due == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: pip-bible-v2
 
       - name: Cache Piper binary and voice
+        if: steps.due.outputs.due == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/piper
           key: piper-binary-jenny-dioco-v3
 
       - name: Setup Python
+        if: steps.due.outputs.due == 'true'
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
       - name: Install Python deps
+        if: steps.due.outputs.due == 'true'
         run: pip install selenium requests edge-tts google-auth google-auth-oauthlib google-api-python-client
 
       - name: Download Piper binary and voice (backup voice)
+        if: steps.due.outputs.due == 'true'
         run: |
           mkdir -p ~/.cache/piper
           PIPER_BIN=~/.cache/piper/piper
@@ -100,6 +133,7 @@ jobs:
           fi
 
       - name: Render and Post (Facebook + YouTube)
+        if: steps.due.outputs.due == 'true'
         run: |
           python3 << 'PYEOF'
           import os, sys, json, math, time, random, subprocess, base64, re, glob, tempfile, asyncio, datetime
@@ -141,9 +175,9 @@ jobs:
           YT_DEFAULT_PRIVACY = "public"              # public, unlisted or private (manual runs can override)
           YT_CATEGORY_ID     = "27"                  # 27 = Education
           YT_TITLE_SUFFIX    = " #Shorts"
-          YT_EXTRA_TAGS      = ["bible", "bible verse", "jesus", "kjv", "scripture", "faith", "christian shorts", "bible story", "watercolor"]
+          YT_EXTRA_TAGS      = ["bible", "bible verse", "jesus", "kjv", "scripture", "faith", "christian shorts", "bible story"]
           YT_FOOTER          = ("Scripture: King James Version (public domain). Read the full passage in your Bible.\n"
-                                "Subscribe for a new Bible reel every day.")
+                                "Subscribe for a new Bible story every few days.")
           YT_COMMENT_QUESTION = "What does this verse mean to you? \U0001F447"
           YT_PLAYLIST_KEY    = "bible_reel"          # optional: add {"bible_reel": "PLAYLIST_ID"} to the YT_PLAYLISTS secret
 
@@ -220,7 +254,7 @@ jobs:
 
           def synthesise(text, out_wav):
             text = clean_for_tts(text)
-            if not text: return False
+            if not text: return False          # the silent cover line ends up here
             print(f"  Speaking: '{text[:70]}{'...' if len(text) > 70 else ''}'")
             if edge_speak(text, out_wav): return True
             print("  -> Edge failed, trying Piper...")
@@ -286,12 +320,18 @@ jobs:
           # ── PLATFORM UPLOADERS ────────────────────────────────
           def post_facebook(video_path, info, token, page_id):
             description = f"{info['caption']}\n\n{info['tags']}\n\n{FB_FOOTER}"
+            thumb = OUT_DIR / "thumb.jpg"
             with open(video_path, "rb") as f:
-              response = requests.post(
-                f"https://graph-video.facebook.com/{FB_API_VERSION}/{page_id}/videos",
-                data={"description": description, "access_token": token},
-                files={"source": ("reel.mp4", f, "video/mp4")},
-                timeout=900)
+              files = {"source": ("reel.mp4", f, "video/mp4")}
+              thumb_f = open(thumb, "rb") if thumb.exists() else None
+              if thumb_f: files["thumb"] = ("thumb.jpg", thumb_f, "image/jpeg")
+              try:
+                response = requests.post(
+                  f"https://graph-video.facebook.com/{FB_API_VERSION}/{page_id}/videos",
+                  data={"description": description, "access_token": token},
+                  files=files, timeout=900)
+              finally:
+                if thumb_f: thumb_f.close()
             print(f"  Facebook response: {response.status_code}")
             if response.status_code != 200:
               raise RuntimeError(f"Facebook post failed: {response.text}")
@@ -339,7 +379,14 @@ jobs:
             vid = response.get("id", "")
             print(f"  Uploaded: https://youtube.com/shorts/{vid}")
 
-            # these two are nice-to-have: a failure here never fails the upload
+            # nice-to-haves: a failure in any of these never fails the upload
+            thumb = OUT_DIR / "thumb.jpg"
+            if thumb.exists():
+              try:
+                youtube.thumbnails().set(videoId=vid, media_body=MediaFileUpload(str(thumb), mimetype="image/jpeg")).execute()
+                print("  Thumbnail set")
+              except Exception as ex:
+                print(f"::warning::YouTube thumbnail failed (channel may need verifying): {ex}")
             for attempt in range(4):
               try:
                 time.sleep(20)
@@ -364,14 +411,10 @@ jobs:
               print(f"::warning::YouTube playlist add failed: {ex}")
             return vid
 
-          # ── DECIDE WHETHER TO RUN ─────────────────────────────
+          # ── SETUP ─────────────────────────────────────────────
           today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
-          event = os.environ.get("GITHUB_EVENT_NAME", "")
           dry   = os.environ.get("DRY_RUN", "false").lower() == "true"
-          hist  = load_hist()
-          if event == "schedule" and any(r.get("date") == today for r in hist):
-            print(f"Already posted today ({today}). Nothing to do.")
-            sys.exit(0)
+          hist  = load_hist()          # (the "is a post due?" check already ran in the first step)
 
           fb_token   = os.environ.get("FB_PAGE_TOKEN")
           fb_page_id = os.environ.get("FB_PAGE_ID")
@@ -407,7 +450,7 @@ jobs:
           forced = os.environ.get("FORCE_TOPIC", "").strip()
           topic_id = forced if forced in ids else pick_topic(ids, hist)
           info = driver.execute_script("return window.loadTopic(arguments[0]);", topic_id)
-          print(f"Topic: {info['id']} | {info['title']}")
+          print(f"Topic: {info['id']} | {info['title']} | palette: {info.get('palette')}")
 
           # ── VOICE: one line per beat, measured, then placed on the timeline ──
           vo = info["vo"]
@@ -475,7 +518,9 @@ jobs:
             try:
               for i in range(nframes):
                 b64 = driver.execute_script("return window.frameJPEG(arguments[0]);", i / FPS)
-                proc.stdin.write(base64.b64decode(b64))
+                frame = base64.b64decode(b64)
+                if i == 0: (OUT_DIR / "thumb.jpg").write_bytes(frame)     # the cover frame doubles as the thumbnail
+                proc.stdin.write(frame)
                 if i % 100 == 0: print(f"  frame {i}/{nframes}")
               proc.stdin.close()
             except BrokenPipeError:
@@ -550,7 +595,7 @@ jobs:
           DRY_RUN:          ${{ inputs.dry_run }}
 
       - name: Remember the posted topic (commit posted.json)
-        if: ${{ !cancelled() && inputs.dry_run != true }}
+        if: ${{ steps.due.outputs.due == 'true' && !cancelled() && inputs.dry_run != true }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -564,8 +609,10 @@ jobs:
           fi
 
       - name: Keep the preview videos (dry runs only)
-        if: ${{ always() && inputs.dry_run == true }}
+        if: ${{ steps.due.outputs.due == 'true' && always() && inputs.dry_run == true }}
         uses: actions/upload-artifact@v4
         with:
           name: reel-preview
-          path: out/reel_*.mp4
+          path: |
+            out/reel_*.mp4
+            out/thumb.jpg
