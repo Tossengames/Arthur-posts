@@ -350,7 +350,7 @@ jobs:
               return False
 
           ENGINES = {"edge": edge_speak, "kokoro": kokoro_speak, "piper": piper_speak}
-          ORDER   = {"edge": ["edge"], "kokoro": ["kokoro"], "piper": ["piper"], "auto": ["edge", "kokoro", "piper"]}
+          ORDER   = {"edge": ["edge"], "kokoro": ["kokoro"], "piper": ["piper"], "auto": ["kokoro", "edge", "piper"]}
 
           def synthesise(text, out_wav):
             text = clean_for_tts(text)
