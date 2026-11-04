@@ -16,6 +16,16 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "snake",
+      "kind": "survival",
+      "date": "2026-11-04",
+      "fb_id": "2631033160652380",
+      "yt_id": "8_LA_CREG48",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
