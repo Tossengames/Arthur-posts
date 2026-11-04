@@ -1,0 +1,681 @@
+name: 🐾 Post Animal Short to Facebook + YouTube
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Force an id (leave empty to auto-pick): bear, shark, snake, bird, choc, road, hachi, bobbie, elephant, cat, octopus, crow, dolphin, penguin, kitten, olddog"
+        required: false
+        default: ""
+      dry_run:
+        description: "Render only: do not post and do not remember the topic"
+        type: boolean
+        default: false
+      yt_privacy:
+        description: "YouTube privacy for this run"
+        type: choice
+        default: "public"
+        options: [public, unlisted, private]
+  schedule:
+    - cron: "0 17 * * *"   # checks every day at 17:00 UTC, but only posts when MIN_DAYS_BETWEEN_POSTS has passed
+
+env:
+  MIN_DAYS_BETWEEN_POSTS: "3"   # 1 = every day, 2 = every other day, 3 = every 3 days
+
+permissions:
+  contents: write
+
+concurrency:
+  group: animal-short
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check if a post is due
+        id: due
+        run: |
+          python3 - << 'PYEOF'
+          import json, os, datetime
+          need = int(os.environ.get("MIN_DAYS_BETWEEN_POSTS", "3"))
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          due = True
+          if event == "schedule" and os.path.exists("posted_animals.json"):
+            try:
+              hist = json.load(open("posted_animals.json")).get("posted", [])
+            except Exception:
+              hist = []
+            dates = [r.get("date") for r in hist if r.get("date")]
+            if dates:
+              last = datetime.date.fromisoformat(max(dates))
+              gap = (datetime.datetime.utcnow().date() - last).days
+              print(f"Last post: {last} ({gap} day(s) ago). Needs {need}.")
+              due = gap >= need
+          print("Post due:", due)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"due={'true' if due else 'false'}\n")
+          PYEOF
+
+      - name: Install ffmpeg
+        if: steps.due.outputs.due == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Cache pip
+        if: steps.due.outputs.due == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-animal-v2
+
+      - name: Cache Piper binary and voice
+        if: steps.due.outputs.due == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/piper
+          key: piper-binary-ryan-v1
+
+      - name: Setup Python
+        if: steps.due.outputs.due == 'true'
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        if: steps.due.outputs.due == 'true'
+        run: pip install selenium requests edge-tts google-auth google-auth-oauthlib google-api-python-client
+
+      - name: Download Piper binary and male voice (backup voice)
+        if: steps.due.outputs.due == 'true'
+        run: |
+          mkdir -p ~/.cache/piper
+          PIPER_BIN=~/.cache/piper/piper
+
+          if [ ! -f "$PIPER_BIN" ]; then
+            echo "Downloading Piper binary..."
+            curl -L -o /tmp/piper.tar.gz \
+              "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz" || {
+              echo "Piper download failed - will rely on Edge TTS"
+              exit 0
+            }
+            mkdir -p /tmp/piper_extract
+            tar -xzf /tmp/piper.tar.gz -C /tmp/piper_extract
+            FOUND=$(find /tmp/piper_extract -name "piper" -type f | head -1)
+            if [ -n "$FOUND" ]; then
+              cp "$FOUND" "$PIPER_BIN"
+              chmod +x "$PIPER_BIN"
+              find /tmp/piper_extract -name "*.so*" -exec cp {} ~/.cache/piper/ \;
+              echo "Piper binary ready."
+            else
+              echo "Piper binary not found in tarball - will rely on Edge TTS"
+            fi
+          else
+            echo "Piper binary already cached."
+          fi
+
+          VOICE_FILE=~/.cache/piper/en_US-ryan-medium.onnx
+          CONFIG_FILE=~/.cache/piper/en_US-ryan-medium.onnx.json
+          if [ ! -f "$VOICE_FILE" ]; then
+            echo "Downloading ryan (male) voice..."
+            curl -L -o "$VOICE_FILE" \
+              "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx" || true
+            curl -L -o "$CONFIG_FILE" \
+              "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx.json" || true
+          else
+            echo "Voice model already cached."
+          fi
+
+      - name: Render and Post (Facebook + YouTube)
+        if: steps.due.outputs.due == 'true'
+        run: |
+          python3 << 'PYEOF'
+          import os, sys, json, math, time, random, subprocess, base64, re, glob, tempfile, asyncio, datetime
+          from pathlib import Path
+          import requests
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+
+          # ════════════════════════════════════════════════════════════════
+          #  SETTINGS
+          # ════════════════════════════════════════════════════════════════
+
+          # ── Music folders (exact names, case-sensitive). Missing/empty folder = that platform uses only the page's built-in soft music.
+          FB_MUSIC_FOLDER   = "bgmusic"
+          YT_MUSIC_FOLDER   = "bgmusic2Y"
+          MUSIC_EXTENSIONS  = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac", "wma", "opus"]
+          FB_MUSIC_VOLUME   = 0.18
+          YT_MUSIC_VOLUME   = 0.18
+          SFX_VOLUME        = 0.8
+          VOICE_VOLUME      = 1.0
+
+          # ── Voice (male). Other male options: en-US-GuyNeural, en-US-ChristopherNeural, en-GB-RyanNeural
+          EDGE_VOICE        = os.environ.get("EDGE_VOICE", "en-US-AndrewNeural")
+          RATES             = ["+0%", "+8%", "+15%", "+22%"]   # voice speed tried in order until the video fits MAX_LEN
+          EDGE_RATE         = RATES[0]
+
+          # ── Video
+          FPS               = 30
+          MAX_LEN           = 29.5          # keep every reel under 30 s
+          TARGET_MB         = 40
+          LIMIT_MB          = 48
+          AUDIO_BPS         = 128000
+          THUMB_TIME        = 1.2           # seconds into the video used as the thumbnail (the first label is on screen by then)
+
+          # ── Facebook
+          FB_API_VERSION    = "v18.0"
+
+          # ── YouTube
+          YT_DEFAULT_PRIVACY = "public"     # public, unlisted or private (manual runs can override)
+          YT_CATEGORY_ID     = "15"         # 15 = Pets & Animals
+          YT_TITLE_SUFFIX    = " #Shorts"
+          YT_TITLE_FROM_CAPTION = True      # use the first sentence of the caption as the title when it is short enough
+          YT_EXTRA_TAGS      = ["animals", "wildlife", "pets", "animal facts", "animal shorts", "nature"]
+          YT_FOOTER          = "New animal short every few days. Subscribe so you don't miss one."
+          YT_COMMENT         = "Did you learn something new? Tell us below \U0001F447"
+          YT_PLAYLIST_KEY    = "animal_shorts"   # optional: add {"animal_shorts": "PLAYLIST_ID"} to the YT_PLAYLISTS secret
+
+          # ── Files
+          PIPER_BIN        = str(Path.home() / ".cache/piper/piper")
+          PIPER_VOICE      = str(Path.home() / ".cache/piper/en_US-ryan-medium.onnx")
+          HTML_FILE        = "animals.html"
+          POSTED_FILE      = Path("posted_animals.json")
+          OUT_DIR          = Path("out"); OUT_DIR.mkdir(exist_ok=True)
+
+          # content mix: survival = "what to do if...", help = found/hurt animals and pet first aid,
+          # tale = true heart stories, dyk = did-you-know facts, fiction = short made-up stories
+          KIND_WEIGHTS = {"survival": 3, "help": 3, "dyk": 3, "tale": 2, "fiction": 1.5}
+
+          # ════════════════════════════════════════════════════════════════
+          #  END OF SETTINGS
+          # ════════════════════════════════════════════════════════════════
+
+          # ── POSTED MEMORY ───────────────────────────────────────
+          def load_hist():
+            if POSTED_FILE.exists():
+              try: return json.loads(POSTED_FILE.read_text()).get("posted", [])
+              except Exception: return []
+            return []
+
+          def save_hist(hist):
+            POSTED_FILE.write_text(json.dumps({"posted": hist}, indent=2) + "\n")
+
+          def pick_topic(ids, kinds, hist):
+            last_kind = hist[-1].get("kind") if hist else None
+            avail = sorted(set(kinds.values()))
+            cands = [k for k in avail if k != last_kind] or avail      # never the same type twice in a row
+            want = random.choices(cands, [KIND_WEIGHTS.get(k, 1) for k in cands])[0]
+            pool = [i for i in ids if kinds.get(i) == want] or ids
+            used = []
+            for rec in reversed(hist):                # go through the whole pool before anything repeats
+              if rec.get("id") not in pool: continue
+              if rec.get("id") in used: break
+              used.append(rec.get("id"))
+            if len(set(used)) >= len(pool): used = []
+            remaining = [i for i in pool if i not in used]
+            return random.choice(remaining or pool)
+
+          # ── FACEBOOK CAPTIONS (SRT) ─────────────────────────────
+          def srt_time(t):
+            t = max(0.0, t); h = int(t // 3600); m = int(t % 3600 // 60); sec = t % 60
+            return f"{h:02d}:{m:02d}:{int(sec):02d},{int(round((sec - int(sec)) * 1000)):03d}"
+
+          def build_srt(lines, starts, durs):
+            cues, n = [], 1
+            for line, st, du in zip(lines, starts, durs):
+              if not line or du <= 0: continue
+              parts = [p.strip() for p in re.split(r'(?<=[.!?])\s+', line) if p.strip()]
+              total_chars = sum(len(p) for p in parts) or 1
+              t = st
+              for p in parts:
+                d = du * len(p) / total_chars
+                cues.append(f"{n}\n{srt_time(t)} --> {srt_time(t + d - 0.05)}\n{p}\n"); n += 1; t += d
+            return "\n".join(cues)
+
+          def upload_captions(video_id, token, info, starts, durs):
+            lines = info["vo"]
+            if not any(lines): return
+            srt = build_srt(lines, starts, durs)
+            (OUT_DIR / "reel.en_US.srt").write_text(srt, encoding="utf-8")
+            try:
+              r = requests.post(f"https://graph-video.facebook.com/{FB_API_VERSION}/{video_id}/captions",
+                                data={"access_token": token, "default_locale": "en_US"},
+                                files={"captions_file": ("reel.en_US.srt", srt.encode("utf-8"), "text/plain")})
+              print(f"Captions: {r.status_code} {r.text[:120]}")
+            except Exception as e:
+              print(f"Captions failed (not fatal): {e}")
+
+          # ── VOICE (Edge TTS first, Piper as backup, both male) ──
+          def clean_for_tts(text):
+            text = text.replace('\u2014', ', ').replace('\u2013', ', ')
+            text = text.replace('*', '').replace('#', '').replace('_', '')
+            return re.sub(r'\s+', ' ', text).strip()
+
+          def make_silence(duration_s, out_path, sample_rate=24000):
+            subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"anullsrc=r={sample_rate}:cl=mono",
+                            "-t", f"{duration_s:.3f}", "-acodec", "pcm_s16le", out_path], capture_output=True)
+
+          async def edge_speak_async(text, out_mp3):
+            try:
+              import edge_tts
+              await edge_tts.Communicate(text, EDGE_VOICE, rate=EDGE_RATE, pitch="+0Hz").save(out_mp3)
+              return Path(out_mp3).exists() and Path(out_mp3).stat().st_size > 100
+            except Exception as e:
+              print(f"  Edge TTS error: {e}")
+              return False
+
+          def edge_speak(text, out_wav):
+            out_mp3 = out_wav.replace(".wav", "_edge.mp3")
+            if not asyncio.run(edge_speak_async(text, out_mp3)): return False
+            r = subprocess.run(["ffmpeg", "-y", "-i", out_mp3, "-acodec", "pcm_s16le", "-ar", "24000", "-ac", "1", out_wav], capture_output=True)
+            try: os.remove(out_mp3)
+            except Exception: pass
+            return r.returncode == 0 and Path(out_wav).exists() and Path(out_wav).stat().st_size > 100
+
+          def piper_speak(text, out_wav):
+            if not Path(PIPER_BIN).exists() or not Path(PIPER_VOICE).exists(): return False
+            try:
+              env = os.environ.copy()
+              env["LD_LIBRARY_PATH"] = str(Path.home() / ".cache/piper") + ":" + env.get("LD_LIBRARY_PATH", "")
+              res = subprocess.run([PIPER_BIN, "--model", PIPER_VOICE, "--output_file", out_wav],
+                                   input=text.encode("utf-8"), capture_output=True, timeout=60, env=env)
+              return res.returncode == 0 and Path(out_wav).exists() and Path(out_wav).stat().st_size > 100
+            except Exception as e:
+              print(f"  Piper exception: {e}")
+              return False
+
+          def synthesise(text, out_wav):
+            text = clean_for_tts(text)
+            if not text: return False
+            print(f"  Speaking ({EDGE_RATE}): '{text[:70]}{'...' if len(text) > 70 else ''}'")
+            for _ in range(2):
+              if edge_speak(text, out_wav): return True
+              time.sleep(2)
+            print("  Edge failed, using Piper backup voice")
+            return piper_speak(text, out_wav)
+
+          def norm_wav(src, dst):
+            r = subprocess.run(["ffmpeg", "-y", "-i", src, "-ar", "24000", "-ac", "1", "-acodec", "pcm_s16le", dst], capture_output=True)
+            return r.returncode == 0 and Path(dst).exists()
+
+          def duration_of(path):
+            p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path], capture_output=True, text=True)
+            try: return float(p.stdout.strip())
+            except Exception: return 0.0
+
+          def concat_wavs(wavs, out_path):
+            lst = out_path + ".txt"
+            with open(lst, "w") as f:
+              for w in wavs: f.write(f"file '{w}'\n")
+            r = subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-acodec", "pcm_s16le", out_path], capture_output=True)
+            return r.returncode == 0 and Path(out_path).exists()
+
+          def size_mb(path):
+            return os.path.getsize(path) / 1048576
+
+          # ── MUSIC (one exact folder per platform; none found = built-in music only) ──
+          def pick_music(folder, label):
+            if not Path(folder).is_dir():
+              print(f"[{label}] Music folder '{folder}' not found -> built-in music only.")
+              return None
+            found = []
+            for ext in MUSIC_EXTENSIONS:
+              found += glob.glob(os.path.join(folder, f"*.{ext}")) + glob.glob(os.path.join(folder, f"*.{ext.upper()}"))
+            found = sorted(set(found))
+            if not found:
+              print(f"[{label}] Music folder '{folder}' is empty -> built-in music only.")
+              return None
+            m = random.choice(found)
+            print(f"[{label}] Music: {m}")
+            return m
+
+          def music_start(path):
+            d = duration_of(path)
+            return random.uniform(0, max(0, d - 12)) if d > 15 else 0
+
+          # ── FINAL MIX: attach one platform's audio to the already-encoded picture (no re-encode) ──
+          def mux_final(video_in, sfx_raw, voice_wav, music_path, music_vol, out_path, total):
+            cmd = ["ffmpeg", "-y", "-i", video_in, "-f", "s16le", "-ar", "48000", "-ac", "2", "-i", sfx_raw]
+            nxt = 2; vi = mi = None
+            if voice_wav:  cmd += ["-i", voice_wav]; vi = nxt; nxt += 1
+            if music_path: cmd += ["-stream_loop", "-1", "-ss", f"{music_start(music_path):.2f}", "-t", f"{total:.3f}", "-i", music_path]; mi = nxt; nxt += 1
+            af = [f"[1:a]volume={SFX_VOLUME},apad=whole_dur={total:.3f}[sfx]"]; mix = ["[sfx]"]
+            if vi is not None:
+              af.append(f"[{vi}:a]aresample=48000,aformat=channel_layouts=stereo,volume={VOICE_VOLUME},apad=whole_dur={total:.3f}[voice]"); mix.append("[voice]")
+            if mi is not None:
+              af.append(f"[{mi}:a]aresample=48000,aformat=channel_layouts=stereo,volume={music_vol},afade=t=in:st=0:d=2,"
+                        f"afade=t=out:st={max(0.0, total - 2):.3f}:d=2,apad=whole_dur={total:.3f}[music]"); mix.append("[music]")
+            af.append("".join(mix) + f"amix=inputs={len(mix)}:duration=longest:dropout_transition=0,volume={len(mix)},alimiter=limit=0.95[a]")
+            cmd += ["-filter_complex", ";".join(af), "-map", "0:v", "-map", "[a]", "-t", f"{total:.3f}",
+                    "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out_path]
+            r = subprocess.run(cmd, capture_output=True)
+            if r.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) < 10000:
+              print(r.stderr.decode("utf-8", errors="ignore")[-1500:])
+              raise RuntimeError(f"Mixing failed for {out_path}")
+            print(f"  {out_path}: {size_mb(out_path):.1f} MB")
+            if size_mb(out_path) > LIMIT_MB:
+              raise RuntimeError(f"{out_path} is {size_mb(out_path):.1f} MB, refusing to post")
+
+          # ── PLATFORM UPLOADERS ────────────────────────────────
+          def post_facebook(video_path, info, token, page_id):
+            description = f"{info['caption']}\n\n{info['tags']}\n\n{info['footer']}"
+            thumb = OUT_DIR / "thumb.jpg"
+            with open(video_path, "rb") as f:
+              files = {"source": ("reel.mp4", f, "video/mp4")}
+              thumb_f = open(thumb, "rb") if thumb.exists() else None
+              if thumb_f: files["thumb"] = ("thumb.jpg", thumb_f, "image/jpeg")
+              try:
+                response = requests.post(
+                  f"https://graph-video.facebook.com/{FB_API_VERSION}/{page_id}/videos",
+                  data={"description": description, "access_token": token},
+                  files=files, timeout=900)
+              finally:
+                if thumb_f: thumb_f.close()
+            print(f"  Facebook response: {response.status_code}")
+            if response.status_code != 200:
+              raise RuntimeError(f"Facebook post failed: {response.text}")
+            return response.json().get("id")
+
+          def yt_build_text(info):
+            hook = re.sub(r"[<>]", "", info["title"]).strip()
+            if YT_TITLE_FROM_CAPTION:
+              first = re.split(r'(?<=[.!?])\s', info["caption"].strip())[0].strip()
+              if 10 <= len(first) <= 90: hook = re.sub(r"[<>]", "", first)
+            if len(hook) + len(YT_TITLE_SUFFIX) > 100:
+              hook = hook[:100 - len(YT_TITLE_SUFFIX) - 1].rstrip() + "\u2026"
+            title = hook + YT_TITLE_SUFFIX
+            desc = f"{info['caption']}\n\n{info['footer']}\n\n{YT_FOOTER}\n\n{info['tags']} #Shorts"
+            tags = []
+            for t in YT_EXTRA_TAGS + [x.lstrip('#') for x in info['tags'].split() if x.startswith('#')] + [info["id"]]:
+              if t.lower() != "shorts" and t not in tags: tags.append(t)
+            return title, desc[:4900], tags, YT_COMMENT
+
+          def post_youtube(video_path, info, privacy):
+            from googleapiclient.discovery import build
+            from googleapiclient.http import MediaFileUpload
+            from google.oauth2.credentials import Credentials
+
+            creds = Credentials(
+              token=os.environ.get("YT_ACCESS_TOKEN") or None,
+              refresh_token=os.environ.get("YT_REFRESH_TOKEN"),
+              token_uri="https://oauth2.googleapis.com/token",
+              client_id=os.environ.get("YT_CLIENT_ID"),
+              client_secret=os.environ.get("YT_CLIENT_SECRET"),
+            )
+            youtube = build("youtube", "v3", credentials=creds)
+            title, desc, tags, comment = yt_build_text(info)
+            print(f"  YouTube title: {title}")
+
+            request = youtube.videos().insert(
+              part="snippet,status",
+              body={
+                "snippet": {"title": title, "description": desc, "tags": tags, "categoryId": YT_CATEGORY_ID,
+                            "defaultLanguage": "en", "defaultAudioLanguage": "en"},
+                "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False},
+              },
+              media_body=MediaFileUpload(video_path, mimetype="video/mp4", resumable=True),
+            )
+            response = None
+            while response is None:
+              status, response = request.next_chunk()
+              if status: print(f"  YouTube upload progress: {int(status.progress() * 100)}%")
+            vid = response.get("id", "")
+            print(f"  Uploaded: https://youtube.com/shorts/{vid}")
+
+            # nice-to-haves: a failure in any of these never fails the upload
+            thumb = OUT_DIR / "thumb.jpg"
+            if thumb.exists():
+              try:
+                youtube.thumbnails().set(videoId=vid, media_body=MediaFileUpload(str(thumb), mimetype="image/jpeg")).execute()
+                print("  Thumbnail set")
+              except Exception as ex:
+                print(f"::warning::YouTube thumbnail failed (channel may need verifying): {ex}")
+            for attempt in range(4):
+              try:
+                time.sleep(20)
+                youtube.commentThreads().insert(
+                  part="snippet",
+                  body={"snippet": {"videoId": vid, "topLevelComment": {"snippet": {"textOriginal": comment}}}},
+                ).execute()
+                print("  Comment posted")
+                break
+              except Exception as ex:
+                print(f"::warning::YouTube comment attempt {attempt + 1} failed: {ex}")
+            try:
+              pl = json.loads(os.environ.get("YT_PLAYLISTS") or "{}")
+              pid = pl.get(YT_PLAYLIST_KEY)
+              if pid:
+                youtube.playlistItems().insert(
+                  part="snippet",
+                  body={"snippet": {"playlistId": pid, "resourceId": {"kind": "youtube#video", "videoId": vid}}},
+                ).execute()
+                print("  Added to playlist")
+            except Exception as ex:
+              print(f"::warning::YouTube playlist add failed: {ex}")
+            return vid
+
+          # ── SETUP ─────────────────────────────────────────────
+          today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+          dry   = os.environ.get("DRY_RUN", "false").lower() == "true"
+          hist  = load_hist()          # (the "is a post due?" check already ran in the first step)
+
+          fb_token   = os.environ.get("FB_PAGE_TOKEN")
+          fb_page_id = os.environ.get("FB_PAGE_ID")
+          yt_privacy = (os.environ.get("YT_PRIVACY") or YT_DEFAULT_PRIVACY).strip().lower()
+          if yt_privacy not in ("public", "unlisted", "private"): yt_privacy = "public"
+
+          fb_enabled = bool(fb_token and fb_page_id)
+          yt_enabled = all(os.environ.get(k) for k in ("YT_REFRESH_TOKEN", "YT_CLIENT_ID", "YT_CLIENT_SECRET"))
+          print(f"Facebook configured: {fb_enabled} | YouTube configured: {yt_enabled} (privacy: {yt_privacy})")
+          if not dry and not fb_enabled and not yt_enabled:
+            raise RuntimeError("No platform configured: set FB_PAGE_TOKEN + FB_PAGE_ID and/or YT_REFRESH_TOKEN + YT_CLIENT_ID + YT_CLIENT_SECRET")
+          if not dry and not fb_enabled: print("::warning::Facebook secrets missing - skipping Facebook")
+          if not dry and not yt_enabled: print("::warning::YouTube secrets missing - skipping YouTube")
+
+          # ── OPEN THE PAGE, PICK THE STORY ─────────────────────
+          opts = Options()
+          for a in ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--window-size=1280,900",
+                    "--force-device-scale-factor=1", "--autoplay-policy=no-user-gesture-required",
+                    "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+                    "--disable-backgrounding-occluded-windows", "--no-first-run", "--allow-file-access-from-files"]:
+            opts.add_argument(a)
+          print("Starting Chrome...")
+          driver = webdriver.Chrome(options=opts)
+          driver.set_script_timeout(900)
+          driver.get("file://" + os.path.abspath(HTML_FILE))
+          for _ in range(120):
+            if driver.execute_script("return window._ready === true;"): break
+            time.sleep(1)
+          else:
+            driver.quit(); raise RuntimeError("Page never became ready")
+
+          ids   = driver.execute_script("return window.TOPIC_IDS;")
+          kinds = driver.execute_script("return window.TOPIC_KINDS;")
+          forced = os.environ.get("FORCE_TOPIC", "").strip()
+          topic_id = forced if forced in ids else pick_topic(ids, kinds, hist)
+          info = driver.execute_script("return window.loadTopic(arguments[0]);", topic_id)
+          print(f"Topic: {info['id']} ({info['kind']}) | {info['title']}")
+
+          # ── VOICE: one line per beat; speed up automatically if the reel would pass MAX_LEN ──
+          vo = info["vo"]
+          voice_wav = None
+          video_silent = str(OUT_DIR / "video_silent.mp4")
+          fb_mp4 = str(OUT_DIR / "reel_facebook.mp4")
+          yt_mp4 = str(OUT_DIR / "reel_youtube.mp4")
+          with tempfile.TemporaryDirectory() as tmp:
+            for attempt, rate in enumerate(RATES):
+              EDGE_RATE = rate
+              seg_wavs = [None] * len(vo)
+              for i, line in enumerate(vo):
+                raw = os.path.join(tmp, f"raw{attempt}_{i}.wav"); wav = os.path.join(tmp, f"seg{attempt}_{i}.wav")
+                if synthesise(line, raw) and norm_wav(raw, wav):
+                  seg_wavs[i] = wav
+              durs = [duration_of(w) if w else 0.0 for w in seg_wavs]
+              tl = driver.execute_script("return window.setVoiceDurations(arguments[0]);", durs)
+              starts, total = tl["starts"], float(tl["total"])
+              print(f"Voice rate {rate}: video would be {total:.1f}s")
+              if total <= MAX_LEN: break
+            print("Voice durations:", [round(d, 2) for d in durs])
+            print(f"Video length: {total:.1f}s")
+
+            if any(seg_wavs):
+              parts, cursor, n = [], 0.0, 0
+              for i, w in enumerate(seg_wavs):
+                if not w: continue
+                gap = max(0.0, starts[i] - cursor)
+                if gap > 0.005:
+                  s = os.path.join(tmp, f"gap{n}.wav"); make_silence(gap, s); parts.append(s); n += 1
+                parts.append(w); cursor = starts[i] + durs[i]
+              voice_wav = os.path.join(OUT_DIR, "voice.wav")
+              if not concat_wavs(parts, voice_wav): voice_wav = None
+
+            # ── SOUND EFFECTS + built-in music (rendered offline from the page's score) ──
+            print("Rendering sound effects...")
+            b64a = driver.execute_async_script("""
+              var done = arguments[0];
+              window.renderAudioBase64(%s).then(done).catch(function(e){ done(null); });
+            """ % ("true" if voice_wav else "false"))
+            sfx_raw = os.path.join(OUT_DIR, "sfx.raw")
+            if b64a:
+              with open(sfx_raw, "wb") as f: f.write(base64.b64decode(b64a))
+            else:
+              print("SFX render failed - using silence")
+              subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", f"{total:.3f}", "-f", "s16le", sfx_raw], capture_output=True)
+
+            # ── THUMBNAIL: a real frame from the video (the first on-screen label is already showing) ──
+            try:
+              t_thumb = max(0.0, min(THUMB_TIME, total - 0.5))
+              (OUT_DIR / "thumb.jpg").write_bytes(base64.b64decode(driver.execute_script("return window.frameJPEG(arguments[0]);", t_thumb)))
+              print(f"Thumbnail captured at {t_thumb:.1f}s")
+            except Exception as e:
+              print(f"::warning::Thumbnail capture failed: {e}")
+
+            # ── ENCODE THE PICTURE ONCE (720x1280 frames -> 1080x1920, no audio, fixed bitrate) ──
+            vbr = int(max(900000, min(6000000, (TARGET_MB * 8 * 1048576) / total - AUDIO_BPS)))
+            print(f"Video bitrate target: {vbr/1000:.0f} kbps")
+            cmd = ["ffmpeg", "-y", "-f", "image2pipe", "-framerate", str(FPS), "-c:v", "mjpeg", "-i", "-",
+                   "-vf", "scale=1080:1920:flags=lanczos,format=yuv420p", "-an", "-t", f"{total:.3f}",
+                   "-r", str(FPS), "-c:v", "libx264", "-preset", "medium",
+                   "-b:v", str(vbr), "-maxrate", str(int(vbr * 1.3)), "-bufsize", str(vbr * 2), "-pix_fmt", "yuv420p",
+                   "-movflags", "+faststart", video_silent]
+            log = open(OUT_DIR / "ffmpeg.log", "wb")
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=log)
+            nframes = int(math.ceil(total * FPS))
+            print(f"Capturing {nframes} frames...")
+            try:
+              for i in range(nframes):
+                b64 = driver.execute_script("return window.frameJPEG(arguments[0]);", i / FPS)
+                proc.stdin.write(base64.b64decode(b64))
+                if i % 100 == 0: print(f"  frame {i}/{nframes}")
+              proc.stdin.close()
+            except BrokenPipeError:
+              print("ffmpeg closed the pipe early")
+            proc.wait()
+            driver.quit()
+            log.close()
+            if proc.returncode != 0 or not os.path.exists(video_silent) or os.path.getsize(video_silent) < 10000:
+              print(open(OUT_DIR / "ffmpeg.log", errors="ignore").read()[-1500:])
+              raise RuntimeError("Encoding failed")
+            print(f"Picture encoded: {size_mb(video_silent):.1f} MB")
+
+            # ── SAFETY NET: if the picture is still too big (audio adds ~0.5 MB), squeeze it ──
+            tries = 0
+            while size_mb(video_silent) > LIMIT_MB - 2 and tries < 5:
+              vbr = int(vbr * 0.7); tries += 1
+              small = str(OUT_DIR / "video_small.mp4")
+              print(f"Too big ({size_mb(video_silent):.1f} MB), re-encoding at {vbr/1000:.0f} kbps...")
+              subprocess.run(["ffmpeg", "-y", "-i", video_silent, "-c:v", "libx264", "-preset", "medium",
+                              "-b:v", str(vbr), "-maxrate", str(int(vbr * 1.3)), "-bufsize", str(vbr * 2),
+                              "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", small], capture_output=True)
+              if os.path.exists(small): os.replace(small, video_silent)
+
+            # ── ONE FINAL FILE PER PLATFORM (same picture + voice + effects, that platform's own music) ──
+            if dry or fb_enabled:
+              print("Mixing Facebook version...")
+              mux_final(video_silent, sfx_raw, voice_wav, pick_music(FB_MUSIC_FOLDER, "Facebook"), FB_MUSIC_VOLUME, fb_mp4, total)
+            if dry or yt_enabled:
+              print("Mixing YouTube version...")
+              mux_final(video_silent, sfx_raw, voice_wav, pick_music(YT_MUSIC_FOLDER, "YouTube"), YT_MUSIC_VOLUME, yt_mp4, total)
+
+          for junk in ["sfx.raw", "voice.wav", "video_silent.mp4"]:
+            try: os.remove(OUT_DIR / junk)
+            except Exception: pass
+
+          if dry:
+            print("Dry run: not posting.")
+            sys.exit(0)
+
+          # ── POST TO BOTH PLATFORMS (independent: one failing never blocks the other) ──
+          fb_id = yt_id = None
+          errors = []
+
+          if fb_enabled:
+            print("Posting to Facebook...")
+            try:
+              fb_id = post_facebook(fb_mp4, info, fb_token, fb_page_id)
+              print(f"  Facebook posted! ID: {fb_id}")
+              upload_captions(fb_id, fb_token, info, starts, durs)
+            except Exception as e:
+              errors.append(f"Facebook: {e}")
+              print(f"::error::Facebook failed: {e}")
+
+          if yt_enabled:
+            print("Posting to YouTube...")
+            try:
+              yt_id = post_youtube(yt_mp4, info, yt_privacy)
+              print(f"  YouTube posted! ID: {yt_id}")
+            except Exception as e:
+              errors.append(f"YouTube: {e}")
+              print(f"::error::YouTube failed: {e}")
+
+          # remember the topic if at least one platform got it
+          if fb_id or yt_id:
+            hist.append({"id": info["id"], "kind": info["kind"], "date": today, "fb_id": fb_id, "yt_id": yt_id})
+            save_hist(hist)
+            print("Remembered topic in posted_animals.json.")
+
+          if errors:
+            print("Finished with errors: " + " | ".join(errors))
+            sys.exit(1)          # the run shows red so you notice; the commit step below still runs
+          print("Done!")
+          PYEOF
+        env:
+          FB_PAGE_TOKEN:    ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID:       ${{ secrets.FB_PAGE_ID }}
+          YT_ACCESS_TOKEN:  ${{ secrets.YT_ACCESS_TOKEN }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_CLIENT_ID:     ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_PLAYLISTS:     ${{ secrets.YT_PLAYLISTS }}
+          YT_PRIVACY:       ${{ inputs.yt_privacy }}
+          FORCE_TOPIC:      ${{ inputs.topic }}
+          DRY_RUN:          ${{ inputs.dry_run }}
+
+      - name: Remember the posted topic (commit posted_animals.json)
+        if: ${{ steps.due.outputs.due == 'true' && !cancelled() && inputs.dry_run != true }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add posted_animals.json || true
+          if git diff --cached --quiet; then
+            echo "Nothing new to remember."
+          else
+            git commit -m "Remember posted animal topic [skip ci]"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push
+          fi
+
+      - name: Keep the preview videos (dry runs only)
+        if: ${{ steps.due.outputs.due == 'true' && always() && inputs.dry_run == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: reel-preview
+          path: |
+            out/reel_*.mp4
+            out/thumb.jpg
