@@ -6,6 +6,16 @@
       "date": "2026-11-04",
       "fb_id": "963776216415352",
       "yt_id": "Gtr1E35uzsI"
+    },
+    {
+      "id": "penguin",
+      "kind": "dyk",
+      "date": "2026-11-04",
+      "fb_id": "1851752159338041",
+      "yt_id": "BWmJoy7qNGY",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
