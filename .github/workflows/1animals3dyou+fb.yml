@@ -7,6 +7,15 @@ on:
         description: "Force an id (leave empty to auto-pick): bear, shark, snake, bird, choc, road, hachi, bobbie, elephant, cat, octopus, crow, dolphin, penguin, kitten, olddog"
         required: false
         default: ""
+      tts:
+        description: "Voice engine (pick one to test it). auto = Edge first, then Kokoro, then Piper"
+        type: choice
+        options: [auto, edge, kokoro, piper]
+        default: auto
+      voice:
+        description: "Optional voice name. Edge e.g. en-US-AndrewNeural | Kokoro e.g. am_michael, am_adam, bm_george | leave empty for the default"
+        required: false
+        default: ""
       dry_run:
         description: "Render only: do not post and do not remember the topic"
         type: boolean
@@ -82,6 +91,13 @@ jobs:
           path: ~/.cache/piper
           key: piper-binary-ryan-v1
 
+      - name: Cache Kokoro model files
+        if: steps.due.outputs.due == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/kokoro
+          key: kokoro-v1.0-files-v1
+
       - name: Setup Python
         if: steps.due.outputs.due == 'true'
         uses: actions/setup-python@v4
@@ -90,7 +106,7 @@ jobs:
 
       - name: Install Python deps
         if: steps.due.outputs.due == 'true'
-        run: pip install selenium requests edge-tts google-auth google-auth-oauthlib google-api-python-client
+        run: pip install selenium requests edge-tts kokoro-onnx google-auth google-auth-oauthlib google-api-python-client
 
       - name: Download Piper binary and male voice (backup voice)
         if: steps.due.outputs.due == 'true'
@@ -132,6 +148,21 @@ jobs:
             echo "Voice model already cached."
           fi
 
+      - name: Download Kokoro model (only the first time, then cached)
+        if: ${{ steps.due.outputs.due == 'true' && (inputs.tts == '' || inputs.tts == 'auto' || inputs.tts == 'kokoro') }}
+        run: |
+          mkdir -p ~/.cache/kokoro
+          cd ~/.cache/kokoro
+          BASE="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
+          if [ ! -s kokoro-v1.0.onnx ]; then
+            echo "Downloading Kokoro model (about 300 MB, cached after this run)..."
+            curl -fL --retry 3 -o kokoro-v1.0.onnx.part "$BASE/kokoro-v1.0.onnx" && mv kokoro-v1.0.onnx.part kokoro-v1.0.onnx || echo "Kokoro model download failed"
+          fi
+          if [ ! -s voices-v1.0.bin ]; then
+            curl -fL --retry 3 -o voices-v1.0.bin.part "$BASE/voices-v1.0.bin" && mv voices-v1.0.bin.part voices-v1.0.bin || echo "Kokoro voices download failed"
+          fi
+          ls -la ~/.cache/kokoro
+
       - name: Render and Post (Facebook + YouTube)
         if: steps.due.outputs.due == 'true'
         run: |
@@ -147,48 +178,54 @@ jobs:
           # ════════════════════════════════════════════════════════════════
 
           # ── Music folders (exact names, case-sensitive). Missing/empty folder = that platform uses only the page's built-in soft music.
-          FB_MUSIC_FOLDER   = "bgmusic"
-          YT_MUSIC_FOLDER   = "bgmusic2Y"
-          MUSIC_EXTENSIONS  = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac", "wma", "opus"]
-          FB_MUSIC_VOLUME   = 0.18
-          YT_MUSIC_VOLUME   = 0.18
-          SFX_VOLUME        = 0.8
-          VOICE_VOLUME      = 1.0
-
-          # ── Voice (male). Other male options: en-US-GuyNeural, en-US-ChristopherNeural, en-GB-RyanNeural
-          EDGE_VOICE        = os.environ.get("EDGE_VOICE", "en-US-AndrewNeural")
-          RATES             = ["+0%", "+8%", "+15%", "+22%"]   # voice speed tried in order until the video fits MAX_LEN
-          EDGE_RATE         = RATES[0]
+          FB_MUSIC_FOLDER  = "bgmusic"
+          YT_MUSIC_FOLDER  = "bgmusic2Y"
+          MUSIC_EXTENSIONS = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac", "wma", "opus"]
+          FB_MUSIC_VOLUME  = 0.18
+          YT_MUSIC_VOLUME  = 0.18
+          SFX_VOLUME       = 0.8
+          VOICE_VOLUME     = 1.0
 
           # ── Video
-          FPS               = 30
-          MAX_LEN           = 29.5          # keep every reel under 30 s
-          TARGET_MB         = 40
-          LIMIT_MB          = 48
-          AUDIO_BPS         = 128000
-          THUMB_TIME        = 1.2           # seconds into the video used as the thumbnail (the first label is on screen by then)
+          FPS              = 30
+          MAX_LEN          = 29.5                      # keep every reel under 30 s
+          TARGET_MB        = 40
+          LIMIT_MB         = 48
+          AUDIO_BPS        = 128000
+          THUMB_TIME       = 1.2                       # seconds into the video used as the thumbnail (the first label is on screen by then)
 
-          # ── Facebook
-          FB_API_VERSION    = "v18.0"
-
-          # ── YouTube
-          YT_DEFAULT_PRIVACY = "public"     # public, unlisted or private (manual runs can override)
-          YT_CATEGORY_ID     = "15"         # 15 = Pets & Animals
-          YT_TITLE_SUFFIX    = " #Shorts"
-          YT_TITLE_FROM_CAPTION = True      # use the first sentence of the caption as the title when it is short enough
-          YT_EXTRA_TAGS      = ["animals", "wildlife", "pets", "animal facts", "animal shorts", "nature"]
-          YT_FOOTER          = "New animal short every few days. Subscribe so you don't miss one."
-          YT_COMMENT         = "Did you learn something new? Tell us below \U0001F447"
-          YT_PLAYLIST_KEY    = "animal_shorts"   # optional: add {"animal_shorts": "PLAYLIST_ID"} to the YT_PLAYLISTS secret
-
-          # ── Files
+          # ── Voice (all defaults are male)
+          RATES            = ["+0%", "+8%", "+15%", "+22%"]   # voice speed tried in order until the video fits
           PIPER_BIN        = str(Path.home() / ".cache/piper/piper")
           PIPER_VOICE      = str(Path.home() / ".cache/piper/en_US-ryan-medium.onnx")
+          TTS_ENGINE       = (os.environ.get("TTS_ENGINE", "") or "auto").strip().lower()   # auto | edge | kokoro | piper
+          VOICE_PICK       = os.environ.get("TTS_VOICE", "").strip()
+          EDGE_VOICE       = VOICE_PICK if (TTS_ENGINE == "edge" and VOICE_PICK) else os.environ.get("EDGE_VOICE", "en-US-AndrewNeural")   # others: en-US-GuyNeural, en-US-ChristopherNeural, en-GB-RyanNeural
+          KOKORO_VOICE     = VOICE_PICK if (TTS_ENGINE == "kokoro" and VOICE_PICK) else "am_michael"   # others: am_adam, am_echo, bm_george, bm_lewis
+          KOKORO_MODEL     = str(Path.home() / ".cache/kokoro/kokoro-v1.0.onnx")
+          KOKORO_VOICES    = str(Path.home() / ".cache/kokoro/voices-v1.0.bin")
+          EDGE_RATE        = RATES[0]
+          ENGINES_USED     = []
+
+          # ── Facebook
+          FB_API_VERSION   = "v18.0"
+
+          # ── YouTube
+          YT_DEFAULT_PRIVACY    = "public"     # public, unlisted or private (manual runs can override)
+          YT_CATEGORY_ID        = "15"         # 15 = Pets & Animals
+          YT_TITLE_SUFFIX       = " #Shorts"
+          YT_TITLE_FROM_CAPTION = True         # use the first sentence of the caption as the title when it is short enough
+          YT_EXTRA_TAGS         = ["animals", "wildlife", "pets", "animal facts", "animal shorts", "nature"]
+          YT_FOOTER             = "New animal short every few days. Subscribe so you don't miss one."
+          YT_COMMENT            = "Did you learn something new? Tell us below \U0001F447"
+          YT_PLAYLIST_KEY       = "animal_shorts"   # optional: add {"animal_shorts": "PLAYLIST_ID"} to the YT_PLAYLISTS secret
+
+          # ── Files
           HTML_FILE        = "animals.html"
           POSTED_FILE      = Path("posted_animals.json")
           OUT_DIR          = Path("out"); OUT_DIR.mkdir(exist_ok=True)
 
-          # content mix: survival = "what to do if...", help = found/hurt animals and pet first aid,
+          # content types picked at random from the pool. survival = "what to do if...", help = found/hurt animals and pet first aid,
           # tale = true heart stories, dyk = did-you-know facts, fiction = short made-up stories
           KIND_WEIGHTS = {"survival": 3, "help": 3, "dyk": 3, "tale": 2, "fiction": 1.5}
 
@@ -218,10 +255,12 @@ jobs:
               if rec.get("id") in used: break
               used.append(rec.get("id"))
             if len(set(used)) >= len(pool): used = []
-            remaining = [i for i in pool if i not in used]
-            return random.choice(remaining or pool)
+            remaining = [i for i in pool if i not in used] or pool
+            last_id = hist[-1].get("id") if hist else None
+            remaining = [i for i in remaining if i != last_id] or remaining      # never the video that was just posted
+            return random.choice(remaining)
 
-          # ── FACEBOOK CAPTIONS (SRT) ─────────────────────────────
+          # ── FACEBOOK CAPTIONS (SRT; the on-screen words are already burned into the video) ──
           def srt_time(t):
             t = max(0.0, t); h = int(t // 3600); m = int(t % 3600 // 60); sec = t % 60
             return f"{h:02d}:{m:02d}:{int(sec):02d},{int(round((sec - int(sec)) * 1000)):03d}"
@@ -251,7 +290,7 @@ jobs:
             except Exception as e:
               print(f"Captions failed (not fatal): {e}")
 
-          # ── VOICE (Edge TTS first, Piper as backup, both male) ──
+          # ── VOICE (Edge / Kokoro / Piper) ─────────────────────
           def clean_for_tts(text):
             text = text.replace('\u2014', ', ').replace('\u2013', ', ')
             text = text.replace('*', '').replace('#', '').replace('_', '')
@@ -290,15 +329,41 @@ jobs:
               print(f"  Piper exception: {e}")
               return False
 
+          _kokoro = None
+          def kokoro_speak(text, out_wav):
+            global _kokoro
+            try:
+              import numpy as np, wave
+              if not Path(KOKORO_MODEL).exists() or not Path(KOKORO_VOICES).exists():
+                print("  Kokoro files are missing"); return False
+              if _kokoro is None:
+                from kokoro_onnx import Kokoro
+                _kokoro = Kokoro(KOKORO_MODEL, KOKORO_VOICES)
+              speed = 1.0 + float(EDGE_RATE.replace("%", "").replace("+", "")) / 100.0
+              samples, sr = _kokoro.create(text, voice=KOKORO_VOICE, speed=speed, lang="en-us")
+              pcm = (np.clip(np.asarray(samples, dtype=np.float32), -1.0, 1.0) * 32767).astype(np.int16)
+              with wave.open(out_wav, "wb") as w:
+                w.setnchannels(1); w.setsampwidth(2); w.setframerate(int(sr)); w.writeframes(pcm.tobytes())
+              return Path(out_wav).exists() and Path(out_wav).stat().st_size > 100
+            except Exception as e:
+              print(f"  Kokoro error: {e}")
+              return False
+
+          ENGINES = {"edge": edge_speak, "kokoro": kokoro_speak, "piper": piper_speak}
+          ORDER   = {"edge": ["edge"], "kokoro": ["kokoro"], "piper": ["piper"], "auto": ["edge", "kokoro", "piper"]}
+
           def synthesise(text, out_wav):
             text = clean_for_tts(text)
             if not text: return False
-            print(f"  Speaking ({EDGE_RATE}): '{text[:70]}{'...' if len(text) > 70 else ''}'")
-            for _ in range(2):
-              if edge_speak(text, out_wav): return True
-              time.sleep(2)
-            print("  Edge failed, using Piper backup voice")
-            return piper_speak(text, out_wav)
+            for eng in ORDER.get(TTS_ENGINE, ORDER["auto"]):     # a single chosen engine has NO fallback, so you hear exactly that voice
+              print(f"  Speaking with {eng} ({EDGE_RATE}): '{text[:60]}{'...' if len(text) > 60 else ''}'")
+              for _ in range(2 if eng == "edge" else 1):
+                if ENGINES[eng](text, out_wav):
+                  if eng not in ENGINES_USED: ENGINES_USED.append(eng)
+                  return True
+                if eng == "edge": time.sleep(2)
+              print(f"  {eng} failed")
+            return False
 
           def norm_wav(src, dst):
             r = subprocess.run(["ffmpeg", "-y", "-i", src, "-ar", "24000", "-ac", "1", "-acodec", "pcm_s16le", dst], capture_output=True)
@@ -500,7 +565,7 @@ jobs:
           forced = os.environ.get("FORCE_TOPIC", "").strip()
           topic_id = forced if forced in ids else pick_topic(ids, kinds, hist)
           info = driver.execute_script("return window.loadTopic(arguments[0]);", topic_id)
-          print(f"Topic: {info['id']} ({info['kind']}) | {info['title']}")
+          print(f"Topic: {info['id']} ({info['kind']}) | {info['title']} | voice engine setting: {TTS_ENGINE}")
 
           # ── VOICE: one line per beat; speed up automatically if the reel would pass MAX_LEN ──
           vo = info["vo"]
@@ -521,6 +586,7 @@ jobs:
               starts, total = tl["starts"], float(tl["total"])
               print(f"Voice rate {rate}: video would be {total:.1f}s")
               if total <= MAX_LEN: break
+            print("Voice engine(s) actually used:", ENGINES_USED or "none")
             print("Voice durations:", [round(d, 2) for d in durs])
             print(f"Video length: {total:.1f}s")
 
@@ -636,7 +702,7 @@ jobs:
 
           # remember the topic if at least one platform got it
           if fb_id or yt_id:
-            hist.append({"id": info["id"], "kind": info["kind"], "date": today, "fb_id": fb_id, "yt_id": yt_id})
+            hist.append({"id": info["id"], "kind": info["kind"], "date": today, "fb_id": fb_id, "yt_id": yt_id, "tts": ENGINES_USED})
             save_hist(hist)
             print("Remembered topic in posted_animals.json.")
 
@@ -655,6 +721,8 @@ jobs:
           YT_PLAYLISTS:     ${{ secrets.YT_PLAYLISTS }}
           YT_PRIVACY:       ${{ inputs.yt_privacy }}
           FORCE_TOPIC:      ${{ inputs.topic }}
+          TTS_ENGINE:       ${{ inputs.tts }}
+          TTS_VOICE:        ${{ inputs.voice }}
           DRY_RUN:          ${{ inputs.dry_run }}
 
       - name: Remember the posted topic (commit posted_animals.json)
