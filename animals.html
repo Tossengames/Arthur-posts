@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Animal Shorts (3D)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&display=block">
+<style>
+  html, body { margin:0; height:100%; background:#14102a; color:#fff; font:15px Poppins, Arial, sans-serif; }
+  #app { display:flex; flex-direction:column; height:100%; }
+  #stage { flex:1; min-height:0; position:relative; background:#14102a; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+  #loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:24px; pointer-events:none; }
+  #bar { display:flex; align-items:center; gap:10px; padding:8px 12px; background:#241c4a; border-top:2px solid #ff7060; flex-wrap:wrap; }
+  #bar button, #bar select { background:#3a2f70; color:#fff; border:1px solid #ff7060; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; min-width:44px; }
+  #bar button:focus-visible, #bar select:focus-visible, #seek:focus-visible { outline:2px solid #ffd23f; outline-offset:2px; }
+  #bar button[aria-pressed="true"] { background:#ff7060; }
+  #seek { flex:1; min-width:120px; accent-color:#ff7060; }
+  #time { font-variant-numeric:tabular-nums; min-width:110px; text-align:right; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"><canvas id="c" width="720" height="1280"></canvas><div id="loading">Loading...</div></div>
+  <div id="bar">
+    <button id="play" aria-label="Play">Play</button>
+    <select id="topic" aria-label="Story"></select>
+    <input id="seek" type="range" min="0" max="40" step="0.01" value="0" aria-label="Scrub">
+    <span id="time">0:00.0 / 0:00.0</span>
+    <button id="snd" aria-pressed="true" aria-label="Sound on or off">Sound</button>
+    <button id="cel" aria-pressed="false" aria-label="Cel shading on or off">Cel</button>
+    <button id="loop" aria-pressed="true" aria-label="Loop on or off">Loop</button>
+  </div>
+</div>
+<script>
+'use strict';
+// =====================================================================
+//  WILD SAFETY SHORTS: "what to do if..." animal survival tips, vibrant low-poly 3D, English narration + live subtitles.
+//  720x1280. Every frame is a pure function of T (no Math.random). The page API matches the render workflow.
+// =====================================================================
+const W = 720, HH = 1280, TAU = Math.PI * 2, F = 980;
+const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v)), wn = (p, a, b) => cl((p - a) / (b - a)), lerp = (a, b, t) => a + (b - a) * t;
+const ez = (x) => { x = cl(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }, eo = (x) => 1 - Math.pow(1 - cl(x), 3);
+const bk = (x) => { x = cl(x); return 1 + 2.70158 * Math.pow(x - 1, 3) + 1.70158 * Math.pow(x - 1, 2); };
+const hashS = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+function rng(seed) { let a = (seed >>> 0) || 1; const r = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; r.range = (a, b) => a + r() * (b - a); return r; }
+const mixc = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const lerp3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+const satc = (c, k) => { const m = (c[0] + c[1] + c[2]) / 3; return [m + (c[0] - m) * k, m + (c[1] - m) * k, m + (c[2] - m) * k]; };
+const FA = 'Poppins, "Arial Black", Arial, sans-serif';
+const CEL_DEFAULT = true; // cel-shaded look is the default; use ?cel=0 or the Cel button for the plain look
+let CEL = (CEL_DEFAULT && !/[?&]cel=0/.test(location.search)) || /[?&]cel=1/.test(location.search), CAMP = [0, 0, 0];
+
+// ---------- tiny 3D pipeline ----------
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], scl = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+function makeCam(pos, yaw, pitch) { const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch); return { pos, view(p) { const dx = p[0] - pos[0], dy = p[1] - pos[1], dz = p[2] - pos[2]; const x1 = dx * cy - dz * sy, z1 = dx * sy + dz * cy; return [x1, dy * cp + z1 * sp, -dy * sp + z1 * cp]; } }; }
+function clipNear(P, zn) { const o = []; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], ia = a[2] >= zn, ib = b[2] >= zn; if (ia) o.push(a); if (ia !== ib) { const t = (zn - a[2]) / (b[2] - a[2]); o.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, zn]); } } return o; }
+function lookCam(pos, tg) { const dx = tg[0] - pos[0], dy = tg[1] - pos[1], dz = tg[2] - pos[2]; return makeCam(pos, Math.atan2(dx, dz), Math.atan2(-dy, Math.hypot(dx, dz))); }
+const rotY = (a) => (p) => [p[0] * Math.cos(a) + p[2] * Math.sin(a), p[1], -p[0] * Math.sin(a) + p[2] * Math.cos(a)];
+const rotX = (a, v = [0, 0, 0]) => (p) => { const y = p[1] - v[1], z = p[2] - v[2]; return [p[0], v[1] + y * Math.cos(a) - z * Math.sin(a), v[2] + y * Math.sin(a) + z * Math.cos(a)]; };
+const rotZ = (a, v = [0, 0, 0]) => (p) => { const x = p[0] - v[0], y = p[1] - v[1]; return [v[0] + x * Math.cos(a) - y * Math.sin(a), v[1] + x * Math.sin(a) + y * Math.cos(a), p[2]]; };
+const mv = (x, y, z) => (p) => [p[0] + x, p[1] + y, p[2] + z], sc = (s) => (p) => [p[0] * s, p[1] * s, p[2] * s];
+const comp = (...fs) => (p) => { let q = p; for (const f of fs) if (f) q = f(q); return q; };
+const ICO = (() => { const t = (1 + Math.sqrt(5)) / 2; const v = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(norm); const f = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]; return { v, f }; })();
+const ICO2 = (() => { const v = ICO.v.slice(), f = [], cache = {}; const mid = (a, b) => { const k = a < b ? a + '_' + b : b + '_' + a; if (cache[k] !== undefined) return cache[k]; v.push(norm(scl(add3(v[a], v[b]), 0.5))); return (cache[k] = v.length - 1); }; ICO.f.forEach(([a, b, c]) => { const ab = mid(a, b), bc = mid(b, c), ca = mid(c, a); f.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]); }); return { v, f }; })();
+
+let TRI = [];
+const tri = (a, b, c, col, o) => TRI.push(Object.assign({ p: [a, b, c], col }, o));
+const BOXF = [[4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7], [0, 3, 2], [0, 2, 1]];
+function adjOf(fs) { if (fs._adj) return fs._adj; const ek = {}, nb = fs.map(() => [-1, -1, -1]); fs.forEach((f, i) => { for (let e = 0; e < 3; e++) { const a = f[e], b = f[(e + 1) % 3], k = a < b ? a * 4096 + b : b * 4096 + a; if (ek[k]) { nb[i][e] = ek[k][0]; nb[ek[k][0]][ek[k][1]] = i; } else ek[k] = [i, e]; } }); return (fs._adj = nb); }
+function mesh(vs, fs, col, center, o, xf, cens) {
+  const P = xf ? vs.map(xf) : vs, cc = xf ? xf(center) : center, st = TRI.length, adj = CEL ? adjOf(fs) : null;
+  fs.forEach((f, i) => { const c2 = cens ? (xf ? xf(cens[i]) : cens[i]) : cc; tri(P[f[0]], P[f[1]], P[f[2]], typeof col === 'function' ? col(f, i) : col, Object.assign({ center: c2 }, adj ? { nb: adj[i].map((j) => (j < 0 ? -1 : st + j)) } : null, o)); });
+}
+function box(cx, cy, cz, sx, sy, sz, col, xf, o) { const x0 = cx - sx / 2, x1 = cx + sx / 2, y0 = cy - sy / 2, y1 = cy + sy / 2, z0 = cz - sz / 2, z1 = cz + sz / 2; mesh([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], BOXF, col, [cx, cy, cz], o, xf); }
+function prism(cx, y0, cz, r, h, n, col, xf, r2, o) { r2 = r2 == null ? r : r2; const vs = [], fs = []; for (let i = 0; i < n; i++) { const a = (i / n) * TAU; vs.push([cx + Math.cos(a) * r, y0, cz + Math.sin(a) * r]); } for (let i = 0; i < n; i++) { const a = (i / n) * TAU; vs.push([cx + Math.cos(a) * r2, y0 + h, cz + Math.sin(a) * r2]); } for (let i = 0; i < n; i++) { const j = (i + 1) % n; fs.push([i, j, n + j], [i, n + j, n + i]); } for (let i = 1; i < n - 1; i++) fs.push([n, n + i, n + i + 1], [0, i + 1, i]); mesh(vs, fs, col, [cx, y0 + h / 2, cz], o, xf); }
+function cone(cx, y0, cz, r, h, n, col, xf, o) { const vs = [[cx, y0 + h, cz]], fs = []; for (let i = 0; i < n; i++) { const a = (i / n) * TAU; vs.push([cx + Math.cos(a) * r, y0, cz + Math.sin(a) * r]); } for (let i = 0; i < n; i++) fs.push([0, 1 + i, 1 + ((i + 1) % n)]); mesh(vs, fs, col, [cx, y0 + h * 0.3, cz], o, xf); }
+function ico(cx, cy, cz, r, col, xf, sy, o) { sy = sy || 1; mesh(ICO.v.map((v) => [cx + v[0] * r, cy + v[1] * r * sy, cz + v[2] * r]), ICO.f, col, [cx, cy, cz], o, xf); }
+function ell(cx, cy, cz, rx, ry, rz, col, xf, o, hi) { const G = hi ? ICO2 : ICO; mesh(G.v.map((v) => [cx + v[0] * rx, cy + v[1] * ry, cz + v[2] * rz]), G.f, col, [cx, cy, cz], o, xf); }
+function loft(secs, n, colF, xf) {
+  const vs = [], fs = [], cols = [], cens = [], m = secs.length;
+  secs.forEach((s) => { for (let i = 0; i < n; i++) { const t = (i / n) * TAU; vs.push([Math.cos(t) * s.rx, s.y + Math.sin(t) * s.ry, s.z]); } }); const ax = vs.length; secs.forEach((s) => vs.push([0, s.y, s.z]));
+  for (let k = 0; k < m - 1; k++) { const cc = [0, (secs[k].y + secs[k + 1].y) / 2, (secs[k].z + secs[k + 1].z) / 2]; for (let i = 0; i < n; i++) { const j = (i + 1) % n, a = k * n + i, b = k * n + j, c = (k + 1) * n + j, d = (k + 1) * n + i, col = colF(i, k); fs.push([a, b, c], [a, c, d]); cols.push(col, col); cens.push(cc, cc); } }
+  [[0, 1], [m - 1, m - 2]].forEach(([a, b]) => { for (let i = 0; i < n; i++) { const j = (i + 1) % n; fs.push([a * n + i, a * n + j, ax + a]); cols.push(colF(i, a)); cens.push([0, secs[b].y, secs[b].z]); } });
+  mesh(vs, fs, (f, i) => cols[i], [0, 0, 0], null, xf, cens);
+}
+function groundG(xs, zs, hf, cf, seed) { const r = rng(seed || 3); for (let j = 0; j < zs.length - 1; j++) for (let i = 0; i < xs.length - 1; i++) { const x0 = xs[i], x1 = xs[i + 1], z0 = zs[j], z1 = zs[j + 1], a = [x0, hf(x0, z0), z0], b = [x1, hf(x1, z0), z0], c = [x0, hf(x0, z1), z1], d = [x1, hf(x1, z1), z1], col = cf((x0 + x1) / 2, (z0 + z1) / 2), j1 = (r() - 0.5) * 16, j2 = (r() - 0.5) * 16; tri(a, c, b, [col[0] + j1, col[1] + j1, col[2] + j1], { terrain: 1 }); tri(b, c, d, [col[0] + j2, col[1] + j2, col[2] + j2], { terrain: 1 }); } }
+function shadow(x, z, rx, rz, face, y) { y = y == null ? 0.04 : y; const c = Math.cos(face || 0), s = Math.sin(face || 0), n = 10, col = [66, 76, 104]; const pt = (a) => { const lx = Math.cos(a) * rx, lz = Math.sin(a) * rz; return [x + lx * c + lz * s, y, z - lx * s + lz * c]; }; for (let i = 0; i < n; i++) tri([x, y, z], pt((i / n) * TAU), pt(((i + 1) / n) * TAU), col, { terrain: 1, bias: -3 }); }
+
+// ---------- scenery ----------
+function pine(x, z, s, col) { prism(x, 0, z, 0.24 * s, 1.6 * s, 6, [126, 78, 44], null, 0.2 * s); [[0.9, 1.9, 1.7], [2.1, 1.55, 1.5], [3.3, 1.15, 1.3]].forEach(([y, r, h], k) => cone(x, y * s, z, r * s, h * s, 7, mixc(col, [255, 255, 120], k * 0.1))); }
+function rock(x, z, s, col, seed) { const r = rng(seed || 1); mesh(ICO.v.map((v) => { const k = 0.75 + r() * 0.5; return [x + v[0] * s * k * 1.2, Math.max(0, v[1] * s * k * 0.8 + s * 0.4), z + v[2] * s * k]; }), ICO.f, (f, i) => mixc(col, [255, 255, 255], (i % 4) * 0.05), [x, s * 0.3, z]); }
+function mountain(x, z, r, h, col) { cone(x, 0, z, r, h, 7, col); cone(x, h * 0.72, z, r * 0.29, h * 0.28, 7, [250, 250, 255]); }
+function cloud(x, y, z, s) { ell(x, y, z, 7 * s, 2.4 * s, 3 * s, [255, 255, 255], null, null, 0); ell(x + 5 * s, y + 1 * s, z, 5 * s, 2.2 * s, 2.6 * s, [255, 250, 250], null); ell(x - 5 * s, y + 0.6 * s, z, 5 * s, 2 * s, 2.6 * s, [250, 255, 255], null); }
+function cactus(x, z, s) { const G = [34, 196, 112], G2 = [24, 160, 96]; prism(x, 0, z, 0.38 * s, 3.4 * s, 8, G, null, 0.3 * s); ico(x, 3.45 * s, z, 0.32 * s, G2, null, 1); box(x + 0.4 * s, 1.6 * s, z, 0.8 * s, 0.3 * s, 0.3 * s, G); prism(x + 0.75 * s, 1.5 * s, z, 0.17 * s, 1.3 * s, 6, G, null, 0.15 * s); ico(x + 0.75 * s, 2.85 * s, z, 0.2 * s, G2, null, 1); box(x - 0.4 * s, 2.2 * s, z, 0.8 * s, 0.3 * s, 0.3 * s, G); prism(x - 0.75 * s, 2.1 * s, z, 0.17 * s, 1.1 * s, 6, G, null, 0.15 * s); ico(x - 0.75 * s, 3.25 * s, z, 0.2 * s, G2, null, 1); ico(x, 3.8 * s, z, 0.14 * s, [255, 90, 160], null, 1); }
+function mesa(x, z, w, d, h, c1) { for (let k = 0; k < 4; k++) { const hh = h / 4, ww = w * (1 - 0.07 * k * (k % 2 ? 1 : 0.6)); box(x, hh * (k + 0.5), z, ww, hh, d * (1 - 0.05 * k), k % 2 ? mixc(c1, [255, 170, 90], 0.25) : c1); } box(x, h + 0.3, z, w * 0.82, 0.6, d * 0.8, mixc(c1, [255, 210, 150], 0.3)); }
+function palm(x, z, s, T, ph, y0) { y0 = y0 || 0; const sw = Math.sin(T * 1.2 + ph) * 0.06, xf = rotZ(0.1 + sw, [x, y0, z]); prism(x, y0, z, 0.3 * s, 6.5 * s, 6, [170, 120, 70], xf, 0.2 * s); for (let k = 0; k < 7; k++) { const a = (k / 7) * TAU, tp = xf([x, y0 + 6.5 * s, z]); tri(tp, [tp[0] + Math.cos(a) * 3.4 * s, tp[1] + 0.4 * s, tp[2] + Math.sin(a) * 3.4 * s], [tp[0] + Math.cos(a + 0.35) * 2.6 * s, tp[1] - 1.2 * s, tp[2] + Math.sin(a + 0.35) * 2.6 * s], k % 2 ? [40, 200, 100] : [20, 170, 90], { twoSided: 1 }); } }
+function kelp(x, y0, z, h, T, col) { const N = 6; let prev = null; for (let k = 0; k <= N; k++) { const y = y0 + (k * h) / N, sw = Math.sin(T * 1.5 + z * 0.3 + k * 0.6) * 0.14 * k, w = 0.15 * (1 - k / (N + 1)), a = [x + sw - w, y, z], b = [x + sw + w, y, z]; if (prev) { tri(prev[0], prev[1], a, col, { twoSided: 1 }); tri(prev[1], b, a, col, { twoSided: 1 }); } prev = [a, b]; } }
+function fish(x, y, z, face, s, col, T, ph) { const xf = comp(sc(s), rotY(face), mv(x, y, z)), sw = Math.sin(T * 9 + ph) * 0.25; ell(0, 0, 0, 0.26, 0.28, 0.66, col, xf); tri(xf([0, 0, -0.55]), xf([sw, 0.4, -1.1]), xf([sw, -0.4, -1.1]), mixc(col, [255, 255, 255], 0.25), { twoSided: 1, outl: 1 }); tri(xf([0, 0.24, 0.2]), xf([0, 0.62, -0.2]), xf([0, 0.22, -0.4]), mixc(col, [255, 255, 255], 0.25), { twoSided: 1, outl: 1 }); ell(0.17, 0.08, 0.4, 0.06, 0.06, 0.06, [20, 20, 40], xf); ell(-0.17, 0.08, 0.4, 0.06, 0.06, 0.06, [20, 20, 40], xf); }
+
+// ---------- people ----------
+function person(x, y, z, face, s, o) {
+  o = o || {}; const sk = o.skin || [236, 190, 150], sh = o.shirt || [214, 98, 86], pa = o.pants || [56, 78, 140], hr = o.hair || [70, 48, 36], pr = o.prone || 0, bd = o.bend || 0, bl = o.blink || 0, K = [22, 20, 30];
+  const shp = o.shape != null ? o.shape : (sh[0] + sh[1] * 2 + sh[2] * 3) % 4;
+  const base = comp(pr ? rotX(pr * Math.PI / 2, [0, 0.9, 0]) : null, sc(s), rotY(face), mv(x, y, z), o.xf), ub = bd ? comp(rotX(bd, [0, 0.84, 0]), base) : base, hb = o.look ? comp(rotY(o.look), ub) : ub;
+  const sw = Math.sin(o.walk || 0) * (o.amp == null ? 0.7 : o.amp), aL = o.armL != null ? o.armL : -sw * 0.8, aR = o.armR != null ? o.armR : sw * 0.8;
+  const leg = (px, col, ang) => { const f = comp(rotX(ang, [0, 0.84, 0]), base); prism(px, 0.06, 0, 0.09, 0.78, 6, col, f, 0.1); ell(px, 0.05, 0.05, 0.11, 0.06, 0.15, [52, 44, 52], f); return f; };
+  if (o.dress) { prism(0, 0.3, 0, 0.42, 0.78, 8, o.dress, base, 0.17); const f1 = comp(rotX(sw, [0, 0.3, 0]), base), f2 = comp(rotX(-sw, [0, 0.3, 0]), base); prism(-0.09, 0.05, 0, 0.06, 0.28, 6, sk, f1); prism(0.09, 0.05, 0, 0.06, 0.28, 6, sk, f2); }
+  else { leg(-0.11, pa, sw); const f = leg(0.11, pa, -sw); if (o.wrap) prism(0.11, 0.2, 0, 0.11, 0.3, 6, [255, 255, 255], f); }
+  const tc = o.dress ? o.dress : sh;
+  if (o.dress || shp === 2) ell(0, 1.2, 0, 0.29, 0.36, 0.21, tc, ub, null, 1); else if (shp === 1) prism(0, 0.86, 0, 0.3, 0.68, 6, tc, ub, 0.2); else if (shp === 3) prism(0, 0.86, 0, 0.25, 0.68, 8, tc, ub, 0.23); else box(0, 1.2, 0, 0.46, 0.68, 0.28, tc, ub);
+  const arm = (px, ang) => prism(px, 0.82, 0, 0.065, 0.66, 6, o.dress ? sk : sh, comp(rotX(ang, [0, 1.46, 0]), ub), 0.075);
+  arm(-0.31, aL); arm(0.31, aR);
+  const hL = rotX(aL, [0, 1.46, 0])([-0.31, 0.8, 0]), hR = rotX(aR, [0, 1.46, 0])([0.31, 0.8, 0]), gl = o.glove || sk;
+  ico(hL[0], hL[1], hL[2], 0.085, gl, ub); ico(hR[0], hR[1], hR[2], 0.085, gl, ub);
+  let fz = 0.2;
+  if (shp === 0) { ico(0, 1.7, 0, 0.22, sk, hb); ico(0, 1.84, -0.03, 0.22, hr, hb, 0.55); }
+  else if (shp === 1) { box(0, 1.7, 0, 0.4, 0.4, 0.4, sk, hb); box(0, 1.92, -0.02, 0.42, 0.1, 0.42, hr, hb); fz = 0.205; }
+  else if (shp === 2) { prism(0, 1.5, 0, 0.22, 0.4, 8, sk, hb); prism(0, 1.88, 0, 0.23, 0.06, 8, hr, hb); fz = 0.215; }
+  else { ico(0, 1.7, 0, 0.22, sk, hb, 1.2); ico(0, 1.88, -0.02, 0.2, hr, hb, 0.5); fz = 0.19; }
+  const ey = Math.max(0.1, 1 - bl * 0.9);
+  [-1, 1].forEach((d) => { ell(d * 0.085, 1.72, fz, 0.04, 0.05 * ey, 0.02, K, hb); if (bl < 0.5) ell(d * 0.085 + 0.012, 1.735, fz + 0.012, 0.013, 0.013, 0.008, [255, 255, 255], hb, { emissive: 1 }); });
+  if (o.mask) box(0, 1.72, fz + 0.02, 0.36, 0.2, 0.03, o.mask, hb);
+  if (o.hat) { prism(0, 1.94, 0, 0.3, 0.035, 8, o.hat, hb); prism(0, 1.96, 0, 0.2, 0.13, 8, o.hat, hb, 0.17); }
+  if (o.pack) box(0, 1.25, -0.26, 0.4, 0.52, 0.22, o.pack, ub);
+  if (o.phone) { box(hR[0], hR[1], hR[2], 0.09, 0.16, 0.03, [30, 30, 40], ub); box(hR[0], hR[1], hR[2] + 0.018, 0.075, 0.13, 0.01, [150, 235, 200], ub, { emissive: 1 }); }
+  if (o.can) { prism(hR[0], hR[1] - 0.1, hR[2], 0.05, 0.22, 6, [220, 50, 50], ub); prism(hR[0], hR[1] + 0.12, hR[2], 0.03, 0.05, 6, [250, 250, 250], ub); }
+  if (o.item) box(hR[0], hR[1] + 0.03, hR[2] + 0.06, 0.2, 0.03, 0.14, o.item, ub);
+  if (o.umbrella) { prism(hR[0], hR[1], hR[2], 0.02, 1.5, 4, [60, 60, 70], ub); cone(hR[0], hR[1] + 1.4, hR[2], 1.1, 0.5, 8, o.umbrella, ub); }
+  return { hL: ub(hL), hR: ub(hR) };
+}
+
+
+// ---------- animals ----------
+function bear(x, y, z, face, s, o) {
+  o = o || {}; const C = o.col || [164, 88, 38], D = mixc(C, [70, 30, 12], 0.5), L = [240, 190, 124], K = [26, 18, 20], ph = o.walk || 0, gal = o.gallop || 0, st = o.stand || 0, amp = gal ? 0.95 : 0.5;
+  const bob = gal ? Math.abs(Math.sin(ph)) * 0.14 : 0, base = comp(sc(s), rotY(face), mv(x, y + bob * s, z)), up = st ? comp(rotX(-st * 1.1, [0, 1.0, -0.72]), base) : base;
+  const fur = (k) => (f, i) => mixc(k, [255, 200, 130], (i % 5) * 0.03);
+  ell(0, 1.2, 0.05, 0.66, 0.64, 1.0, fur(C), up, null, 1); ell(0, 1.72, 0.45, 0.5, 0.38, 0.5, fur(D), up, null, 1); ell(0, 1.25, -0.75, 0.52, 0.5, 0.5, fur(C), up); ell(0, 1.3, -1.18, 0.12, 0.12, 0.12, D, up);
+  const hd = comp(rotX(o.dip || 0), rotY(o.look || 0), mv(0, 1.5, 1.3), up), m = o.mouth || 0;
+  ell(0, 0, 0, 0.4, 0.36, 0.42, fur(C), hd, null, 1); ell(0, -0.1, 0.42, 0.21, 0.17, 0.28, L, hd); ell(0, -0.03, 0.68, 0.085, 0.07, 0.06, K, hd);
+  [-1, 1].forEach((d) => { ell(d * 0.27, 0.3, -0.12, 0.13, 0.13, 0.07, D, hd); ell(d * 0.27, 0.3, -0.06, 0.07, 0.07, 0.03, L, hd); ell(d * 0.17, 0.1, 0.34, 0.05, 0.055, 0.04, K, hd); ell(d * 0.17 + 0.012, 0.12, 0.375, 0.016, 0.016, 0.016, [255, 255, 255], hd, { emissive: 1 }); ell(d * 0.17, 0.19 - m * 0.03, 0.3, 0.1, 0.04, 0.08, D, hd); });
+  if (m > 0.05) { ell(0, -0.2, 0.38, 0.16, 0.05 + 0.08 * m, 0.22, [200, 40, 70], hd); ell(0, -0.25 - 0.16 * m, 0.36, 0.16, 0.06, 0.24, L, hd); [-1, 1].forEach((d) => { tri(hd([d * 0.1 - 0.025, -0.2, 0.55]), hd([d * 0.1 + 0.025, -0.2, 0.55]), hd([d * 0.1, -0.2 - 0.11, 0.55]), [255, 255, 248], { twoSided: 1 }); tri(hd([d * 0.1 - 0.025, -0.25 - 0.16 * m, 0.52]), hd([d * 0.1 + 0.025, -0.25 - 0.16 * m, 0.52]), hd([d * 0.1, -0.14 - 0.16 * m, 0.52]), [255, 255, 248], { twoSided: 1 }); }); }
+  const leg = (lx, lz, ang, xb) => { const f = comp(rotX(ang, [lx, 1.0, lz]), xb); prism(lx, 0, lz, 0.2, 1.0, 6, fur(C), f, 0.3); ell(lx, 0.06, lz + 0.08, 0.23, 0.11, 0.3, D, f); [-1, 0, 1].forEach((c) => cone(lx + c * 0.09, 0.02, lz + 0.36, 0.03, 0.16, 4, [250, 246, 230], comp(rotX(1.35, [lx + c * 0.09, 0.06, lz + 0.36]), f))); };
+  const sA = gal ? Math.sin(ph) * amp : Math.sin(ph) * amp, sB = gal ? Math.sin(ph + 1.3) * amp : -Math.sin(ph) * amp;
+  leg(-0.38, 0.62, sA + st * 1.1, up); leg(0.38, 0.62, (gal ? sA : -sA) + st * 1.1, up); leg(-0.4, -0.72, sB, base); leg(0.4, -0.72, gal ? sB : -sB, base);
+}
+function shark(x, y, z, face, s, T, o) {
+  o = o || {}; const TOP = [48, 122, 222], TOP2 = [32, 96, 198], BEL = [248, 253, 255], FIN = [30, 88, 184], K = [18, 20, 30], base = comp(sc(s), rotY(face), mv(x, y, z));
+  const bend = (p) => [p[0] + Math.sin(T * 2.6 + p[2] * 0.8) * 0.3 * Math.pow(Math.max(0, (0.8 - p[2]) / 3.4), 1.5), p[1], p[2]], xf = comp(bend, base);
+  const secs = [{ z: -2.6, rx: 0.05, ry: 0.08, y: 0.15 }, { z: -2.0, rx: 0.14, ry: 0.2, y: 0.12 }, { z: -1.2, rx: 0.3, ry: 0.38, y: 0.05 }, { z: -0.3, rx: 0.52, ry: 0.58, y: 0 }, { z: 0.6, rx: 0.62, ry: 0.66, y: 0 }, { z: 1.4, rx: 0.5, ry: 0.5, y: -0.03 }, { z: 2.0, rx: 0.3, ry: 0.28, y: -0.08 }, { z: 2.45, rx: 0.1, ry: 0.1, y: -0.1 }], n = 10;
+  loft(secs, n, (i, k) => (Math.sin(((i + 0.5) / n) * TAU) > -0.05 ? (k % 2 ? TOP : TOP2) : BEL), xf);
+  const F3 = (a, b, c, col) => tri(xf(a), xf(b), xf(c), col, { twoSided: 1, outl: 1 });
+  F3([0, 0.62, 0.55], [0, 1.6, -0.3], [0, 0.58, -0.75], FIN); F3([0, 0.35, -1.6], [0, 0.7, -1.95], [0, 0.3, -1.95], FIN);
+  F3([0, 0.12, -2.45], [0, 1.55, -3.5], [0, 0.1, -2.0], FIN); F3([0, 0.08, -2.45], [0, -1.0, -3.1], [0, 0.05, -2.0], mixc(FIN, [255, 255, 255], 0.1));
+  [-1, 1].forEach((d) => { F3([d * 0.5, -0.2, 1.0], [d * 1.7, -0.8, -0.2], [d * 0.5, -0.1, 0.15], FIN); F3([d * 0.3, -0.55, -0.5], [d * 0.8, -0.9, -1.0], [d * 0.25, -0.45, -1.0], FIN); ell(d * 0.37, 0.2, 1.75, 0.07, 0.07, 0.07, K, xf); for (let k = 0; k < 4; k++) box(d * 0.575, 0.12, 0.75 + k * 0.14, 0.03, 0.34, 0.05, [24, 70, 170], xf); });
+  const m = o.mouth || 0;
+  if (m > 0.02) { ell(0, -0.26, 1.75, 0.26, 0.04 + 0.1 * m, 0.38, [170, 24, 56], xf); for (let k = -3; k <= 3; k++) { const zz = 1.95 - Math.abs(k) * 0.05; F3([k * 0.07 - 0.025, -0.2, zz], [k * 0.07 + 0.025, -0.2, zz], [k * 0.07, -0.2 - 0.13 * m - 0.05, zz], [255, 255, 250]); } } else box(0, -0.25, 1.8, 0.36, 0.02, 0.04, [20, 44, 100], xf);
+  return base;
+}
+function coilPose(cx, cz, N, T, rise) {
+  const P = []; for (let k = 9; k < N; k++) { const m = N - 1 - k, u = m / (N - 1), a = m * 0.2 + 0.6, R = 0.78 - 0.36 * u, y = 0.13 + 0.26 * u; P[k] = [cx + Math.cos(a) * R, y, cz + Math.sin(a) * R]; }
+  let q = P[9]; const sp = 0.07 + 0.05 * rise; for (let k = 9; k >= 1; k--) { const psi = (1 - k / 9) * (Math.PI / 2), nq = [q[0] + Math.sin(T * 1.7 - k * 0.35) * 0.012 * rise, q[1] + sp * Math.cos(psi), q[2] - sp * Math.sin(psi)]; P[k - 1] = nq; q = nq; } return P;
+}
+function slitherPose(N, x0, z0, hu) { const P = []; for (let k = 0; k < N; k++) { const q = hu - k * 0.1, u = k / (N - 1); P.push([x0 - q, 0.07 + 0.11 * Math.sin(Math.PI * Math.pow(u, 0.65)), z0 + 0.38 * Math.sin(q * 3.4 + 0.6)]); } return P; }
+function snakeDraw(P, N, T, o) {
+  o = o || {}; const A = [240, 180, 50], B = [128, 46, 24], CR = [252, 232, 170], rad = (k) => 0.05 + 0.11 * Math.sin(Math.PI * Math.pow(k / (N - 1), 0.65));
+  for (let k = N - 1; k >= 1; k--) { const p = P[k], r = rad(k); ell(p[0], p[1], p[2], r, r * 0.95, r * 1.1, k % 6 < 2 ? B : A, null); }
+  const p0 = P[0], d = sub(p0, P[1]), yaw = Math.atan2(d[0], d[2]), pitch = Math.atan2(d[1], Math.hypot(d[0], d[2])), hx = comp(rotX(-pitch), rotY(yaw), mv(p0[0], p0[1], p0[2]));
+  ell(0, 0, 0.06, 0.15, 0.1, 0.26, A, hx, null, 1); ell(0, 0.09, 0.0, 0.1, 0.03, 0.12, B, hx);
+  [-1, 1].forEach((dd) => { ell(dd * 0.11, 0.06, 0.12, 0.034, 0.034, 0.034, [255, 236, 40], hx, { emissive: 1 }); ell(dd * 0.125, 0.06, 0.135, 0.012, 0.03, 0.012, [10, 10, 10], hx); });
+  if (o.tongue) { const e = Math.max(0, Math.sin(T * 8)); if (e > 0.05) { const R = [255, 40, 80], y = -0.03; tri(hx([0.012, y, 0.3]), hx([-0.012, y, 0.3]), hx([0, y, 0.3 + 0.16 * e]), R, { twoSided: 1, emissive: 1 }); tri(hx([0, y, 0.3 + 0.14 * e]), hx([0.07, y, 0.3 + 0.3 * e]), hx([0.012, y, 0.3 + 0.17 * e]), R, { twoSided: 1, emissive: 1 }); tri(hx([0, y, 0.3 + 0.14 * e]), hx([-0.07, y, 0.3 + 0.3 * e]), hx([-0.012, y, 0.3 + 0.17 * e]), R, { twoSided: 1, emissive: 1 }); } }
+  const last = P[N - 1], dir = norm(sub(last, P[N - 2])); for (let j = 1; j <= 5; j++) { const jt = Math.sin(T * 70 + j) * 0.012 * (o.rattle || 0); ell(last[0] + dir[0] * j * 0.1 + jt, last[1] + 0.02 * j, last[2] + dir[2] * j * 0.1 + jt, 0.075 - j * 0.006, 0.075 - j * 0.006, 0.065, CR, null); }
+}
+
+// ---------- shading + drawing ----------
+function renderScene(ctx, cam, env) {
+  const SUN = norm(env.sun || [0.45, 0.6, -0.65]), AMB = env.amb || [0.64, 0.64, 0.72], out = [], SAT = 0.92 + ((env.sat || 1.1) - 1) * 0.2, N = TRI.length, NR = new Array(N), CN = new Array(N), FR = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    const t = TRI[i], [a, b, c] = t.p; let n = norm(cross(sub(b, a), sub(c, a))); const cen = scl(add3(add3(a, b), c), 1 / 3);
+    if (t.terrain || t.water) { if (n[1] < 0) n = scl(n, -1); } else if (t.center) { if (dot(n, sub(cen, t.center)) < 0) n = scl(n, -1); }
+    const toCam = sub(cam.pos, cen);
+    if (t.twoSided) { if (dot(n, toCam) < 0) n = scl(n, -1); FR[i] = 1; } else FR[i] = dot(n, toCam) > 0 ? 1 : 0;
+    NR[i] = n; CN[i] = cen;
+  }
+  for (let i = 0; i < N; i++) {
+    if (!FR[i]) continue; const t = TRI[i], [a, b, c] = t.p, n = NR[i];
+    let vp = [cam.view(a), cam.view(b), cam.view(c)]; if (vp.every((v) => v[2] < 0.5)) continue; const clipped = vp.some((v) => v[2] < 0.5); if (clipped) vp = clipNear(vp, 0.5); if (vp.length < 3) continue;
+    const pts = vp.map((v) => [W / 2 + (F * v[0]) / v[2], HH / 2 - (F * v[1]) / v[2]]), xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+    if (Math.max(...xs) < -30 || Math.min(...xs) > W + 30 || Math.max(...ys) < -30 || Math.min(...ys) > HH + 30) continue;
+    const depth = vp.reduce((q, v) => q + v[2], 0) / vp.length + (t.bias || 0); let col;
+    if (t.emissive) col = t.col; else { let lam = Math.max(0, dot(n, SUN)); if (CEL) lam = lam > 0.55 ? 1 : lam > 0.2 ? 0.55 : 0.12; col = [0, 1, 2].map((k) => t.col[k] * (AMB[k] * 0.78 + (env.sunCol[k] / 255) * lam * 0.62) * (env.bright || 1)); col = satc(col, SAT); if (t.snow) col = mixc(col, [245, 245, 252], t.snow); }
+    const fk = cl(Math.pow(wn(depth, env.fogNear || 40, env.fogFar || 260), 1.1) * 0.92) * (t.emissive ? 0.4 : 1); col = mixc(col, env.fog, fk);
+    let edges = null;
+    if (CEL && !t.terrain && !t.water && !clipped && pts.length === 3) { const nb = t.nb; for (let e = 0; e < 3; e++) { let on; if (nb) { const j = nb[e]; on = j < 0 || !FR[j] || dot(n, NR[j]) < 0.3; } else on = !!t.outl; if (on) (edges || (edges = [])).push(e); } }
+    out.push({ pts, depth, col, edges, lw: cl(170 / Math.max(depth, 1), 1.2, 5) });
+  }
+  out.sort((p, q) => q.depth - p.depth); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  for (const o of out) {
+    const fs = `rgb(${cl(o.col[0], 0, 255) | 0},${cl(o.col[1], 0, 255) | 0},${cl(o.col[2], 0, 255) | 0})`; ctx.fillStyle = fs; ctx.strokeStyle = fs; ctx.lineWidth = 0.9; ctx.beginPath(); o.pts.forEach((q, k) => (k ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (o.edges) { const oc = mixc(o.col, [12, 6, 36], 0.8); ctx.strokeStyle = `rgb(${oc[0] | 0},${oc[1] | 0},${oc[2] | 0})`; ctx.lineWidth = o.lw; o.edges.forEach((e) => { const A = o.pts[e], B = o.pts[(e + 1) % 3]; ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke(); }); }
+  }
+}
+function skyDraw(ctx, env) {
+  const hz = HH * 0.5, br = env.bright || 1, tp = satc(env.top, 0.82), bt2 = satc(env.bot, 0.85), g = ctx.createLinearGradient(0, 0, 0, hz + 160); g.addColorStop(0, `rgb(${tp.map((v) => cl(v * br, 0, 255) | 0)})`); g.addColorStop(1, `rgb(${bt2.map((v) => cl(v * br, 0, 255) | 0)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, W, HH);
+  const gl = ctx.createRadialGradient(W * 0.62, hz - 20, 20, W * 0.62, hz - 20, 420); gl.addColorStop(0, `rgba(${env.glow || '255,230,180'},.55)`); gl.addColorStop(1, `rgba(${env.glow || '255,230,180'},0)`); ctx.fillStyle = gl; ctx.fillRect(0, 0, W, HH);
+}
+
+// ---------- cut-corner tags (the on-screen labels) ----------
+function tag(c, x, y, text, o) {
+  o = o || {}; const size = o.size || 44, k = o.k == null ? 1 : o.k; if (k <= 0) return;
+  c.save(); c.font = `800 ${size}px ${FA}`; const w = c.measureText(text).width + size * 1.2, h = size * 1.7, ch = h * 0.3, fit = Math.min(1, (W - 40) / w); c.translate(x, y); c.scale(k * fit, k * fit);
+  const pts = [[-w / 2 + ch, -h / 2], [w / 2, -h / 2], [w / 2, h / 2 - ch], [w / 2 - ch, h / 2], [-w / 2, h / 2], [-w / 2, -h / 2 + ch]], path = (dx) => { c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(p[0] + dx, p[1] + dx) : c.moveTo(p[0] + dx, p[1] + dx))); c.closePath(); };
+  c.fillStyle = 'rgba(20,10,50,.45)'; path(6); c.fill(); c.fillStyle = o.bg || '#fff6a8'; path(0); c.fill();
+  c.fillStyle = 'rgba(255,255,255,.4)'; c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); c.lineTo(pts[1][0], pts[1][1]); c.lineTo(w / 2 - h * 0.6, 0); c.lineTo(-w / 2, 0); c.lineTo(pts[5][0], pts[5][1]); c.closePath(); c.fill();
+  c.fillStyle = o.col || '#2a1f4f'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, 0, 3); c.restore();
+}
+// ---------- live subtitles: word-by-word, current word highlighted ----------
+function subtitleChunks(text) {
+  const words = text.split(/\s+/).filter(Boolean), chunks = []; let cur = [];
+  words.forEach((w) => { cur.push(w); if (cur.length >= 4 || /[.,?!:;]$/.test(w)) { chunks.push(cur); cur = []; } }); if (cur.length) chunks.push(cur); return chunks;
+}
+function drawSubtitle(c, T, hi) {
+  const B = STORY.beats; let idx = -1;
+  for (let i = 0; i < B.length; i++) { const s = TL.starts[i], dur = VD ? VD[i] : Math.max(1, B[i].d - 0.4); if (T >= s - 0.02 && T <= s + dur + 0.25) { idx = i; break; } }
+  if (idx < 0) return;
+  const s = TL.starts[idx], dur = VD ? VD[idx] : Math.max(1, B[idx].d - 0.4), chunks = subtitleChunks(B[idx].vo), tot = chunks.reduce((a, ch) => a + ch.join(' ').length, 0) || 1; let t0 = s, ci = chunks.length - 1, wi = 0, cs = s, cd = dur;
+  for (let k = 0; k < chunks.length; k++) { const d = (dur * chunks[k].join(' ').length) / tot; if (T < t0 + d || k === chunks.length - 1) { ci = k; cs = t0; cd = d; break; } t0 += d; }
+  const ch = chunks[ci].map((w) => w.toUpperCase()), chars = ch.reduce((a, w) => a + w.length, 0) || 1; let acc = 0;
+  for (let k = 0; k < ch.length; k++) { if (T >= cs + (cd * acc) / chars) wi = k; acc += ch[k].length; }
+  let size = 60; c.save(); c.textBaseline = 'alphabetic'; c.textAlign = 'left'; c.direction = 'ltr';
+  const measure = () => { c.font = `900 ${size}px ${FA}`; return ch.map((w) => c.measureText(w).width); };
+  let ws = measure(), gap = size * 0.28, total = ws.reduce((a, b) => a + b, 0) + gap * (ch.length - 1);
+  if (total > W - 60) { size = Math.floor((size * (W - 60)) / total); ws = measure(); gap = size * 0.28; total = ws.reduce((a, b) => a + b, 0) + gap * (ch.length - 1); }
+  const y = 960, pop = 1 + 0.08 * Math.max(0, 1 - (T - cs) / 0.15); let x = W / 2 - total / 2;
+  c.translate(W / 2, y - size * 0.3); c.scale(pop, pop); c.translate(-W / 2, -(y - size * 0.3));
+  c.fillStyle = 'rgba(14,8,36,.5)'; const bw = total + 50, bh = size * 1.55, bx = W / 2 - bw / 2, by = y - size * 1.1; c.beginPath(); c.moveTo(bx + 16, by); c.lineTo(bx + bw, by); c.lineTo(bx + bw, by + bh - 16); c.lineTo(bx + bw - 16, by + bh); c.lineTo(bx, by + bh); c.lineTo(bx, by + 16); c.closePath(); c.fill();
+  ch.forEach((w, k) => { c.lineJoin = 'round'; c.lineWidth = size * 0.16; c.strokeStyle = '#140a30'; c.strokeText(w, x, y); c.fillStyle = k === wi ? hi : '#ffffff'; c.fillText(w, x, y); x += ws[k] + gap; });
+  c.restore();
+}
+
+// ---------- timeline: each beat stretches to its voice line ----------
+const VOICE_OFF = 0.1, VOICE_TAIL = 0.28, END_HOLD = 1.1, CUT = 0.14;
+let STORY = null, TL = null, VD = null, VAR = null;
+function buildTL(v) { const n = STORY.beats.length, E = [], R = [], starts = []; let t = 0; for (let i = 0; i < n; i++) { const d = STORY.beats[i].d, r = v && v[i] > 0 ? Math.max(1.6, VOICE_OFF + v[i] + VOICE_TAIL) : d; E.push(t); R.push(r); starts.push(t + VOICE_OFF); t += r; } return { E, R, starts, total: t + END_HOLD }; }
+function loadTopic(id) { STORY = STORIES.find((x) => x.id === id) || STORIES[0]; VD = null; TL = buildTL(null); const r = rng(hashS(STORY.id + new Date().toISOString().slice(0, 10))); VAR = { hi: ['#ffd23f', '#3ff2b4', '#ff8a3d'][Math.floor(r() * 3)] }; return { id: STORY.id, title: STORY.title, vo: STORY.beats.map((b) => b.vo), caption: STORY.caption, tags: STORY.tags, footer: STORY.footer, kind: STORY.kind || 'story', lang: 'en', tr: [] }; }
+function setVoiceDurations(v) { VD = v; TL = buildTL(v); return { starts: TL.starts, total: TL.total }; }
+
+// ---------- frame ----------
+let GRAIN = null;
+function explainer(ctx, T) {
+  const S = STORY; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.clearRect(0, 0, W, HH);
+  let i = S.beats.length - 1; for (let k = 0; k < S.beats.length; k++) if (T < TL.E[k] + TL.R[k]) { i = k; break; }
+  const bt = T - TL.E[i], p = cl(bt / TL.R[i]), b = S.beats[i];
+  TRI = (S._static || (S._static = (TRI = [], S.build(), TRI))).slice();
+  const env = S.env(i, T, p, TL), cv = S.cam(i, p, T, TL);
+  CAMP = cv.pos; S.dyn(T, i, p, TL);
+  const sh = bt < 0.25 && i > 0 ? Math.sin(bt * 90) * (1 - bt / 0.25) * 0.12 : 0, cam = lookCam([cv.pos[0] + sh, cv.pos[1] + sh * 0.6, cv.pos[2]], cv.tg);
+  skyDraw(ctx, env); renderScene(ctx, cam, env);
+  if (S.post) S.post(ctx, T, i, p, TL);
+  // overlays
+  (b.tags || []).forEach((tg) => { const a = tg.t[0], e = tg.t[1], k = bk(wn(p, a, a + 0.1)) * (1 - wn(p, e - 0.08, e)); const txt = typeof tg.text === 'function' ? tg.text(p) : tg.text; tag(ctx, W / 2, tg.y || 330, txt, { size: tg.size || 76, k, bg: tg.bg, col: tg.col }); });
+  drawSubtitle(ctx, T, VAR.hi);
+  if (i > 0 && bt < CUT) { ctx.fillStyle = `rgba(255,255,255,${0.55 * (1 - bt / CUT)})`; ctx.fillRect(0, 0, W, HH); }
+  // finish: light vignette + a little film grain
+  const g = ctx.createRadialGradient(W / 2, HH / 2, 420, W / 2, HH / 2, 900); g.addColorStop(0, 'rgba(10,5,30,0)'); g.addColorStop(1, 'rgba(10,5,30,.28)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, HH);
+  if (!GRAIN) { GRAIN = document.createElement('canvas'); GRAIN.width = GRAIN.height = 128; const x = GRAIN.getContext('2d'), im = x.createImageData(128, 128), d = im.data, q = rng(9); for (let k = 0; k < d.length; k += 4) { const v = (q() * 255) | 0; d[k] = d[k + 1] = d[k + 2] = v; d[k + 3] = 255; } x.putImageData(im, 0, 0); GRAIN.pat = ctx.createPattern(GRAIN, 'repeat'); }
+  const f = Math.floor(T * 12); ctx.save(); ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = 0.1; ctx.translate((f * 37) % 128, (f * 91) % 128); ctx.fillStyle = GRAIN.pat; ctx.fillRect(-128, -128, W + 256, HH + 256); ctx.restore();
+}
+
+// =====================================================================
+//  STORY 1: Brown bear encounter (forest trail)
+// =====================================================================
+const BZ0 = (p) => lerp(-8, 52, p);
+const B1S = (bt) => { const run = Math.max(0, bt - 0.5), zh = -5.2 * run, zb = Math.max(zh + 2.7, 9 - (bt < 0.25 ? 0 : 9.2 * (bt - 0.25))); return { zh, zb }; };
+const hikerO = (o) => Object.assign({ shirt: [255, 96, 56], pants: [36, 66, 170], pack: [255, 200, 36], hat: [255, 255, 255] }, o);
+const BEAR = {
+  id: 'bear', title: 'Bear Encounter',
+  caption: 'What to do if you meet a brown bear. Save this for your next hike! (Black bear? The advice differs: fight back instead of playing dead.)',
+  tags: '#bear #survival #hiking #wildlife #safety #shorts', footer: 'General safety info. Advice differs by species and region, so follow your local park or wildlife authority.',
+  beats: [
+    { d: 5.4, vo: "A bear runs 35 miles per hour. Here's what to do if you meet one.", tags: [{ t: [0, 0.95], text: '35 MPH', y: 330, size: 96, bg: '#ffd23f' }] },
+    { d: 5.4, vo: "First, never run. You can't outrun a bear, and running can trigger a chase.", tags: [{ t: [0.1, 0.95], text: "DON'T RUN", y: 330, size: 88, bg: '#ff4d4d', col: '#ffffff' }] },
+    { d: 4.6, vo: 'Stay calm, talk in a low voice, and back away slowly.', tags: [{ t: [0.1, 0.95], text: 'BACK AWAY SLOWLY', y: 330, size: 64, bg: '#7cf2c0' }] },
+    { d: 5.6, vo: 'If it charges, use bear spray. Many charges are bluffs, so hold your ground.', tags: [{ t: [0.1, 0.95], text: 'BEAR SPRAY', y: 330, size: 88, bg: '#ff8a3d' }] },
+    { d: 7.2, vo: "If a brown bear makes contact, play dead, stomach down, neck covered. That's how you beat a bear that outruns you.", tags: [{ t: [0.1, 0.95], text: 'PLAY DEAD', y: 330, size: 88, bg: '#b58cff' }] },
+  ],
+  build() {
+    const xs = [-70, -56, -44, -34, -26, -19, -13, -8, -3, 3, 8, 13, 19, 26, 34, 44, 56, 70], zs = []; for (let z = -40; z <= 60; z += 6) zs.push(z); for (let z = 72; z <= 160; z += 16) zs.push(z);
+    groundG(xs, zs, (x, z) => (Math.abs(x) > 16 ? Math.sin(x * 0.13) * Math.cos(z * 0.09) * 1.2 + (Math.abs(x) - 16) * 0.07 : 0), (x, z) => (Math.abs(x) < 3.5 ? [226, 164, 92] : (Math.floor(x / 8) + Math.floor(z / 8)) & 1 ? [74, 210, 94] : [56, 190, 86]), 11);
+    const r = rng(5), greens = [[30, 160, 90], [22, 178, 116], [66, 186, 74], [18, 142, 104], [255, 176, 40]];
+    for (let k = 0; k < 70; k++) { const side = r() < 0.5 ? -1 : 1, x = side * (6 + r() * 42), z = -30 + r() * 150; pine(x, z, 0.9 + r() * 0.7, greens[k % 6 === 5 ? 4 : Math.floor(r() * 4)]); }
+    const fc = [[255, 80, 130], [255, 224, 60], [176, 96, 255], [255, 255, 255]]; for (let k = 0; k < 90; k++) { const side = r() < 0.5 ? -1 : 1; ico(side * (3.8 + r() * 12), 0.16, -30 + r() * 80, 0.18, fc[k % 4], null, 0.8); }
+    [[-8, 12, 0.9], [9, 30, 1.1], [-12, 40, 1.3], [7, -10, 0.8], [14, 6, 1]].forEach(([x, z, s], k) => rock(x, z, s, [150, 150, 190], k + 3));
+    prism(0, 0, 0, 0.38, 5, 7, [140, 84, 46], comp(rotZ(Math.PI / 2), mv(-4, 0.4, 26)));
+    [[-90, 200, 60, 40, [112, 114, 236]], [-30, 225, 52, 36, [150, 108, 230]], [48, 215, 72, 46, [100, 130, 240]], [112, 195, 50, 32, [160, 120, 236]]].forEach(([x, z, r2, h, c]) => mountain(x, z, r2, h, c));
+    cloud(-50, 70, 180, 1.3); cloud(40, 82, 200, 1.5); cloud(115, 62, 175, 1.1);
+  },
+  env(i) {
+    const base = { top: [34, 132, 255], bot: [255, 238, 196], fog: [196, 232, 240], sunCol: [255, 240, 205], glow: '255,238,190', sat: 1.3, amb: [0.68, 0.68, 0.76], bright: 1.06, fogNear: 50, fogFar: 230 };
+    if (i === 3) return Object.assign({}, base, { top: [120, 92, 240], bot: [255, 178, 120], fog: [255, 206, 170], sunCol: [255, 196, 140], glow: '255,190,120' });
+    if (i === 4) return Object.assign({}, base, { top: [150, 80, 220], bot: [255, 150, 120], fog: [255, 190, 170], sunCol: [255, 176, 128], glow: '255,160,110' });
+    return base;
+  },
+  cam(i, p, T, TL) {
+    const bt = T - TL.E[i];
+    if (i === 0) { const z = BZ0(p); return { pos: [9.5, 2.3, z - 2], tg: [0, 1.1, z + 1.6] }; }
+    if (i === 1) { const s = B1S(bt); return { pos: [lerp(1.6, -1.6, p), 1.5, s.zh - 8.2], tg: [0, 1.3, s.zh + 3.5] }; }
+    if (i === 2) { const zh = -0.85 * bt; return { pos: [1.7, 1.8, zh - 3.4], tg: [0, 1.6, 8.2] }; }
+    if (i === 3) return { pos: [lerp(-3, -2, p), 1.8, -3.3], tg: [0.4, 1.3, 7.5] };
+    return { pos: [lerp(4.2, 3.2, p), lerp(0.8, 1.3, p), 6.5], tg: [0, 0.8, 1.8] };
+  },
+  dyn(T, i, p, TL) {
+    const bt = T - TL.E[i], H = (x, y, z, f, o) => person(x, y, z, f, 1, hikerO(o));
+    if (i === 0) { const z = BZ0(p); bear(0.2, 0, z, 0, 0.78, { gallop: 1, walk: T * 12 }); shadow(0.2, z, 1, 1.6, 0); for (let k = 0; k < 7; k++) ico(0.2 + (k % 2 ? 0.5 : -0.5) * (0.3 + k * 0.07), 0.3 + k * 0.1, z - 1.7 - k * 0.85, 0.25 + k * 0.08, [238, 212, 170], null, 0.8); }
+    if (i === 1) { const s = B1S(bt), run = bt > 0.5, g = s.zb > s.zh + 3.2; H(0.5, 0, s.zh, lerp(0, Math.PI, ez(wn(bt, 0.12, 0.5))), { walk: T * 11, amp: run ? 1 : 0 }); shadow(0.5, s.zh, 0.5, 0.5, 0); bear(-0.3, 0, s.zb, Math.PI, 0.78, { gallop: g ? 1 : 0, walk: g ? T * 12 : T * 6, mouth: g ? 0.5 : 0.2 }); shadow(-0.3, s.zb, 1, 1.6, Math.PI); }
+    if (i === 2) {
+      const zh = -0.85 * bt; H(0.2, 0, zh, 0, { walk: T * 2.6, amp: 0.3, armL: -0.55, armR: -0.55 }); shadow(0.2, zh, 0.5, 0.5, 0);
+      const st = ez(wn(p, 0.1, 0.4)) * (1 - ez(wn(p, 0.6, 0.8))), mvz = ez(wn(p, 0.8, 1)), zb = 8 + 8 * mvz, fc = lerp(Math.PI, 0.5, ez(wn(p, 0.7, 0.9)));
+      bear(0.3, 0, zb, fc, 0.78, { stand: st, walk: mvz > 0 ? T * 4 : 0, look: Math.sin(T * 1.3) * 0.25 }); shadow(0.3, zb, 1, 1.5, fc);
+    }
+    if (i === 3) {
+      H(0, 0, 0, 0, { armR: lerp(0, -1.55, ez(wn(p, 0.12, 0.28))), can: 1 }); shadow(0, 0, 0.5, 0.5, 0);
+      const ch = ez(wn(p, 0, 0.5)), fl = wn(p, 0.64, 1), zb = lerp(15, 6.2, ch) + 30 * fl * fl, fc = lerp(Math.PI, 0, ez(wn(p, 0.55, 0.74)));
+      bear(0, 0, zb, fc, 0.78, { gallop: p < 0.5 || p > 0.7 ? 1 : 0, walk: T * 12, mouth: p < 0.5 ? 0.55 + 0.45 * Math.sin(T * 14) : 0 }); shadow(0, zb, 1, 1.6, fc);
+      const gr = ez(wn(p, 0.4, 0.8)), fade = 1 - wn(p, 0.86, 1); if (p > 0.4 && fade > 0) for (let k = 0; k < 14; k++) { const u = k / 14; ico(Math.sin(k * 2.1 + T * 5) * 0.25 * u + 0.31, 1.4 + Math.cos(k * 1.7 + T * 4) * 0.2 * u, 0.9 + u * 5.2 * gr, (0.25 + u * 0.9 * gr) * fade, mixc([255, 160, 50], [255, 90, 40], u), null, 0.9, { emissive: 1 }); }
+    }
+    if (i === 4) {
+      H(0, -0.75, 0, Math.PI, { prone: 1, armL: -2.5, armR: -2.5 }); shadow(0, 0, 0.6, 1.1, 0);
+      const zb = p < 0.5 ? lerp(12, 2.4, ez(wn(p, 0, 0.45))) : 2.4 + 12 * ez(wn(p, 0.72, 1)), fc = lerp(Math.PI, 0.4, ez(wn(p, 0.62, 0.8))), mvg = p < 0.45 || p > 0.7;
+      bear(0, 0, zb, fc, 0.78, { walk: mvg ? T * 4 : 0, dip: 0.55 * wn(p, 0.42, 0.55) * (1 - wn(p, 0.62, 0.72)) }); shadow(0, zb, 1, 1.5, fc);
+    }
+  },
+  post(ctx, T, i) { if (i !== 0) return; ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 4; ctx.lineCap = 'round'; for (let k = 0; k < 10; k++) { const y = 420 + k * 70 + (k % 3) * 18, x = (((T * 1500 + k * 173) % 1200) - 240); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 240, y); ctx.stroke(); } ctx.restore(); },
+  sfx: [[['forest', 0, 6], ['growl', 0.45], ['steps', 0.2]], [['twig', 0.25], ['growl', 0.1], ['heart', 0.2]], [['heart', 0.05], ['forest', 0, 4.6]], [['growl', 0.05], ['spray', 0.45], ['heart', 0.1]], [['thud', 0.1], ['forest', 0, 5.8], ['chime', 0.8, 'D5']]],
+  root: ['C3', 'G3', 'E4'],
+};
+
+// =====================================================================
+//  STORY 2: Shark (underwater, then the beach)
+// =====================================================================
+const FL = (x, z) => (z < 0 ? 1.2 - 0.04 * z + Math.sin(x * 0.2) * 0.1 : Math.max(-13, 1.2 - 0.3 * z) + (z > 6 ? Math.sin(x * 0.15 + z * 0.1) * 0.25 : 0));
+const KELPS = (() => { const r = rng(21), a = []; for (let k = 0; k < 22; k++) a.push([-50 + r() * 100, 12 + r() * 70, 3 + r() * 3]); return a; })();
+const SHARK = {
+  id: 'shark', title: 'Shark Encounter',
+  caption: 'What to do if a shark finds you in the water. Save this before your next beach trip! 🦈',
+  tags: '#shark #survival #ocean #beach #safety #shorts', footer: 'General safety info. Always follow lifeguard and local authority guidance.',
+  beats: [
+    { d: 6.4, vo: "Unprovoked shark bites are rare, fewer than 100 a year. Here's what to do if one finds you.", tags: [{ t: [0, 0.95], text: 'UNDER 100 BITES / YEAR', y: 330, size: 60, bg: '#ffd23f' }] },
+    { d: 4.8, vo: 'Stay calm and stop splashing. Splashing looks like a struggling fish.', tags: [{ t: [0.1, 0.95], text: 'STOP SPLASHING', y: 330, size: 80, bg: '#ff4d4d', col: '#ffffff' }] },
+    { d: 5.2, vo: 'Keep your eyes on it, and swim back to shore slowly and smoothly.', tags: [{ t: [0.1, 0.95], text: 'SWIM SMOOTHLY', y: 330, size: 80, bg: '#7cf2c0' }] },
+    { d: 5.6, vo: 'If it attacks, hit its sensitive spots: the eyes, the nose, and the gills.', tags: [{ t: [0.1, 0.95], text: 'EYES · NOSE · GILLS', y: 330, size: 64, bg: '#ff8a3d' }] },
+    { d: 6.4, vo: "Then get out of the water fast and get medical help. Shark bites are rare, but now you're ready.", tags: [{ t: [0.05, 0.5], text: 'GET OUT OF THE WATER', y: 330, size: 56, bg: '#ff4d4d', col: '#ffffff' }, { t: [0.55, 1], text: 'GET MEDICAL HELP', y: 330, size: 64, bg: '#7cf2c0' }] },
+  ],
+  build() {
+    const xs = []; for (let x = -84; x <= 84; x += 12) xs.push(x); const zs = []; for (let z = -36; z <= 60; z += 6) zs.push(z); for (let z = 72; z <= 120; z += 12) zs.push(z);
+    groundG(xs, zs, FL, (x, z) => (z < 4 ? [255, 228, 150] : z < 12 ? mixc([240, 214, 150], [255, 226, 140], wn(z, 4, 12)) : mixc([255, 214, 120], [60, 190, 200], cl((z - 12) / 70))), 17);
+    const r = rng(77), cols = [[255, 90, 140], [255, 170, 40], [170, 90, 255], [60, 230, 190]];
+    for (let k = 0; k < 46; k++) { const x = -60 + r() * 120, z = 8 + r() * 90, y = FL(x, z), t = k % 4, c = cols[Math.floor(r() * 4)]; if (t === 0) { for (let q = 0; q < 5; q++) prism(x + (q - 2) * 0.35, y, z + ((q * 3) % 2) * 0.3, 0.12, 1.2 + r() * 1.4, 5, c, null, 0.06); } else if (t === 1) ico(x, y + 0.5, z, 0.9 + r() * 0.6, c, null, 0.6); else if (t === 2) { cone(x, y, z, 0.9, 1.8 + r(), 6, c); cone(x + 0.8, y, z + 0.3, 0.6, 1.2, 6, mixc(c, [255, 255, 255], 0.2)); } else { ico(x, y + 0.3, z, 0.7, c, null, 0.5); ico(x + 0.7, y + 0.2, z + 0.2, 0.5, mixc(c, [255, 255, 200], 0.3), null, 0.5); } }
+    for (let k = 0; k < 18; k++) rock(-70 + r() * 140, 10 + r() * 90, 0.8 + r() * 1.6, [120, 140, 190], k + 9);
+    box(-14, 2.4, -4, 2.6, 0.2, 2.6, [255, 255, 255]); [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b]) => prism(-14 + a * 1.1, 1.3, -4 + b * 1.1, 0.1, 2.2, 5, [250, 250, 250])); box(-14, 3.8, -4, 2.8, 1.8, 2.8, [255, 250, 245]); box(-14, 4.9, -4, 3.4, 0.4, 3.4, [255, 70, 80]); box(-14, 4.1, -5.45, 1.6, 0.8, 0.1, [130, 220, 255], null, { emissive: 1 });
+    [[-22, -8, 1], [20, -9, 1.15], [34, -6, 1]].forEach(([x, z, s]) => { cone(x, FL(x, z) + 3.2 * s, z, 2.2 * s, 1.3 * s, 8, [255, 70, 90]); prism(x, FL(x, z), z, 0.06, 3.3 * s, 4, [250, 250, 250]); });
+  },
+  env(i) { if (i === 4) return { top: [34, 140, 255], bot: [206, 244, 255], fog: [204, 238, 252], sunCol: [255, 246, 220], glow: '255,246,210', sat: 1.3, amb: [0.7, 0.7, 0.78], bright: 1.06, fogNear: 60, fogFar: 300 }; return { top: [4, 104, 214], bot: [50, 220, 232], fog: [30, 168, 208], sunCol: [255, 255, 235], glow: '210,255,255', sat: 1.3, amb: [0.7, 0.8, 0.86], bright: 1.08, fogNear: 14, fogFar: 100 }; },
+  cam(i, p, T, TL) {
+    if (i === 0) { const q = ez(p * 0.94); return { pos: [lerp(1, -0.5, p), -5.9, lerp(9.5, 10.5, p)], tg: [lerp(26, -4, q), -4.7, lerp(44, 17, q)] }; }
+    if (i === 1) return { pos: [-6.5, -2.6, 6.5], tg: [1, -1.9, 14] };
+    if (i === 2) return { pos: [-9, -2.8, lerp(5, 3, p)], tg: [2, -2.3, 13] };
+    if (i === 3) return { pos: [lerp(-3, -4, p), -1.9, 22], tg: [1.6, -2, 13.4] };
+    return { pos: [lerp(2, 0, p), 1.9, -5.5], tg: [0, 1.3, 5] };
+  },
+  dyn(T, i, p, TL) {
+    const bt = T - TL.E[i], under = i < 4;
+    for (let z = 2; z < 120; z += 7) for (let x = -84; x < 84; x += 7) {
+      const zc = z + 3.5, fy = FL(x + 3.5, zc); if (fy > -0.05) continue;
+      const w = (xx, zz) => Math.sin(xx * 0.3 + zz * 0.22 + T * 1.5) * 0.18, a = [x, w(x, z), z], b = [x + 7, w(x + 7, z), z], c = [x, w(x, z + 7), z + 7], d = [x + 7, w(x + 7, z + 7), z + 7];
+      if (under) { const s = 0.5 + 0.5 * Math.sin(x * 0.5 + zc * 0.4 + T * 2), col = mixc([110, 226, 246], [236, 255, 255], s); tri(a, c, b, col, { twoSided: 1, emissive: 1, bias: 30 }); tri(b, c, d, mixc(col, [255, 255, 255], 0.2), { twoSided: 1, emissive: 1, bias: 30 }); }
+      else { const col = mixc([86, 236, 220], [18, 132, 206], cl(-fy / 6)); tri(a, c, b, col, { water: 1, bias: -0.4 }); tri(b, c, d, mixc(col, [255, 255, 255], 0.14), { water: 1, bias: -0.4 }); }
+    }
+    if (under) {
+      KELPS.forEach(([x, z, h], k) => kelp(x, FL(x, z), z, h, T, k % 2 ? [40, 220, 110] : [90, 230, 70]));
+      const fc = [[255, 206, 40], [255, 100, 160], [80, 255, 200]];
+      for (let s = 0; s < 3; s++) for (let f = 0; f < 8; f++) { const ang = T * 0.4 * (s % 2 ? 1 : -1) + s * 2.1, cx = -22 + s * 22, cz = 46 + s * 6, ox = (f % 4) * 1.1, oy = (f >> 2) * 0.9, x = cx + Math.cos(ang) * 14 + ox, z = cz + Math.sin(ang) * 9, vx = -Math.sin(ang) * (s % 2 ? 1 : -1), vz = Math.cos(ang) * (s % 2 ? 1 : -1); fish(x, -5 + s * 1.2 + oy + Math.sin(T * 2 + f) * 0.15, z, Math.atan2(vx, vz), 0.55, fc[s], T, f); }
+      for (let k = 0; k < 12; k++) ico(-6 + ((k * 7) % 13), -6 + ((T * 0.9 + k * 0.37) % 1) * 7, 10 + ((k * 5) % 17), 0.1, [255, 255, 255], null, 1, { emissive: 1 });
+    }
+    const sw = { x: 0, y: -1.15, z: 13 };
+    if (i === 0) { const q = ez(p), pos = [lerp(30, -6, q), -4.7 + Math.sin(T) * 0.15, lerp(48, 15.5, q)]; shark(pos[0], pos[1], pos[2], Math.atan2(-36, -32.5), 1.25, T, { mouth: 0 }); for (let k = 1; k < 6; k++) ico(pos[0] + 2.2 * k, pos[1] + 0.2, pos[2] + 2 * k, 0.12, [255, 255, 255], null, 1, { emissive: 1 }); }
+    if (i === 1) {
+      const q = ez(p), sp = [lerp(17, 9, q), lerp(-4.8, -3.6, q), lerp(30, 22.5, q)];
+      person(sw.x, sw.y, sw.z, Math.PI, 1, { prone: 1, walk: T * 14, amp: 1.2, armL: Math.sin(T * 14) * 2, armR: Math.cos(T * 14) * 2, shirt: [255, 96, 56], pants: [36, 66, 170] });
+      for (let k = 0; k < 14; k++) ico(sw.x + Math.sin(k * 2.3 + T * 6) * 1.1, sw.y + 0.6 + (((T * 1.6 + k * 0.29) % 1) * 1.1), sw.z + Math.cos(k * 1.7 + T * 5) * 1.1, 0.12 + (k % 3) * 0.04, [255, 255, 255], null, 1, { emissive: 1 });
+      shark(sp[0], sp[1], sp[2], Math.atan2(sw.x - sp[0], sw.z - sp[2]), 1.25, T, {});
+    }
+    if (i === 2) {
+      const q = ez(p), z = lerp(13, 6.5, q), a = T * 0.6, sp = [8 + Math.cos(a) * 5, -4.2, 22 + Math.sin(a) * 4];
+      person(0, sw.y, z, Math.PI, 1, { prone: 1, walk: T * 3, amp: 0.3, armL: Math.sin(T * 2) * 0.9, armR: -Math.sin(T * 2) * 0.9, shirt: [255, 96, 56], pants: [36, 66, 170] });
+      shark(sp[0], sp[1], sp[2], Math.atan2(-Math.sin(a) * 5 * 0.6, Math.cos(a) * 4 * 0.6), 1.25, T, {});
+    }
+    if (i === 3) {
+      const fl = wn(p, 0.58, 1), f0 = Math.atan2(-3.5, -2.5), sp = [3.5 + 10 * fl * fl, -2.2, 14.5 + 8 * fl * fl], fc = lerp(f0, Math.atan2(1, 0.7), ez(wn(p, 0.5, 0.7)));
+      person(0, -1.7, 12, Math.atan2(3.5, 2.5), 1, { walk: T * 5, amp: 0.4, armR: -1.5 + Math.sin(T * 13) * 0.6, armL: -0.6, shirt: [255, 96, 56], pants: [36, 66, 170] });
+      const sb = shark(sp[0], sp[1], sp[2], fc, 1.25, T, { mouth: 0.5 * (1 - wn(p, 0.4, 0.6)) });
+      if (p < 0.62) [[0, -0.1, 2.5], [0.37, 0.2, 1.75], [0.575, 0.12, 1.05]].forEach((lp, k) => { const w = sb(lp), pop = bk(wn(p, 0.12 + k * 0.12, 0.22 + k * 0.12)); ico(w[0], w[1], w[2], (0.2 + 0.06 * Math.sin(T * 10 + k)) * pop, [255, 240, 60], null, 1, { emissive: 1, bias: -4 }); });
+    }
+    if (i === 4) {
+      const z = lerp(8, -2, ez(p)), y = Math.max(FL(0, z), -1);
+      person(0, y, z, Math.PI, 1, { walk: T * 12, amp: 1, armL: -0.9, armR: 0.9, shirt: [255, 96, 56], pants: [36, 66, 170] });
+      const fx = -6 + Math.sin(T * 0.8) * 3; tri([fx, 1.0, 30], [fx, -0.2, 31.3], [fx, -0.2, 29.6], [30, 88, 184], { twoSided: 1 }); for (let k = 0; k < 4; k++) ico(fx, 0.05, 28.6 - k * 0.9, 0.3 + k * 0.1, [255, 255, 255], null, 0.3);
+      [-22, -10, 14, 22].forEach((x, k) => palm(x, -10 + (k % 2) * 3, 1.1, T, k, 1.5));
+      [[-4, -1.5, [70, 200, 120]], [5, -2.5, [255, 200, 40]], [3, 0.5, [255, 90, 150]]].forEach(([x, z, c], k) => person(x, FL(x, z), z, Math.PI * 0.1, 1, { shirt: c, pants: [250, 250, 250], armR: k === 0 ? -2.6 + Math.sin(T * 8) * 0.4 : null }));
+      cloud(-40, 52, 150, 1.2); cloud(50, 60, 170, 1.4);
+    }
+  },
+  post(ctx, T, i) { if (i >= 4) return; ctx.save(); ctx.globalCompositeOperation = 'screen'; for (let k = 0; k < 6; k++) { const x0 = -100 + k * 170 + Math.sin(T * 0.5 + k) * 40, w = 36 + (k % 3) * 18, a = 0.1 + 0.05 * Math.sin(T * 0.8 + k * 2), g = ctx.createLinearGradient(0, 0, 0, HH * 0.8); g.addColorStop(0, `rgba(210,255,255,${a * 2})`); g.addColorStop(1, 'rgba(210,255,255,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0 + w, 0); ctx.lineTo(x0 + w + 260, HH * 0.8); ctx.lineTo(x0 + 260 - w * 0.4, HH * 0.8); ctx.closePath(); ctx.fill(); } ctx.restore(); },
+  sfx: [[['uw', 0, 6.4], ['jaws', 0.2]], [['uw', 0, 4.8], ['bubbles', 0.1], ['jaws', 0.5]], [['uw', 0, 5.2], ['ping', 0.2]], [['jaws', 0.05], ['thud', 0.5], ['bubbles', 0.6]], [['waves', 0, 4.6], ['gulls', 0.2], ['chime', 0.75, 'D5']]],
+  root: ['E2', 'B2', 'G3'],
+};
+
+// =====================================================================
+//  STORY 3: Snake (desert trail)
+// =====================================================================
+const SN = [0.6, 0, 9], NS = 44;
+const SNAKE = {
+  id: 'snake', title: 'Snake Encounter',
+  caption: 'What to do if you meet a snake, and what to do if you get bitten. Save this! 🐍',
+  tags: '#snake #survival #hiking #wildlife #firstaid #shorts', footer: 'General safety info. Snake species and treatment differ by region, so follow local emergency guidance.',
+  beats: [
+    { d: 5.4, vo: 'Snakebites kill around 100,000 people a year. Here is how to stay safe.', tags: [{ t: [0, 0.95], text: '~100,000 / YEAR', y: 330, size: 70, bg: '#ffd23f' }] },
+    { d: 5, vo: 'If you see a snake, freeze. They strike when they feel cornered.', tags: [{ t: [0.1, 0.95], text: 'FREEZE', y: 330, size: 96, bg: '#ff8a3d' }] },
+    { d: 5.2, vo: 'Step back slowly and give it space. Never try to catch or kill it.', tags: [{ t: [0.1, 0.95], text: 'GIVE IT SPACE', y: 330, size: 78, bg: '#7cf2c0' }] },
+    { d: 5.4, vo: 'If you are bitten, stay calm, keep the limb still, and call emergency services.', tags: [{ t: [0.05, 0.5], text: 'STAY CALM & STILL', y: 330, size: 66, bg: '#7cf2c0' }, { t: [0.55, 1], text: 'CALL EMERGENCY', y: 330, size: 70, bg: '#ff4d4d', col: '#ffffff' }] },
+    { d: 7.2, vo: "Don't cut the wound, suck out venom, or use ice. Get to a hospital fast. That's how you survive a snakebite.", tags: [{ t: [0.05, 0.55], text: 'NO CUTTING · SUCKING · ICE', y: 330, size: 52, bg: '#ff4d4d', col: '#ffffff' }, { t: [0.6, 1], text: 'GET TO A HOSPITAL', y: 330, size: 64, bg: '#7cf2c0' }] },
+  ],
+  build() {
+    const xs = [-70, -56, -44, -34, -26, -19, -13, -8, -3, 3, 8, 13, 19, 26, 34, 44, 56, 70], zs = []; for (let z = -40; z <= 60; z += 6) zs.push(z); for (let z = 72; z <= 160; z += 16) zs.push(z);
+    groundG(xs, zs, () => 0, (x, z) => (Math.abs(x) < 3.5 ? [255, 218, 150] : (Math.floor(x / 8) + Math.floor(z / 8)) & 1 ? [255, 190, 84] : [246, 166, 70]), 13);
+    const r = rng(8); for (let k = 0; k < 24; k++) { const side = r() < 0.5 ? -1 : 1; cactus(side * (7 + r() * 36), -25 + r() * 110, 0.8 + r() * 0.6); }
+    for (let k = 0; k < 40; k++) { const side = r() < 0.5 ? -1 : 1; ico(side * (5 + r() * 40), 0.4, -30 + r() * 110, 0.5 + r() * 0.4, [120, 190, 66], null, 0.7); }
+    for (let k = 0; k < 18; k++) rock((r() < 0.5 ? -1 : 1) * (5 + r() * 30), -20 + r() * 90, 0.8 + r() * 1.5, [222, 112, 84], k + 2);
+    rock(2.6, 8.4, 0.9, [210, 104, 80], 41); rock(-2.2, 10.5, 0.7, [226, 120, 90], 42);
+    mesa(-60, 140, 40, 26, 22, [236, 96, 64]); mesa(10, 170, 60, 30, 30, [226, 86, 60]); mesa(80, 150, 36, 24, 18, [240, 110, 70]); mesa(-110, 120, 30, 20, 16, [230, 100, 76]);
+    cloud(-40, 70, 190, 1.1); cloud(60, 78, 200, 1.3);
+  },
+  env(i) {
+    const base = { top: [18, 112, 255], bot: [255, 220, 150], fog: [255, 216, 172], sunCol: [255, 218, 160], glow: '255,206,120', sat: 1.3, amb: [0.7, 0.68, 0.74], bright: 1.08, fogNear: 50, fogFar: 240 };
+    if (i === 3) return Object.assign({}, base, { top: [96, 90, 232], bot: [255, 170, 120], fog: [255, 196, 160], glow: '255,180,110' });
+    if (i === 4) return Object.assign({}, base, { top: [150, 80, 220], bot: [255, 150, 110], fog: [255, 184, 160], sunCol: [255, 176, 120], glow: '255,150,100' });
+    return base;
+  },
+  cam(i, p, T, TL) {
+    if (i === 0) return { pos: [lerp(2.4, 1.5, ez(p)), lerp(0.5, 0.8, p), lerp(5.6, 6.6, ez(p))], tg: [SN[0], 0.75, SN[2] - 0.1] };
+    if (i === 1) return { pos: [11, 1.3, 6], tg: [0, 0.9, 6] };
+    if (i === 2) return { pos: [10, 1.5, 5.4], tg: [0, 0.9, 5.4] };
+    if (i === 3) return { pos: [lerp(3.2, 2.4, p), 1.5, 6.4], tg: [0, 1.3, 3] };
+    return { pos: [-6, 2.2, 0], tg: [1.5, 1.3, 9] };
+  },
+  dyn(T, i, p, TL) {
+    const bt = T - TL.E[i], H = (x, y, z, f, o) => person(x, y, z, f, 1, hikerO(o));
+    if (i === 0) { snakeDraw(coilPose(SN[0], SN[2], NS, T, 1), NS, T, { tongue: 1, rattle: 1 }); shadow(SN[0], SN[2], 1.1, 1.1, 0); }
+    if (i === 1) {
+      const zh = lerp(0, 3.0, eo(wn(p, 0, 0.4))), mvg = 1 - ez(wn(p, 0.3, 0.42)), up = ez(wn(p, 0.4, 0.55));
+      H(-0.3, 0, zh, 0, { walk: T * 6, amp: 0.7 * mvg, armL: -0.9 * up, armR: -0.9 * up }); shadow(-0.3, zh, 0.5, 0.5, 0);
+      snakeDraw(coilPose(SN[0], SN[2], NS, T, 1), NS, T, { tongue: 1, rattle: 1 }); shadow(SN[0], SN[2], 1.1, 1.1, 0);
+    }
+    if (i === 2) {
+      const zh = 3.0 - 0.7 * bt, b = ez(wn(p, 0.15, 0.55)), co = coilPose(SN[0], SN[2], NS, T, 1 - b * 0.7), sl = slitherPose(NS, SN[0], SN[2], 0.2 + bt * 0.9), P = co.map((q, k) => lerp3(q, sl[k], b));
+      H(-0.3, 0, zh, 0, { walk: T * 2.5, amp: 0.3, armL: -0.4, armR: -0.4 }); shadow(-0.3, zh, 0.5, 0.5, 0);
+      snakeDraw(P, NS, T, { tongue: 1, rattle: 1 - b });
+      for (let k = 0; k < 16; k++) { const a = (k / 16) * TAU; box(0, 0, 0, 0.5, 0.04, 0.14, [255, 255, 255], comp(rotY(-a - Math.PI / 2), mv(SN[0] + Math.cos(a) * 2.6, 0.05, SN[2] + Math.sin(a) * 2.6)), { emissive: 1 }); }
+    }
+    if (i === 3) {
+      H(-0.2, 0, 3, 0, { phone: 1, armR: -1.2, armL: 0, wrap: 1 }); shadow(-0.2, 3, 0.5, 0.5, 0);
+      snakeDraw(slitherPose(NS, -4 - bt * 0.5, 11, 1.2 + bt * 0.9), NS, T, { tongue: 1 });
+    }
+    if (i === 4) {
+      const q = eo(wn(p, 0, 0.7)), az = lerp(42, 7, q), fc = Math.PI;
+      H(0, 0, 3, 0, { wrap: 1, armL: 0.0 }); shadow(0, 3, 0.5, 0.5, 0);
+      const x = 4.5, W2 = [255, 255, 255], RED = [255, 60, 70], xf = comp(rotY(fc), mv(x, 0, az));
+      box(0, 1.7, -0.4, 2.6, 2.2, 3.8, W2, xf); box(0, 1.3, 2.0, 2.5, 1.6, 1.4, W2, xf); box(0, 1.05, 3.0, 2.4, 0.9, 1.0, W2, xf); box(0, 1.8, 2.72, 2.0, 0.7, 0.06, [130, 224, 255], xf, { emissive: 1 }); box(0, 1.3, -0.4, 2.64, 0.35, 3.84, RED, xf);
+      [-1, 1].forEach((d) => { box(d * 1.31, 1.9, -0.5, 0.05, 0.9, 0.26, RED, xf, { emissive: 1 }); box(d * 1.31, 1.9, -0.5, 0.05, 0.26, 0.9, RED, xf, { emissive: 1 }); [-1.4, 1.9].forEach((wz) => prism(0, -0.15, 0, 0.5, 0.3, 10, [30, 30, 38], comp(rotZ(Math.PI / 2), mv(d * 1.3, 0.5, wz), xf))); });
+      const fl = Math.floor(T * 4) % 2; box(-0.5, 2.9, 1.6, 0.5, 0.2, 0.3, fl ? [255, 40, 50] : [90, 20, 30], xf, { emissive: 1 }); box(0.5, 2.9, 1.6, 0.5, 0.2, 0.3, fl ? [30, 40, 90] : [70, 130, 255], xf, { emissive: 1 });
+      if (p > 0.7) { const k = ez(wn(p, 0.7, 1)); person(lerp(3.4, 1.2, k), 0, lerp(7.5, 5, k), Math.PI, 1, { shirt: [255, 255, 255], pants: [20, 170, 120], walk: T * 6, amp: 0.7 }); person(lerp(3.8, 1.8, k), 0, lerp(8.2, 6, k), Math.PI, 1, { shirt: [255, 255, 255], pants: [20, 170, 120], walk: T * 6 + 2, amp: 0.7 }); }
+    }
+  },
+  sfx: [[['wind', 0, 5.4], ['rattle', 0.35], ['hiss', 0.6]], [['rattle', 0.3], ['steps', 0.05]], [['hiss', 0.1], ['wind', 0, 5.2]], [['heart', 0.1], ['ping', 0.5]], [['siren', 0.05], ['chime', 0.8, 'D5']]],
+  root: ['D3', 'A3', 'F4'],
+};
+// =====================================================================
+//  V2 ADDITIONS: helpers, new models (dog, cat, bird, elephant, car, van), a room, and 7 new stories
+// =====================================================================
+const handW = (x, y, z, face, s, bend, ang, side) => comp(rotX(ang, [0, 1.46, 0]), bend ? rotX(bend, [0, 0.84, 0]) : null, sc(s), rotY(face), mv(x, y, z))([side * 0.31, 0.8, 0]);
+const midHands = (P, a, b, face) => { const l = handW(P.x, 0, P.z, face, 1, b, a, -1), r = handW(P.x, 0, P.z, face, 1, b, a, 1); return [(l[0] + r[0]) / 2, (l[1] + r[1]) / 2, (l[2] + r[2]) / 2]; };
+const PAL = [[206, 96, 86], [84, 128, 196], [88, 168, 122], [216, 178, 84], [148, 108, 196]];
+const slowBlink = (t) => { const u = (((t % 3.4) + 3.4) % 3.4) / 3.4; return u < 0.25 ? 0 : u < 0.45 ? ez((u - 0.25) / 0.2) : u < 0.65 ? 1 : u < 0.85 ? 1 - ez((u - 0.65) / 0.2) : 0; };
+function quadGrid(o, u, v, nu, nv, col, opt) { for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const p = (a, b) => [o[0] + u[0] * (i + a) + v[0] * (j + b), o[1] + u[1] * (i + a) + v[1] * (j + b), o[2] + u[2] * (i + a) + v[2] * (j + b)], c = typeof col === 'function' ? col(i, j) : col; tri(p(0, 0), p(1, 0), p(0, 1), c, opt); tri(p(1, 0), p(1, 1), p(0, 1), c, opt); } }
+function strip(x0, x1, z0, z1, col, y, bias) { const o = { terrain: 1, bias: bias || -5 }; tri([x0, y, z0], [x0, y, z1], [x1, y, z0], col, o); tri([x1, y, z0], [x0, y, z1], [x1, y, z1], col, o); }
+function heart3d(x, y, z, s, hc) { const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z), xf = comp(rotY(yaw), mv(x, y, z)), pts = []; for (let k = 0; k < 14; k++) { const t = (k / 14) * TAU; pts.push([(16 * Math.pow(Math.sin(t), 3)) / 17, (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 17]); } const fan = (k2, col, b) => { for (let k = 0; k < 14; k++) { const A = pts[k], B = pts[(k + 1) % 14]; tri(xf([0, 0, 0]), xf([A[0] * s * k2, A[1] * s * k2, 0]), xf([B[0] * s * k2, B[1] * s * k2, 0]), col, { twoSided: 1, emissive: 1, bias: b }); } }; if (CEL) fan(1.22, [60, 10, 40], -1.5); fan(1, hc || [236, 84, 120], -2); }
+function xmark(x, y, z, s) { const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z); [0.785, -0.785].forEach((a) => box(0, 0, 0, s, s * 0.16, s * 0.06, [255, 50, 60], comp(rotZ(a), rotY(yaw), mv(x, y, z)), { emissive: 1, bias: -2 })); }
+function warn3d(x, y, z, s) { const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z), xf = comp(rotY(yaw), mv(x, y, z)), o = { twoSided: 1, emissive: 1, bias: -2 }; tri(xf([-s, -0.8 * s, 0]), xf([s, -0.8 * s, 0]), xf([0, 0.95 * s, 0]), [40, 20, 50], o); tri(xf([-0.82 * s, -0.7 * s, 0.01]), xf([0.82 * s, -0.7 * s, 0.01]), xf([0, 0.76 * s, 0.01]), [255, 222, 50], { twoSided: 1, emissive: 1, bias: -2.5 }); box(0, 0.05 * s, 0.03, 0.14 * s, 0.6 * s, 0.02, [40, 20, 50], xf, { emissive: 1, bias: -3 }); box(0, -0.45 * s, 0.03, 0.15 * s, 0.15 * s, 0.02, [40, 20, 50], xf, { emissive: 1, bias: -3 }); }
+function roundTree(x, z, s, col) { prism(x, 0, z, 0.3 * s, 2.2 * s, 6, [130, 84, 50], null, 0.22 * s); ell(x, 3.2 * s, z, 1.7 * s, 1.5 * s, 1.7 * s, col, null, null, 1); ell(x + 0.7 * s, 3.9 * s, z - 0.3 * s, 1.1 * s, 1.0 * s, 1.1 * s, mixc(col, [255, 255, 140], 0.2), null); }
+function bench(x, z, face) { const xf = comp(rotY(face), mv(x, 0, z)), W2 = [200, 120, 70]; box(0, 0.7, 0, 2.4, 0.14, 0.7, W2, xf); box(0, 1.2, -0.3, 2.4, 0.7, 0.1, W2, xf); [-1, 1].forEach((d) => box(d * 1.05, 0.35, 0, 0.12, 0.7, 0.6, [60, 60, 90], xf)); }
+function building(x, z, w, d, h, col) { box(x, h / 2, z, w, h, d, col); box(x, h + 0.25, z, w + 0.6, 0.5, d + 0.6, mixc(col, [40, 40, 50], 0.4)); for (let k = 1; k * 4 < h - 1; k++) box(x, k * 4, z - d / 2 - 0.05, w * 0.8, 0.9, 0.12, [255, 226, 150], null, { emissive: 1 }); }
+function pineSnow(x, z, s) { prism(x, 0, z, 0.24 * s, 1.6 * s, 6, [120, 80, 50], null, 0.2 * s); [[0.9, 1.9, 1.7], [2.1, 1.55, 1.5], [3.3, 1.15, 1.3]].forEach(([y, r, h]) => cone(x, y * s, z, r * s, h * s, 7, [28, 134, 100], null, { snow: 0.55 })); }
+function acacia(x, z, s) { prism(x, 0, z, 0.22 * s, 2.8 * s, 6, [130, 86, 52], null, 0.16 * s); ell(x, 3.2 * s, z, 2.8 * s, 0.55 * s, 2.3 * s, [70, 184, 96], null); ell(x + 0.5 * s, 3.55 * s, z, 2 * s, 0.45 * s, 1.6 * s, [120, 210, 90], null); }
+function baobab(x, z, s) { prism(x, 0, z, 1.1 * s, 5 * s, 8, [170, 116, 84], null, 0.8 * s); ell(x, 6 * s, z, 2.2 * s, 0.9 * s, 2.2 * s, [90, 176, 80], null); }
+function cabin(x, z) { box(x, 2, z, 7, 4, 7, [204, 130, 84]); box(x, 4.2, z, 8, 0.4, 8, [210, 62, 72]); cone(x, 4.4, z, 5.4, 2.6, 4, [238, 246, 255], comp(mv(-x, 0, -z), rotY(Math.PI / 4), mv(x, 0, z))); box(x + 2.2, 5.6, z + 1.5, 0.9, 2.2, 0.9, [150, 90, 70]); [-2, 2].forEach((d) => box(x + d, 2.2, z - 3.52, 1.3, 1.3, 0.1, [255, 214, 120], null, { emissive: 1 })); box(x, 1.2, z - 3.45, 1.4, 2.4, 0.05, [255, 214, 120], null, { emissive: 1 }); }
+function skull(x, y, z, s, face) { const b = comp(sc(s), rotY(face || 0), mv(x, y, z)), B = [250, 240, 214], Dk = [76, 64, 66]; ell(0, 0.7, 0, 0.85, 0.75, 0.9, B, b, null, 1); ell(0, 0.25, 0.9, 0.4, 0.3, 0.6, B, b); ell(0, 0.08, 0.3, 0.5, 0.1, 0.8, B, b); [-1, 1].forEach((d) => { ell(d * 0.45, 0.95, 0.62, 0.17, 0.17, 0.12, Dk, b); cone(d * 0.35, 0.2, 1.0, 0.14, 1.8, 5, B, comp(rotX(1.7, [d * 0.35, 0.2, 1.0]), b)); }); ell(0, 0.5, 1.4, 0.18, 0.2, 0.1, Dk, b); }
+
+// ---------- vehicles ----------
+function car(x, y, z, face, s, o) {
+  o = o || {}; const C = o.col || [255, 72, 84], xf = comp(sc(s), rotY(face), mv(x, y, z)), G = [140, 226, 255], blink = o.haz && Math.floor((o.T || 0) * 3) % 2 === 0;
+  box(0, 0.7, 0, 2.2, 0.8, 4.4, C, xf); box(0, 1.4, -0.2, 1.9, 0.7, 2.4, mixc(C, [255, 255, 255], 0.12), xf); box(0, 1.42, -0.2, 1.96, 0.46, 2.12, G, xf); box(0, 1.4, 0.98, 1.7, 0.5, 0.06, G, xf);
+  [-1, 1].forEach((d) => { box(d * 0.7, 0.78, 2.22, 0.4, 0.22, 0.06, [255, 252, 200], xf, { emissive: 1 }); box(d * 0.7, 0.8, -2.22, 0.4, 0.2, 0.06, [255, 40, 50], xf, { emissive: 1 }); [-1.4, 1.4].forEach((wz) => prism(0, -0.15, 0, 0.42, 0.3, 10, [30, 30, 40], comp(rotZ(Math.PI / 2), mv(d * 1.12, 0.42, wz), xf))); if (blink) [-2.2, 2.2].forEach((zz) => box(d * 1.0, 0.8, zz, 0.28, 0.2, 0.08, [255, 176, 20], xf, { emissive: 1, bias: -1 })); });
+}
+function van(x, y, z, face, s, o) {
+  o = o || {}; const C = o.col || [40, 120, 255], xf = comp(sc(s), rotY(face), mv(x, y, z)), W2 = [255, 255, 255], fl = Math.floor((o.T || 0) * 4) % 2;
+  box(0, 1.7, -0.3, 2.6, 2.2, 4.0, W2, xf); box(0, 1.25, 2.0, 2.5, 1.6, 1.5, W2, xf); box(0, 1.8, 2.76, 2.0, 0.7, 0.06, [130, 224, 255], xf, { emissive: 1 }); box(0, 1.25, -0.3, 2.64, 0.35, 4.04, C, xf);
+  [-1, 1].forEach((d) => { ell(d * 1.32, 1.95, -0.5, 0.04, 0.36, 0.3, C, xf, { emissive: 1 }); [-0.28, 0, 0.28].forEach((q, k) => ell(d * 1.32, 2.45 - Math.abs(q) * 0.3, -0.5 + q * 1.0, 0.04, 0.13, 0.11, C, xf, { emissive: 1 })); [-1.4, 1.9].forEach((wz) => prism(0, -0.15, 0, 0.5, 0.3, 10, [30, 30, 38], comp(rotZ(Math.PI / 2), mv(d * 1.3, 0.5, wz), xf))); });
+  box(-0.5, 2.9, 1.6, 0.5, 0.2, 0.3, fl ? [255, 40, 50] : [90, 20, 30], xf, { emissive: 1 }); box(0.5, 2.9, 1.6, 0.5, 0.2, 0.3, fl ? [30, 40, 90] : [70, 130, 255], xf, { emissive: 1 });
+}
+
+// ---------- animals ----------
+function dog(x, y, z, face, s, o) {
+  o = o || {}; const C1 = o.col || [244, 232, 208], C2 = o.col2 || [222, 170, 100], K = [36, 26, 30], pose = o.pose || 'stand', amp = o.amp == null ? 0.6 : o.amp, sw = Math.sin(o.walk || 0) * amp, sit = pose === 'sit', lie = pose === 'lie', base = comp(sc(s), rotY(face), mv(x, y, z)), bY = lie ? 0.3 : 0.62, bx = sit ? comp(rotX(-0.6, [0, 0.3, -0.3]), base) : base;
+  ell(0, bY, 0, 0.3, 0.3, 0.62, C1, bx, null, 1); ell(0, bY + 0.12, -0.05, 0.27, 0.17, 0.5, C2, bx);
+  const hp = lie ? [0, 0.52, 0.68] : sit ? [0, 1.2, 0.36] : [0, 0.98, 0.66], hd = comp(rotX(o.dip || 0), rotY(o.look || 0), mv(hp[0], hp[1], hp[2]), base);
+  ell(0, 0, 0, 0.24, 0.22, 0.26, C1, hd, null, 1); ell(0, -0.06, 0.24, 0.12, 0.1, 0.17, o.muzzle || C2, hd); ell(0, -0.02, 0.4, 0.05, 0.04, 0.04, K, hd);
+  [-1, 1].forEach((d) => { ell(d * 0.1, 0.07, 0.17, 0.035, 0.04, 0.03, K, hd); ell(d * 0.1 + 0.01, 0.085, 0.19, 0.012, 0.012, 0.012, [255, 255, 255], hd, { emissive: 1 }); if (o.sad) ell(d * 0.1, 0.15, 0.17, 0.065, 0.012, 0.04, K, comp(rotZ(d * 0.35, [d * 0.1, 0.15, 0.17]), hd)); if (o.ears === 'up') { cone(d * 0.13, 0.16, -0.02, 0.075, 0.2, 4, C1, comp(rotZ(-d * 0.15, [d * 0.13, 0.16, 0]), hd)); cone(d * 0.13, 0.17, 0.0, 0.04, 0.12, 4, C2, comp(rotZ(-d * 0.15, [d * 0.13, 0.16, 0]), hd)); } else ell(d * 0.2, -0.02, -0.02, 0.06, 0.15, 0.09, C2, comp(rotZ(d * 0.2, [d * 0.2, 0.1, 0]), hd)); });
+  if (o.tongue) ell(0, -0.14, 0.3, 0.04, 0.015, 0.1, [255, 92, 126], hd); if (o.collar) ell(0, -0.17, -0.12, 0.2, 0.07, 0.2, o.collar, hd);
+  if (lie) [-1, 1].forEach((d) => { ell(d * 0.13, 0.07, 0.6, 0.07, 0.07, 0.2, C1, base); ell(d * 0.22, 0.16, -0.3, 0.16, 0.14, 0.24, C1, base); });
+  else if (sit) [-1, 1].forEach((d) => { prism(d * 0.14, 0, 0.3, 0.065, 1.0, 6, C1, base, 0.13); ell(d * 0.14, 0.04, 0.35, 0.09, 0.05, 0.13, C2, base); ell(d * 0.2, 0.2, -0.42, 0.16, 0.18, 0.26, C1, base); ell(d * 0.18, 0.05, -0.15, 0.09, 0.05, 0.17, C2, base); });
+  else { const leg = (lx, lz, ang) => { const f = comp(rotX(ang, [lx, 0.52, lz]), base); prism(lx, 0, lz, 0.065, 0.52, 6, C1, f, 0.095); ell(lx, 0.04, lz + 0.03, 0.09, 0.05, 0.12, C2, f); }; leg(-0.13, 0.4, sw); leg(0.13, 0.4, -sw); leg(-0.14, -0.4, -sw); leg(0.14, -0.4, sw); }
+  const tp = lie ? [0, 0.2, -0.7] : sit ? [0, 0.14, -0.85] : [0, 0.84, -0.66], tx = comp(rotY(Math.sin(o.wag || 0) * 0.6), mv(tp[0], tp[1], tp[2]), base); ell(0, 0, -0.12, 0.06, 0.06, 0.18, C2, tx); ell(0, sit || lie ? 0 : 0.1, -0.3, 0.05, 0.05, 0.14, C1, tx);
+}
+function cat(x, y, z, face, s, o) {
+  o = o || {}; const C = o.col || [255, 150, 44], D = mixc(C, [130, 50, 10], 0.65), Wh = [255, 246, 236], K = [18, 16, 22], G = [232, 196, 96], pose = o.pose || 'sit', bl = o.blink || 0, sw = Math.sin(o.walk || 0) * 0.5, sit = pose === 'sit', base = comp(sc(s), rotY(face), mv(x, y, z));
+  if (sit) { ell(0, 0.4, -0.06, 0.22, 0.36, 0.28, C, comp(rotX(-0.15, [0, 0.1, 0]), base), null, 1); ell(0, 0.34, 0.1, 0.13, 0.24, 0.1, Wh, base); [-1, 1].forEach((d) => { ell(d * 0.17, 0.16, -0.1, 0.15, 0.15, 0.22, C, base); prism(d * 0.09, 0, 0.1, 0.05, 0.6, 6, C, base, 0.1); ell(d * 0.09, 0.03, 0.14, 0.07, 0.04, 0.1, Wh, base); }); }
+  else { ell(0, 0.4, 0, 0.2, 0.2, 0.45, C, base, null, 1); ell(0, 0.32, 0.18, 0.12, 0.1, 0.2, Wh, base); const leg = (lx, lz, ang) => { const f = comp(rotX(ang, [lx, 0.38, lz]), base); prism(lx, 0, lz, 0.04, 0.38, 6, C, f, 0.06); ell(lx, 0.03, lz + 0.03, 0.06, 0.04, 0.09, Wh, f); }; leg(-0.1, 0.3, sw); leg(0.1, 0.3, -sw); leg(-0.1, -0.3, -sw); leg(0.1, -0.3, sw); }
+  const hp = sit ? [0, 0.88, 0.1] : [0, 0.66, 0.5], hd = comp(rotX(o.dip || 0), rotY(o.look || 0), mv(hp[0], hp[1], hp[2]), base), ey = Math.max(0.012, 1 - bl);
+  ell(0, 0, 0, 0.2, 0.17, 0.18, C, hd, null, 1); ell(0, -0.1, 0.14, 0.1, 0.05, 0.08, Wh, hd); ell(0, -0.03, 0.18, 0.03, 0.02, 0.02, [255, 150, 170], hd);
+  [-1, 1].forEach((d) => { const ef = comp(rotZ(-d * 0.2, [d * 0.12, 0.12, 0]), hd); cone(d * 0.12, 0.12, -0.02, 0.07, 0.15, 4, C, ef); cone(d * 0.12, 0.13, 0.0, 0.04, 0.1, 4, [255, 150, 170], ef); if (bl > 0.6) ell(d * 0.085, 0.03, 0.17, 0.055, 0.01, 0.02, K, hd); else { ell(d * 0.085, 0.03, 0.15, 0.055, 0.06 * ey, 0.025, G, hd); ell(d * 0.085, 0.03, 0.17, 0.014, 0.05 * ey, 0.012, K, hd); } ell(d * 0.05, 0.16, 0.04, 0.015, 0.01, 0.06, D, hd); [-1, 1].forEach((k) => tri(hd([d * 0.05, -0.05, 0.17]), hd([d * 0.4, -0.05 + k * 0.05, 0.2]), hd([d * 0.05, -0.045, 0.18]), [255, 255, 255], { twoSided: 1, emissive: 1 })); });
+  const tw = Math.sin(o.tail || 0) * 0.25; for (let k = 0; k < 6; k++) { const t = k / 5; ell((sit ? t * 0.3 : 0) + tw * t, 0.12 + (sit ? 0.25 : 0.9) * t, -0.3 - (sit ? 0.05 : 0.3) * t, 0.055 - t * 0.012, 0.055 - t * 0.012, 0.07, k > 3 ? D : C, base); }
+}
+function bird(x, y, z, face, s, T, o) {
+  o = o || {}; const BK = o.back || [150, 106, 76], BR = o.breast || [226, 128, 74], HD = o.head || [112, 82, 66], WG = o.wing || mixc(BK, [40, 26, 20], 0.35), WG2 = mixc(WG, [255, 255, 255], 0.14), K = [22, 20, 26], BEAK = o.beak || [232, 190, 80], hurt = o.hurt || 0, bo = o.beakOpen || 0, base = comp(o.tilt ? rotZ(o.tilt) : null, sc(s), rotY(face), mv(x, y, z));
+  ell(0, 0.34, 0, 0.25, 0.23, 0.31, BK, base, null, 1); ell(0, 0.3, 0.1, 0.21, 0.2, 0.23, BR, base, null, 1);
+  const hd = comp(rotX(o.dip || 0), mv(0, 0.6, 0.15), base); ell(0, 0, 0, 0.17, 0.16, 0.17, HD, hd, null, 1);
+  cone(0, 0, 0, 0.045 + o.big * 0.01 || 0.045, 0.15 + (o.big || 0) * 0.06, 4, BEAK, comp(rotX(Math.PI / 2 - bo * 0.3), mv(0, -0.01, 0.15), hd)); cone(0, 0, 0, 0.035, 0.12 + (o.big || 0) * 0.05, 4, mixc(BEAK, [0, 0, 0], 0.12), comp(rotX(Math.PI / 2 + bo * 0.5), mv(0, -0.05, 0.14), hd));
+  [-1, 1].forEach((d) => { ell(d * 0.1, 0.05, 0.1, 0.05, 0.05, 0.03, [250, 248, 240], hd); ell(d * 0.105, 0.05, 0.125, 0.026, 0.026 * (hurt ? 0.35 : 1), 0.015, K, hd);
+    const dr = hurt && d < 0 ? 0.9 + Math.sin(T * 9) * 0.06 : 0.14, wx = comp(rotZ(d * dr), mv(d * 0.21, 0.44, -0.02), base); ell(0, -0.13, 0, 0.055, 0.2, 0.28, WG, wx, null, 1); ell(0, -0.3, -0.1, 0.05, 0.1, 0.22, WG2, wx);
+    if (!o.tilt) { prism(d * 0.07, 0.02, 0.04, 0.014, 0.15, 4, [196, 150, 100], base); [-1, 0, 1].forEach((k) => ell(d * 0.07 + k * 0.025, 0.012, 0.09, 0.012, 0.012, 0.05, [196, 150, 100], comp(rotY(k * 0.25), base))); } });
+  [-1, 0, 1].forEach((k) => ell(k * 0.07, 0.24, -0.4, 0.05, 0.025, 0.21, k ? WG : WG2, comp(rotY(k * 0.18), base)));
+  if (o.crest) cone(0, 0.14, -0.04, 0.07, 0.2, 4, HD, comp(rotX(-0.4, [0, 0.14, -0.04]), hd));
+  if (hurt) box(0, 0.4, 0.02, 0.18, 0.05, 0.3, [250, 250, 250], comp(rotZ(-0.5), mv(-0.22, 0, 0), base));
+}
+function elephant(x, y, z, face, s, T, o) {
+  o = o || {}; const C = o.col || [146, 146, 160], D = mixc(C, [60, 50, 70], 0.4), P = [226, 170, 180], K = [20, 18, 30], base = comp(sc(s), rotY(face), mv(x, y, z)), ph = o.walk || 0, amp = o.amp == null ? 0.4 : o.amp;
+  ell(0, 2.1, 0, 1.25, 1.2, 1.9, C, base, null, 1);
+  const hd = comp(rotX(o.dip || 0), mv(0, 2.4, 1.9), base), fl = 0.35 + Math.sin(T * 1.1) * 0.12;
+  ell(0, 0, 0, 0.9, 0.95, 0.95, C, hd, null, 1);
+  [-1, 1].forEach((d) => { const ef = comp(rotY(d * fl), mv(d * 0.8, 0.15, -0.15), hd); ell(d * 0.1, -0.2, 0, 0.07, 0.85, 0.7, C, ef, null, 1); ell(d * 0.14, -0.2, 0.02, 0.03, 0.62, 0.5, P, ef); ell(d * 0.5, 0.15, 0.62, 0.07, 0.07, 0.05, K, hd); ell(d * 0.5 + 0.015, 0.17, 0.66, 0.02, 0.02, 0.02, [255, 255, 255], hd, { emissive: 1 }); if (o.tusks !== false) cone(d * 0.4, -0.6, 0.7, 0.12, 1.3, 5, [255, 250, 236], comp(rotX(1.9, [d * 0.4, -0.6, 0.7]), hd)); });
+  const P0 = [0, 1.9, 2.8], E = o.tt || [Math.sin(T * 0.8) * 0.25, 0.35, 3.0], Cc = [E[0] * 0.5, (P0[1] + E[1]) / 2 - 0.1, Math.max(P0[2], E[2]) + 0.5];
+  for (let k = 0; k <= 8; k++) { const t = k / 8, a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t, r = 0.34 * (1 - t) + 0.12 * t; ell(a * P0[0] + b * Cc[0] + c * E[0], a * P0[1] + b * Cc[1] + c * E[1], a * P0[2] + b * Cc[2] + c * E[2], r, r, r * 1.3, k > 6 ? D : C, base); }
+  [[-0.7, 1.1], [0.7, 1.1], [-0.7, -1.1], [0.7, -1.1]].forEach(([lx, lz]) => { const f = comp(rotX(Math.sin(ph + (lx * lz > 0 ? 0 : Math.PI)) * amp, [lx, 1.5, lz]), base); prism(lx, 0, lz, 0.38, 1.6, 7, C, f, 0.45); [-1, 0, 1].forEach((k) => ell(lx + k * 0.17, 0.06, lz + 0.3, 0.07, 0.07, 0.09, [255, 248, 230], f)); });
+  prism(0, 0, 0, 0.05, 1.2, 5, D, comp(rotX(0.35 + Math.sin(T * 1.3) * 0.1), mv(0, 1.7, -1.85), base), 0.03);
+}
+
+// ---------- a cozy room (used by the chocolate and cat stories) ----------
+function roomBuild() {
+  quadGrid([-6, 0, -2], [2, 0, 0], [0, 0, 2], 6, 6, (i, j) => (i >= 2 && i <= 4 && j >= 2 && j <= 4 ? (i === 3 && j === 3 ? [132, 176, 206] : (i + j) & 1 ? [206, 124, 130] : [226, 198, 130]) : (i + j) & 1 ? [238, 176, 108] : [224, 158, 94]), { terrain: 1 });
+  quadGrid([-6, 0, 10], [2, 0, 0], [0, 2, 0], 6, 3, () => [240, 212, 172], { twoSided: 1 }); quadGrid([-6, 0, -2], [0, 0, 2], [0, 2, 0], 6, 3, () => [222, 178, 168], { twoSided: 1 }); quadGrid([6, 0, -2], [0, 0, 2], [0, 2, 0], 6, 3, () => [222, 178, 168], { twoSided: 1 });
+  for (let k = 0; k < 6; k++) box(-5 + k * 2, 0.15, 9.92, 2, 0.3, 0.1, [255, 255, 255], null, { bias: -1.5 });
+  box(3, 3.4, 9.94, 3.2, 2.6, 0.1, [255, 255, 255], null, { bias: -4 }); box(3, 3.4, 9.88, 2.8, 2.2, 0.08, [150, 200, 232], null, { emissive: 1, bias: -5 }); box(3, 3.4, 9.84, 0.1, 2.2, 0.06, [255, 255, 255], null, { bias: -6 }); box(3, 3.4, 9.84, 2.8, 0.1, 0.06, [255, 255, 255], null, { bias: -6 });
+  box(-3, 3.7, 9.94, 1.5, 1.1, 0.08, [200, 120, 140], null, { emissive: 1, bias: -4 }); box(-3, 3.7, 9.88, 1.1, 0.7, 0.06, [232, 210, 130], null, { emissive: 1, bias: -5 });
+  box(-3, 0.5, 8.8, 4.4, 1, 1.8, [84, 160, 170]); box(-3, 1.6, 9.55, 4.4, 1.8, 0.5, [70, 140, 154]); box(-5.4, 1.05, 8.8, 0.55, 1.5, 1.8, [70, 140, 154]); box(-0.6, 1.05, 8.8, 0.55, 1.5, 1.8, [70, 140, 154]); box(-3.9, 1.2, 8.6, 1.6, 0.3, 1.2, [232, 200, 120]); box(-2.2, 1.2, 8.6, 1.6, 0.3, 1.2, [232, 200, 120]);
+  box(3.2, 0.82, 6.2, 2.2, 0.14, 1.4, [176, 112, 70]); [-1, 1].forEach((a) => [-1, 1].forEach((b) => prism(3.2 + a * 0.9, 0, 6.2 + b * 0.55, 0.08, 0.78, 5, [140, 90, 58])));
+  prism(5.2, 0, 9, 0.06, 3.4, 5, [60, 60, 80]); cone(5.2, 3.2, 9, 0.7, 0.8, 8, [255, 226, 140], null, { emissive: 1 });
+  prism(-5.3, 0, 5.5, 0.4, 0.6, 6, [255, 122, 82], null, 0.32); ico(-5.3, 1.3, 5.5, 0.6, [60, 200, 92], null, 1); ico(-5.1, 1.8, 5.6, 0.45, [90, 220, 100], null, 1); ico(-5.5, 1.7, 5.3, 0.4, [40, 180, 100], null, 1);
+  box(5.94, 2, 4, 0.1, 4, 2, [150, 90, 56], null, { bias: -4 }); ico(5.8, 2, 3.3, 0.12, [255, 224, 90], null, 1, { bias: -5 });
+}
+const ROOM_ENV = { top: [255, 210, 160], bot: [255, 230, 190], fog: [255, 220, 180], sunCol: [255, 244, 220], glow: '255,240,200', sat: 1.25, amb: [0.82, 0.8, 0.84], bright: 1.04, fogNear: 200, fogFar: 600 };
+const XS_A = [-70, -56, -44, -34, -26, -19, -13, -8, -3, 3, 8, 13, 19, 26, 34, 44, 56, 70];
+const ZS_A = (() => { const z = []; for (let k = -40; k <= 60; k += 6) z.push(k); for (let k = 72; k <= 160; k += 16) z.push(k); return z; })();
+
+
+
+// ---------- v3 models and scene builders ----------
+function ring3d(x, y, z, r, w, col, a) { const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z), xf = comp(rotY(yaw), mv(x, y, z)), n = 24; for (let k = 0; k < n; k++) { const a0 = (k / n) * TAU, a1 = ((k + 1) / n) * TAU, p = (rr, aa) => xf([Math.cos(aa) * rr, Math.sin(aa) * rr, 0]); const o = { twoSided: 1, emissive: 1, bias: -2 }; tri(p(r, a0), p(r + w, a0), p(r, a1), col, o); tri(p(r + w, a0), p(r + w, a1), p(r, a1), col, o); } }
+function octopus(x, y, z, face, s, T, o) {
+  o = o || {}; const C = o.col || [190, 110, 118], D = mixc(C, [80, 40, 80], 0.45), L = mixc(C, [255, 230, 220], 0.35), K = [24, 18, 30], base = comp(sc(s), rotY(face), mv(x, y, z)), sw = o.swim || 0;
+  ell(0, 1.4, -0.25, 0.72, 0.9, 0.72, C, base, null, 1); ell(0, 0.85, 0.1, 0.62, 0.45, 0.58, C, base, null, 1); ell(0, 1.2, 0.3, 0.5, 0.3, 0.3, L, base);
+  [-1, 1].forEach((d) => { ell(d * 0.42, 0.95, 0.52, 0.2, 0.2, 0.13, [250, 244, 230], base); ell(d * 0.42, 0.95, 0.63, 0.1, 0.05, 0.05, K, base); ell(d * 0.42, 1.12, 0.55, 0.24, 0.05, 0.1, D, base); });
+  for (let a = 0; a < 8; a++) { const ang = (a / 8) * TAU, ca = Math.cos(ang), sa = Math.sin(ang); for (let k = 0; k <= 8; k++) { const t = k / 8, r = 0.2 * (1 - 0.8 * t) + 0.02, wv = Math.sin(T * 1.8 + a * 0.9 + t * 3) * 0.3 * t, rad = 0.45 + t * 1.5 * (1 - sw), px = ca * rad + sa * wv * 0.5, pz = sa * rad - sw * t * 2.4 * 1 + (sw ? 0.2 : 0), py = 0.6 - t * 0.5 * (1 - sw) + wv * 0.6 + Math.sin(t * 3) * 0.1 * (1 - sw); ell(px, Math.max(0.12, py), pz, r, r, r * 1.2, k % 2 ? C : D, base); } }
+}
+function dolphin(x, y, z, face, s, T, o) {
+  o = o || {}; const TOP = [104, 126, 156], BEL = [226, 234, 244], K = [20, 20, 30], base = comp(sc(s), rotY(face), mv(x, y, z)), pitch = o.pitch || 0, xf = comp((p) => [p[0], p[1] + Math.sin(T * 5 + p[2] * 1.2) * 0.2 * Math.pow(Math.max(0, (0.4 - p[2]) / 2.6), 1.5), p[2]], rotX(pitch), base);
+  const secs = [{ z: -2.4, rx: 0.06, ry: 0.1, y: 0 }, { z: -1.8, rx: 0.16, ry: 0.22, y: 0.02 }, { z: -0.8, rx: 0.34, ry: 0.42, y: 0.04 }, { z: 0.3, rx: 0.42, ry: 0.5, y: 0.04 }, { z: 1.2, rx: 0.36, ry: 0.4, y: 0.02 }, { z: 1.8, rx: 0.2, ry: 0.22, y: -0.02 }, { z: 2.1, rx: 0.12, ry: 0.1, y: -0.06 }, { z: 2.6, rx: 0.07, ry: 0.06, y: -0.08 }], n = 10;
+  loft(secs, n, (i, k) => (Math.sin(((i + 0.5) / n) * TAU) > -0.2 ? TOP : BEL), xf);
+  const F3 = (a, b, c, col) => tri(xf(a), xf(b), xf(c), col, { twoSided: 1, outl: 1 }), FIN = mixc(TOP, [30, 40, 60], 0.2);
+  F3([0, 0.45, 0.2], [0, 1.1, -0.45], [0, 0.4, -0.7], FIN); F3([-0.05, 0, -2.3], [-1.0, 0.25, -3.1], [-0.05, 0.1, -2.0], FIN); F3([0.05, 0, -2.3], [1.0, 0.25, -3.1], [0.05, 0.1, -2.0], FIN);
+  [-1, 1].forEach((d) => { F3([d * 0.4, -0.2, 0.9], [d * 1.1, -0.65, 0.2], [d * 0.4, -0.1, 0.4], FIN); ell(d * 0.33, 0.22, 1.3, 0.05, 0.05, 0.03, K, xf); });
+  ell(0, -0.03, 2.35, 0.1, 0.01, 0.12, [240, 220, 220], xf);
+}
+function penguin(x, y, z, face, s, T, o) {
+  o = o || {}; const DK = [36, 40, 52], WH = [244, 244, 248], OR = [232, 150, 60], sway = Math.sin(o.walk || 0) * 0.12, base = comp(rotZ(sway), sc(s), rotY(face), mv(x, y, z));
+  ell(0, 0.95, 0, 0.5, 0.85, 0.45, DK, base, null, 1); ell(0, 0.9, 0.17, 0.4, 0.7, 0.32, WH, base, null, 1);
+  const hd = comp(rotX(o.dip || 0), mv(0, 1.85, 0.05), base); ell(0, 0, 0, 0.3, 0.3, 0.3, DK, hd, null, 1); ell(0, -0.05, 0.12, 0.2, 0.2, 0.2, WH, hd); cone(0, 0, 0, 0.06, 0.2, 4, OR, comp(rotX(Math.PI / 2), mv(0, -0.02, 0.28), hd));
+  [-1, 1].forEach((d) => { ell(d * 0.13, 0.08, 0.27, 0.05, 0.05, 0.03, [250, 250, 250], hd); ell(d * 0.13, 0.08, 0.3, 0.025, 0.028, 0.015, [10, 10, 20], hd); ell(d * 0.52, 1.05, 0, 0.08, 0.45, 0.22, DK, comp(rotZ(d * (0.35 + (o.flap || 0))), base)); ell(d * 0.17, 0.06, 0.18, 0.14, 0.06, 0.24, OR, base); });
+  ell(0, 0.3, -0.42, 0.15, 0.08, 0.2, DK, base);
+}
+// underwater world (floor, coral, rocks) + dynamic kelp, bubbles, fish
+const UW_ENV = { top: [14, 96, 170], bot: [52, 160, 190], fog: [36, 128, 170], sunCol: [235, 245, 235], glow: '200,240,240', sat: 1.1, amb: [0.72, 0.8, 0.86], bright: 1.06, fogNear: 8, fogFar: 70 };
+function uwBuild(seed) {
+  groundG(XS_A, ZS_A, (x, z) => Math.sin(x * 0.2) * 0.2, (x, z) => ((Math.floor(x / 10) + Math.floor(z / 10)) & 1 ? [226, 208, 156] : [214, 196, 146]), seed || 5);
+  const r = rng(seed || 5), cols = [[220, 100, 130], [230, 160, 60], [150, 100, 210], [70, 200, 170]];
+  for (let k = 0; k < 40; k++) { const x = -40 + r() * 80, z = 2 + r() * 60, t = k % 4, c = cols[Math.floor(r() * 4)]; if (t === 0) { for (let q = 0; q < 5; q++) prism(x + (q - 2) * 0.35, 0, z + ((q * 3) % 2) * 0.3, 0.12, 1.2 + r() * 1.4, 5, c, null, 0.06); } else if (t === 1) ico(x, 0.5, z, 0.9 + r() * 0.6, c, null, 0.6); else if (t === 2) cone(x, 0, z, 0.9, 1.8 + r(), 6, c); else { ico(x, 0.3, z, 0.7, c, null, 0.5); ico(x + 0.7, 0.2, z + 0.2, 0.5, mixc(c, [255, 255, 200], 0.3), null, 0.5); } }
+  for (let k = 0; k < 14; k++) rock(-40 + r() * 80, 2 + r() * 60, 0.8 + r() * 1.6, [120, 140, 170], k + 9);
+}
+function uwDyn(T) {
+  for (let k = 0; k < 16; k++) { const x = -26 + ((k * 37) % 52), z = 6 + ((k * 53) % 40); kelp(x, 0, z, 3 + (k % 3), T, k % 2 ? [60, 170, 110] : [110, 180, 80]); }
+  for (let k = 0; k < 14; k++) ico(-6 + ((k * 7) % 13), ((T * 0.8 + k * 0.37) % 1) * 7, 4 + ((k * 5) % 17), 0.09, [235, 250, 255], null, 1, { emissive: 1 });
+  const fc = [[236, 186, 60], [226, 110, 150], [90, 200, 180]]; for (let s2 = 0; s2 < 2; s2++) for (let f = 0; f < 6; f++) { const ang = T * 0.35 * (s2 ? 1 : -1) + s2 * 2.1, x = -10 + s2 * 20 + Math.cos(ang) * 10 + (f % 3), z = 26 + s2 * 6 + Math.sin(ang) * 7, vx = -Math.sin(ang) * (s2 ? 1 : -1), vz = Math.cos(ang) * (s2 ? 1 : -1); fish(x, 3 + s2 + (f >> 1) * 0.5, z, Math.atan2(vx, vz), 0.5, fc[s2], T, f); }
+}
+function parkBuild() {
+  groundG(XS_A, ZS_A, () => 0, (x, z) => (Math.abs(x) < 3.5 ? [220, 210, 196] : (Math.floor(x / 8) + Math.floor(z / 8)) & 1 ? [110, 178, 104] : [96, 166, 94]), 19);
+  const r = rng(12), leaf = [[84, 166, 98], [112, 176, 84], [214, 150, 70], [66, 148, 118]];
+  for (let k = 0; k < 20; k++) { const side = r() < 0.5 ? -1 : 1; roundTree(side * (6 + r() * 34), -12 + r() * 70, 0.9 + r() * 0.6, leaf[k % 4]); }
+  const fc = [[226, 110, 140], [236, 210, 90], [170, 120, 210], [245, 245, 245], [236, 150, 80]]; for (let k = 0; k < 60; k++) { const side = r() < 0.5 ? -1 : 1; ico(side * (3.8 + r() * 14), 0.16, -6 + r() * 40, 0.17, fc[k % 5], null, 0.8); }
+  bench(3.2, 7.6, Math.PI); [[-4, 14], [4.6, 3]].forEach(([x, z]) => { prism(x, 0, z, 0.08, 4, 5, [70, 70, 90]); ico(x, 4.3, z, 0.4, [250, 236, 170], null, 1, { emissive: 1 }); });
+  [[-70, 150, 50, 26, [110, 170, 140]], [20, 170, 60, 30, [120, 170, 160]], [90, 150, 44, 22, [130, 180, 130]]].forEach(([x, z, rr, h, c]) => cone(x, 0, z, rr, h, 7, c)); cloud(-40, 70, 180, 1.2); cloud(50, 80, 200, 1.4);
+}
+const PARK_ENV = { top: [96, 156, 226], bot: [246, 236, 212], fog: [214, 228, 226], sunCol: [255, 244, 220], glow: '255,244,210', sat: 1.1, amb: [0.7, 0.7, 0.78], bright: 1.05, fogNear: 50, fogFar: 230 };
+function rainDyn(T, cx, cz, n) { for (let k = 0; k < n; k++) { const x = cx + ((k * 37) % 30) - 15, y = 12 - ((T * 9 + k * 0.173) % 1) * 12, z = cz + ((k * 53) % 26) - 6; tri([x, y, z], [x + 0.03, y, z], [x + 0.08, y - 0.8, z], [190, 210, 240], { twoSided: 1, emissive: 1 }); } }
+
+// =====================================================================
+//  STORY 4: Found a hurt bird (park). Told with simple props, not step-by-step animation.
+// =====================================================================
+const BP = [0.4, 0, 6.0], FC = Math.PI / 2;
+const glove = (x, z, a) => { const xf = comp(rotY(a), mv(x, 0, z)), G = [232, 196, 64]; ell(0, 0.1, 0, 0.16, 0.07, 0.22, G, xf); [-0.09, -0.03, 0.03, 0.09].forEach((q) => ell(q, 0.1, 0.26, 0.035, 0.05, 0.12, G, xf)); ell(-0.17, 0.1, 0.08, 0.05, 0.05, 0.12, G, xf); };
+const crate = (bx, bz, holes) => { const CB = [214, 164, 100]; box(bx, 0.04, bz, 0.95, 0.08, 0.95, CB); box(bx, 0.32, bz - 0.45, 0.95, 0.6, 0.06, CB); box(bx, 0.32, bz + 0.45, 0.95, 0.6, 0.06, CB); box(bx - 0.45, 0.32, bz, 0.06, 0.6, 0.95, CB); box(bx + 0.45, 0.32, bz, 0.06, 0.6, 0.95, CB); if (holes) [-1, 0, 1].forEach((q) => box(bx + q * 0.22, 0.35, bz - 0.49, 0.08, 0.08, 0.03, [70, 46, 30])); };
+const BIRD = {
+  id: 'bird', title: 'Found a Hurt Bird',
+  caption: 'Found an injured bird? Here is what wildlife rescuers recommend. Save this! 🐦',
+  tags: '#wildlife #birds #animalrescue #howto #petcare #shorts', footer: 'General advice. When in doubt, contact a local wildlife rehabilitator or vet. Rules differ by region.',
+  beats: [
+    { d: 4.4, vo: 'Found a hurt bird? Do not give it water.', tags: [{ t: [0, 0.95], text: 'NO FOOD OR WATER', y: 330, size: 72, bg: '#ff6b6b', col: '#ffffff' }] },
+    { d: 4.6, vo: 'Put on gloves, and gently cover it with a towel.', tags: [{ t: [0.05, 0.95], text: 'GLOVES + TOWEL', y: 330, size: 70, bg: '#ffd86b' }] },
+    { d: 6, vo: 'Place it in a box with air holes and a lid, somewhere warm, dark and quiet.', tags: [{ t: [0.05, 0.95], text: 'WARM · DARK · QUIET', y: 330, size: 66, bg: '#8de8c4' }] },
+    { d: 5, vo: 'Keep pets and kids away, and handle it as little as possible.', tags: [{ t: [0.05, 0.95], text: 'HANDS OFF', y: 330, size: 88, bg: '#ffa06b' }] },
+    { d: 5.4, vo: 'Then call a wildlife rescue. A hurt bird needs experts, not food or water.', tags: [{ t: [0.05, 0.95], text: 'CALL WILDLIFE RESCUE', y: 330, size: 60, bg: '#8de8c4' }] },
+  ],
+  build: parkBuild, env: () => PARK_ENV,
+  cam(i, p) {
+    if (i <= 2) { const a = lerp(-0.3, 0.3, p); return { pos: [BP[0] + Math.sin(a) * 3.0, 1.0, BP[2] - Math.cos(a) * 3.0], tg: [BP[0], 0.6, BP[2]] }; }
+    return { pos: [lerp(3.6, 3.0, p), 1.4, lerp(2.4, 3.4, p)], tg: [3.2, 1.1, 7.6] };
+  },
+  dyn(T, i, p) {
+    if (i === 0) { bird(BP[0], 0, BP[2], Math.PI + 0.4, 1.8, T, { hurt: 1, dip: 0.35 }); prism(-0.35, 0, 6.5, 0.28, 0.12, 8, [90, 150, 220], null, 0.34); ell(-0.35, 0.12, 6.5, 0.28, 0.03, 0.28, [150, 205, 240], null); [0, 1, 2, 3].forEach((k) => ico(-0.65 + k * 0.08, 0.05, 7.0 - (k % 2) * 0.1, 0.04, [230, 196, 90], null, 1)); xmark(-0.35, 1.3, 6.5, 0.8); shadow(BP[0], BP[2], 0.45, 0.35, 0); }
+    if (i === 1) { bird(BP[0], 0.3, BP[2] + 0.1, Math.PI, 1.3, T, { dip: 0.2 }); ell(BP[0], 0.2, BP[2] - 0.05, 0.75, 0.42, 0.62, [96, 150, 206], null, null, 1); ell(BP[0] + 0.3, 0.5, BP[2] - 0.2, 0.34, 0.12, 0.34, [128, 178, 226], null); glove(BP[0] + 1.3, BP[2] - 0.2, 0.4); glove(BP[0] + 1.7, BP[2] + 0.3, -0.5); heart3d(BP[0], 2.0 + Math.sin(T * 2) * 0.08, BP[2], 0.28); }
+    if (i === 2) { crate(BP[0], BP[2], true); bird(BP[0], 0.2, BP[2] + 0.05, Math.PI, 1.1, T, { dip: 0.15 }); ell(BP[0], 0.2, BP[2] - 0.05, 0.4, 0.22, 0.32, [96, 150, 206], null, null, 1); box(BP[0] + 1.5, 0.52, BP[2], 1.0, 0.06, 1.0, [226, 176, 110], comp(rotZ(0.9, [BP[0] + 1.5, 0.5, BP[2]]))); ico(BP[0] - 1.6, 2.3, BP[2] + 1, 0.35, [250, 226, 140], null, 1, { emissive: 1 }); }
+    if (i === 3 || i === 4) {
+      crate(3.2, 7.5, true); box(3.2, 0.64, 7.5, 1.0, 0.06, 1.0, [226, 176, 110]); const sh = (v) => v;
+      if (i === 3) { const k = (T * 1.6) % 14; person(-1 - k * 0.6, 0, 11, -FC, 0.65, { walk: T * 8, shirt: [214, 178, 84], pants: [160, 70, 100] }); dog(-2.6 - k * 0.6, 0, 11, -FC, 0.8, { walk: T * 9, wag: T * 6, tongue: 1, col: [226, 190, 120], col2: [200, 140, 80] }); xmark(-2.2 - k * 0.6, 2.4, 11, 0.5); }
+      else { box(1.6, 1.8, 6.4, 0.5, 0.9, 0.06, [40, 42, 54]); box(1.6, 1.8, 6.37, 0.42, 0.78, 0.02, [150, 235, 200], null, { emissive: 1 }); const age = (T * 0.8) % 1; ring3d(1.6, 1.8, 6.3, 0.3 + age * 1.1, 0.07, [230, 245, 255]); ring3d(1.6, 1.8, 6.3, 0.3 + ((age + 0.5) % 1) * 1.1, 0.07, [230, 245, 255]); heart3d(3.2, 2.3 + Math.sin(T * 2) * 0.1, 7.5, 0.3); }
+    }
+  },
+  sfx: [[['tweet', 0.2], ['wind', 0, 4.4]], [['steps', 0.4]], [['knock', 0.7]], [['tweet', 0.5], ['bark', 0.2]], [['ping', 0.4], ['chime', 0.8, 'D5']]],
+  root: ['G2', 'D3', 'B3'],
+};
+
+// =====================================================================
+//  STORY 5: Dog ate chocolate (living room)
+// =====================================================================
+const CD = [0.6, 0, 5.4], GD = { col: [246, 206, 120], col2: [226, 150, 72], collar: [255, 70, 110] };
+const wrapper = (x, z) => { box(x, 0.03, z, 0.55, 0.03, 0.38, [255, 70, 90]); box(x + 0.1, 0.05, z, 0.2, 0.02, 0.3, [255, 214, 90]); [0, 1, 2].forEach((k) => box(x - 0.25 + k * 0.22, 0.04, z + 0.35, 0.18, 0.05, 0.14, [100, 56, 34])); };
+const CHOC = {
+  id: 'choc', title: 'Dog Ate Chocolate',
+  caption: 'Dog ate chocolate? Here is what to do right away. Save this, it could help your pet! 🐶',
+  tags: '#dogs #petcare #pethealth #chocolate #firstaid #shorts', footer: 'General advice, not a diagnosis. Always call your vet or a pet poison hotline, as risk depends on the dog and the amount.',
+  beats: [
+    { d: 4.4, vo: 'Dog ate chocolate? Every minute counts.', tags: [{ t: [0, 0.95], text: 'CHOCOLATE IS TOXIC', y: 330, size: 60, bg: '#ff4d4d', col: '#ffffff' }] },
+    { d: 5, vo: 'Take away what is left, and note how much your dog ate.', tags: [{ t: [0.05, 0.95], text: 'NOTE WHAT & HOW MUCH', y: 330, size: 56, bg: '#ffd23f' }] },
+    { d: 4.4, vo: 'Call your vet or a pet poison hotline right away.', tags: [{ t: [0.05, 0.95], text: 'CALL YOUR VET', y: 330, size: 80, bg: '#7cc4ff' }] },
+    { d: 4.8, vo: 'Do not try to make your dog vomit unless a vet tells you to.', tags: [{ t: [0.05, 0.95], text: 'NO HOME REMEDIES', y: 330, size: 66, bg: '#ff4d4d', col: '#ffffff' }] },
+    { d: 6, vo: 'Dark chocolate is the most dangerous. Dog ate chocolate? Call the vet right away.', tags: [{ t: [0.05, 0.5], text: 'DARK = MOST DANGEROUS', y: 330, size: 54, bg: '#ff8a3d' }, { t: [0.55, 1], text: 'CALL THE VET NOW', y: 330, size: 64, bg: '#7cf2c0' }] },
+  ],
+  build: roomBuild, env: () => ROOM_ENV,
+  cam(i, p) {
+    if (i === 0) return { pos: [3.4, 1.4, lerp(1.6, 2.2, p)], tg: [0.2, 0.7, 5] };
+    if (i === 1) return { pos: [-1.6, 1.5, 2.4], tg: [1, 1.1, 4.6] };
+    if (i === 2) return { pos: [lerp(-1.2, -0.4, p), 1.5, 2.6], tg: [1, 1.2, 4.6] };
+    if (i === 3) return { pos: [0, 1.6, 2], tg: [2.2, 1.4, 5.6] };
+    return { pos: [1, 1.6, 1.4], tg: lerp3([3.5, 0.9, 5.5], [3, 1.2, 4.2], ez(p)) };
+  },
+  dyn(T, i, p) {
+    const OW = (x, z, f, o) => person(x, 0, z, f, 1, Object.assign({ shirt: [70, 190, 170], pants: [60, 70, 150], hair: [50, 30, 24] }, o));
+    if (i === 0) { const ox = lerp(-4, -2.2, ez(p)), oz = lerp(0.4, 2.6, ez(p)); dog(CD[0], 0, CD[2], 2.5, 1.1, Object.assign({ pose: 'lie', sad: 1, dip: 0.25, look: -0.3, wag: 0 }, GD)); wrapper(1.5, 5.1); warn3d(1.5, 1.9 + Math.sin(T * 3) * 0.08, 5.1, 0.45); OW(ox, oz, Math.atan2(CD[0] - ox, CD[2] - oz), { walk: T * 6, amp: 0.6 }); }
+    if (i === 1) { dog(0.2, 0, 5, Math.PI, 1.1, Object.assign({ pose: 'lie', sad: 1, wag: 0 }, GD)); OW(1.3, 4.2, Math.PI, { armR: -1.2, armL: -0.3, item: [255, 70, 90], bend: 0.2 }); }
+    if (i === 2) { dog(0.2, 0, 5, Math.PI, 1.1, Object.assign({ pose: 'lie', look: 0.2, wag: T * 2 }, GD)); OW(1.3, 4.2, Math.PI, { phone: 1, armR: -1.2 }); }
+    if (i === 3) { dog(0.2, 0, 5, Math.PI, 1.1, Object.assign({ pose: 'lie', dip: -0.2, wag: 0 }, GD)); OW(1.3, 4.2, Math.PI, { armR: -1.5 + Math.sin(T * 8) * 0.15, armL: -1.5 - Math.sin(T * 8) * 0.15 }); prism(3.2, 0.89, 6.2, 0.14, 0.5, 8, [80, 170, 255], null, 0.1); prism(3.2, 1.39, 6.2, 0.07, 0.1, 6, [250, 250, 250]); xmark(3.2, 2.2, 6.2, 0.8); }
+    if (i === 4) {
+      const k = ez(wn(p, 0.35, 1)), mvg = k > 0 && k < 1 ? 1 : 0;
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) box(3.0 + a * 0.28, 0.93, 5.9 + b * 0.22, 0.24, 0.06, 0.18, [74, 40, 28]); if (p < 0.5) warn3d(3.4, 1.9, 6.0, 0.4);
+      OW(lerp(1.2, 5, k), 4.2, FC, { walk: T * 7, amp: 0.7 * mvg }); dog(lerp(2.4, 5.8, k), 0, 4.9, FC, 1.1, Object.assign({ pose: 'stand', walk: T * 10, wag: T * 8, amp: 0.6 * mvg }, GD));
+    }
+  },
+  sfx: [[['whimper', 0.4], ['steps', 0.2]], [['whimper', 0.5]], [['ping', 0.3]], [['heart', 0.1]], [['door', 0.75], ['chime', 0.8, 'D5']]],
+  root: ['A2', 'E3', 'C4'],
+};
+
+// =====================================================================
+//  STORY 6: Hit an animal on the road
+// =====================================================================
+const DOGP = [4.6, 0, 15];
+const ROAD = {
+  id: 'road', title: 'Hit an Animal',
+  caption: 'You hit an animal with your car: what to do, step by step. Save this, it could help an animal. 🚗',
+  tags: '#roadsafety #animalrescue #wildlife #pets #howto #shorts', footer: 'General advice. Your safety comes first. Rules and who to call differ by region.',
+  beats: [
+    { d: 4.8, vo: 'You hit an animal with your car. What now?', tags: [{ t: [0, 0.95], text: 'STAY SAFE FIRST', y: 330, size: 72, bg: '#ff8a3d' }] },
+    { d: 4.6, vo: 'Pull over safely, and switch on your hazard lights.', tags: [{ t: [0.05, 0.95], text: 'HAZARD LIGHTS ON', y: 330, size: 62, bg: '#ffd23f' }] },
+    { d: 5, vo: 'Check for traffic before you step out. Your safety comes first.', tags: [{ t: [0.05, 0.95], text: 'CHECK TRAFFIC FIRST', y: 330, size: 60, bg: '#ff4d4d', col: '#ffffff' }] },
+    { d: 6.6, vo: 'A scared animal may bite, so do not touch it bare-handed. Call animal control or the police.', tags: [{ t: [0.05, 0.5], text: "DON'T TOUCH IT", y: 330, size: 74, bg: '#ff4d4d', col: '#ffffff' }, { t: [0.55, 1], text: 'CALL ANIMAL CONTROL', y: 330, size: 58, bg: '#7cc4ff' }] },
+    { d: 5.2, vo: 'Hit an animal? Stay safe first, then call for help.', tags: [{ t: [0.05, 0.95], text: 'CALL FOR HELP', y: 330, size: 76, bg: '#7cf2c0' }] },
+  ],
+  build() {
+    const xs = [-70, -50, -36, -24, -14, -8, -5, 5, 8, 14, 24, 36, 50, 70], zs = []; for (let z = -50; z <= 70; z += 8) zs.push(z); for (let z = 86; z <= 170; z += 16) zs.push(z);
+    groundG(xs, zs, () => 0, (x, z) => (Math.abs(x) < 5 ? [84, 90, 126] : Math.abs(x) < 8 ? [226, 200, 160] : (Math.floor(x / 8) + Math.floor(z / 8)) & 1 ? [96, 206, 104] : [78, 190, 92]), 23);
+    for (let z = -48; z < 70; z += 6) strip(-0.12, 0.12, z, z + 3, [255, 236, 120], 0.03, -5); for (let z = -50; z < 70; z += 8) { strip(-4.9, -4.75, z, z + 8, [255, 255, 255], 0.03, -5); strip(4.75, 4.9, z, z + 8, [255, 255, 255], 0.03, -5); }
+    const r = rng(31), leaf = [[60, 190, 96], [96, 208, 70], [255, 170, 60], [44, 172, 124]]; for (let k = 0; k < 22; k++) { const side = r() < 0.5 ? -1 : 1; roundTree(side * (11 + r() * 30), -30 + r() * 90, 0.9 + r() * 0.7, leaf[k % 4]); }
+    [-20, 0, 20, 40].forEach((z) => { prism(-9, 0, z, 0.12, 7, 5, [90, 70, 60]); box(-9, 6.8, z, 2.4, 0.15, 0.15, [90, 70, 60]); });
+    [[-80, 160, 56, 30, [150, 110, 200]], [10, 175, 70, 36, [130, 120, 220]], [90, 160, 50, 26, [170, 110, 190]]].forEach(([x, z, rr, h, c]) => mountain(x, z, rr, h, c)); cloud(-40, 66, 170, 1.2); cloud(60, 74, 190, 1.4);
+  },
+  env: () => ({ top: [70, 70, 210], bot: [255, 170, 110], fog: [255, 190, 160], sunCol: [255, 180, 120], glow: '255,160,100', sat: 1.3, amb: [0.66, 0.64, 0.76], bright: 1.04, fogNear: 50, fogFar: 230 }),
+  cam(i, p) {
+    if (i === 0) return { pos: [3.4, 0.9, 18.5], tg: [5.2, 0.9, 6] };
+    if (i === 1) return { pos: [-6, 1.8, 0], tg: [2, 1.2, 8] };
+    if (i === 2) return { pos: [4.8, 1.5, 0.2], tg: [6.8, 1.3, 7] };
+    if (i === 3) return { pos: [1.8, 1.5, 9.8], tg: [5.2, 0.8, 14] };
+    return { pos: [0.5, 2.0, 1.2], tg: [5.4, 1.2, 11] };
+  },
+  dyn(T, i, p) {
+    const hurtDog = () => dog(DOGP[0], 0, DOGP[2], 1.2, 0.95, { pose: 'lie', sad: 1, col: [150, 98, 60], col2: [220, 170, 110], wag: 0 });
+    if (i === 0) { car(6.2, 0, 6, 0.12, 1, { haz: 1, T }); hurtDog(); person(8.2, 0, 6.6, Math.PI, 1, { armL: -2.6, armR: -2.6, shirt: [70, 140, 255], pants: [50, 50, 80] }); }
+    if (i === 1) { const k = ez(wn(p, 0.2, 0.8)); car(lerp(-1.8, 6.2, k), 0, lerp(-14, 6, eo(p)), lerp(0, 0.12, k), 1, { haz: 1, T }); hurtDog(); }
+    if (i === 2) { car(6.2, 0, 3.4, 0.12, 1, { haz: 1, T }); car(-2, 0, lerp(-26, 42, wn(p, 0.1, 0.55)), 0, 1, { col: [70, 150, 255] }); const g = ez(wn(p, 0.55, 0.7)); person(8.2, 0, lerp(6.2, 7.6, wn(p, 0.7, 1)), lerp(Math.PI, 0, g), 1, { shirt: [70, 140, 255], pants: [50, 50, 80], walk: T * 4, amp: g > 0 ? 0.4 : 0 }); hurtDog(); }
+    if (i === 3) { car(6.2, 0, 6, 0.12, 1, { haz: 1, T }); hurtDog(); person(6.8, 0, 11.6, Math.atan2(-2.2, 3.4), 1, { bend: 0.3, phone: p > 0.45 ? 1 : 0, armR: p > 0.45 ? -1.2 : null, shirt: [70, 140, 255], pants: [50, 50, 80] }); }
+    if (i === 4) { const z = lerp(-10, 10.5, eo(wn(p, 0, 0.8))); van(6.2, 0, z, 0, 1, { T }); hurtDog(); const k = ez(wn(p, 0.65, 1)); if (p > 0.6) person(lerp(7.8, 5.6, k), 0, lerp(9.4, 13.4, k), lerp(0.4, 0.1, k), 1, { shirt: [40, 110, 235], pants: [30, 50, 100], hat: [255, 255, 255], walk: T * 6, amp: k < 1 ? 0.6 : 0 }); }
+  },
+  sfx: [[['beep', 0], ['wind', 0, 4.8]], [['car', 0.1], ['beep', 0.4]], [['car', 0.45], ['heart', 0.1]], [['whimper', 0.2], ['beep', 0]], [['car', 0.1], ['chime', 0.8, 'D5']]],
+  root: ['E2', 'B2', 'D3'],
+};
+
+// =====================================================================
+//  STORY 7: Hachiko (true story)
+// =====================================================================
+const DS = [2.2, 0, 20.5], SEASON = (u) => (u < 0.5 ? mixc([96, 200, 84], [255, 176, 40], u * 2) : mixc([255, 176, 40], [200, 100, 52], (u - 0.5) * 2)), HK = { col: [250, 238, 214], col2: [226, 176, 110], ears: 'up' };
+const HE = { dusk: { top: [60, 50, 160], bot: [255, 150, 120], fog: [250, 170, 150], sunCol: [255, 190, 150], glow: '255,170,130' }, morn: { top: [70, 160, 255], bot: [255, 232, 190], fog: [250, 230, 210], sunCol: [255, 238, 205], glow: '255,238,200' }, gold: { top: [100, 110, 230], bot: [255, 200, 140], fog: [255, 205, 160], sunCol: [255, 214, 160], glow: '255,210,150' } };
+const HACHI = {
+  id: 'hachi', title: 'Hachiko',
+  caption: 'The true story of Hachiko, the dog who waited almost ten years for his owner. 🐕 (Based on a documented true story, told briefly.)',
+  tags: '#hachiko #truestory #dogs #loyalty #animalstories #shorts', footer: 'Based on the documented true story of Hachiko (Tokyo, 1923-1935), told briefly.',
+  beats: [
+    { d: 5, vo: 'He waited almost ten years for someone who never returned.', tags: [{ t: [0, 0.95], text: '9 YEARS · 9 MONTHS', y: 330, size: 62, bg: '#ffd23f' }] },
+    { d: 4.6, vo: 'In Tokyo, Hachiko met his owner at the station every evening.', tags: [{ t: [0.05, 0.9], text: 'TOKYO', y: 330, size: 92, bg: '#ff8a9a' }] },
+    { d: 4.4, vo: 'Then in 1925, his owner died at work and never came back.', tags: [{ t: [0.1, 0.9], text: '1925', y: 330, size: 100, bg: '#b9c4ff' }] },
+    { d: 5, vo: 'But Hachiko kept returning to the same spot, day after day.', tags: [{ t: [0.1, 1], text: (p) => 'DAY ' + (1 + Math.floor(3499 * eo(wn(p, 0.12, 0.92)))).toLocaleString('en-US'), y: 330, size: 84, bg: '#ffd23f' }] },
+    { d: 7, vo: 'Today a statue of Hachiko stands at that station. He waited almost ten years, and Tokyo never forgot him.', tags: [{ t: [0.05, 0.95], text: 'HIS STATUE STANDS TODAY', y: 330, size: 54, bg: '#7cf2c0' }] },
+  ],
+  build() {
+    groundG(XS_A, ZS_A, () => 0, (x, z) => (Math.abs(x) > 30 || z > 52 ? [110, 200, 120] : z > 31 ? [160, 156, 184] : (Math.floor(x / 5) + Math.floor(z / 5)) & 1 ? [190, 184, 208] : [204, 198, 220]), 11);
+    box(0, 3.5, 36, 22, 7, 8, [224, 104, 78]); box(0, 7.4, 36, 24, 0.8, 10, [74, 58, 82]); box(0, 10.4, 36, 5, 6, 5, [224, 104, 78]); box(0, 13.6, 36, 6.4, 0.8, 6.4, [74, 58, 82]); box(0, 10.6, 33.4, 3.6, 3.6, 0.2, [250, 246, 235]); box(0, 10.9, 33.28, 0.18, 1.2, 0.1, [40, 30, 40]); box(0.45, 10.6, 33.28, 0.9, 0.18, 0.1, [40, 30, 40]);
+    box(0, 1.6, 31.9, 4, 3.2, 0.3, [58, 36, 40]); [-7, -3.6, 3.6, 7].forEach((x) => box(x, 3.6, 31.9, 2, 2.2, 0.2, [255, 218, 140], null, { emissive: 1 })); box(0, 0.5, 47, 70, 1, 3, [110, 110, 140]);
+    [-14, 14, -26, 26].forEach((x) => { prism(x, 0, 8, 0.15, 5, 6, [60, 60, 80]); ico(x, 5.3, 8, 0.45, [255, 226, 160], null, 1, { emissive: 1 }); });
+    building(-34, 70, 18, 14, 40, [150, 130, 230]); building(-8, 76, 16, 14, 54, [110, 170, 240]); building(22, 72, 18, 14, 44, [230, 120, 170]); building(48, 78, 16, 14, 34, [120, 210, 190]);
+  },
+  env(i, T, p) { const e = [HE.dusk, HE.gold, HE.dusk, HE.morn, HE.gold][i], o = Object.assign({ sat: 1.3, amb: [0.66, 0.64, 0.74], bright: 1.04, fogNear: 40, fogFar: 200 }, e); if (i === 2) o.bright = lerp(1, 0.62, p); if (i === 3) o.bright = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(p * TAU * 7)); return o; },
+  cam(i, p) {
+    if (i === 0) return { pos: [lerp(2, 5, ez(p)), lerp(0.5, 2.4, ez(p)), lerp(17.2, 10.5, ez(p))], tg: [2.2, 0.65, 20.5] };
+    if (i === 1) return { pos: [lerp(-4, -2, p), 1.4, 14], tg: [4, 1, 24] };
+    if (i === 2) return { pos: [lerp(-1.5, 0.8, p), 1.1, lerp(16, 18.4, p)], tg: lerp3([2.2, 0.8, 20.5], [1, 1.6, 32], ez(p)) };
+    if (i === 3) return { pos: [lerp(-3, 3, p), 1.6, 13.5], tg: [2.2, 1.0, 20.5] };
+    const a = lerp(-0.7, 0.9, ez(p)); return { pos: [DS[0] + Math.sin(a) * 7, lerp(1.6, 3.2, p), DS[2] - Math.cos(a) * 7], tg: [DS[0], 1.5, DS[2]] };
+  },
+  dyn(T, i, p, TL) {
+    const bt = T - TL.E[i], fol = i === 3 ? SEASON(p) : [255, 176, 40];
+    [[-22, 10], [-14, 14], [16, 14], [26, 10], [-30, 24], [32, 22]].forEach(([x, z], k) => roundTree(x, z, 1 + (k % 3) * 0.12, fol));
+    const tx = i === 1 ? lerp(-100, 6, eo(p)) : 6; [0, 1, 2].forEach((k) => { box(tx - k * 15, 1.9, 44, 14, 3.2, 3, k % 2 ? [236, 230, 214] : [220, 70, 60]); box(tx - k * 15, 2.4, 42.45, 12, 1, 0.1, [150, 200, 240], null, { emissive: 1 }); });
+    const walkers = (n, spd) => { for (let k = 0; k < n; k++) { const dn = k % 2 ? 1 : -1, z0 = 5 + (k % 4) * 2.4, x = ((((T * spd * dn + k * 11.7) % 60) + 60) % 60) - 30; if (Math.abs(x - DS[0]) < 1.8 && Math.abs(z0 - DS[2]) < 2.5) continue; person(x, 0, z0, dn > 0 ? Math.PI / 2 : -Math.PI / 2, 1, { walk: T * 6 + k, shirt: PAL[k % 5], pants: [50, 50, 70] }); } };
+    const crowd = (sp) => { for (let k = 0; k < 8; k++) { const z = 31.2 - (((bt * sp + k * 3.3) % 26)), x = [-12, -9, -7, 7, 10, -10, 9, 6.5][k] + (k % 3 ? 0 : 1.2); if (z < 20 || Math.abs(x) < 4.5) continue; person(x, 0, z, Math.PI, 1, { walk: T * 6 + k, shirt: PAL[k % 5], pants: [50, 50, 70], dress: k % 4 === 3 ? [220, 100, 150] : null }); } };
+    if (i === 0) { dog(DS[0], 0, DS[2], Math.PI, 1.15, Object.assign({ pose: 'lie', wag: T * 1.5 }, HK)); walkers(2, 1.2); shadow(DS[0], DS[2], 0.8, 1, 0); }
+    if (i === 1) {
+      const k = ez(wn(p, 0.05, 0.6)), mx = lerp(8, 3.6, k), mz = lerp(31.5, 22.4, k), at = wn(p, 0.6, 0.78), dk = ez(wn(p, 0.3, 0.65)), dp = lerp3(DS, [2.9, 0, 22.2], dk);
+      person(mx, 0, mz, Math.atan2(DS[0] - mx, DS[2] - mz), 1, { walk: T * 6, amp: k < 1 ? 0.7 : 0, shirt: [70, 90, 170], pants: [50, 50, 70], hair: [210, 210, 215], hat: [90, 90, 120], bend: lerp(0, 0.9, at), armR: at > 0 ? -1 : null });
+      dog(dp[0], 0, dp[2], Math.atan2(mx - dp[0], mz - dp[2]), 1.15, Object.assign({ walk: T * 10 * (1 - dk), amp: 0.6, wag: T * 9, tongue: 1 }, HK)); walkers(3, 1);
+    }
+    if (i === 2) { dog(DS[0], 0, DS[2], 0, 1.15, Object.assign({ pose: 'lie', sad: 1, wag: 0 }, HK)); crowd(3.2); ico(4, 5.3, 18, 0.5, [255, 226, 160], null, 1, { emissive: 1 }); }
+    if (i === 3) { dog(DS[0], 0, DS[2], 0, 1.15, Object.assign({ pose: 'lie', wag: T * 1.5 }, HK)); crowd(7); }
+    if (i === 4) {
+      const k = ez(wn(p, 0.05, 0.6)), h = 1.2 * k; prism(DS[0], 0, DS[2], 1.2, h, 6, [160, 156, 170], null, 1.0);
+      dog(DS[0], h, DS[2], 0, 1.15, { pose: 'stand', ears: 'up', col: mixc(HK.col, [214, 170, 66], k), col2: mixc(HK.col2, [176, 130, 40], k) });
+      [[-3.6, 2.6, 0.6], [3.4, 2.4, -0.7], [-2.6, -3.2, 2.2], [3.8, -2.8, 3.4]].forEach(([dx, dz, f], q) => person(DS[0] + dx, 0, DS[2] + dz, Math.atan2(-dx, -dz) + f * 0.1, 1, { shirt: PAL[q], pants: [50, 50, 70], armR: q === 0 ? -1.2 : null, dress: q === 2 ? [220, 100, 150] : null }));
+      [[-1.6, 1.8], [1.4, 1.9]].forEach(([dx, dz], q) => ico(DS[0] + dx, 0.3, DS[2] - dz, 0.28, [[255, 90, 100], [255, 220, 80]][q], null, 0.8)); if (p > 0.6) heart3d(DS[0], 3.4 + Math.sin(T * 2) * 0.1, DS[2], 0.35);
+    }
+  },
+  sfx: [[['chime', 0.1, 'A4'], ['wind', 0, 5]], [['train', 0.1], ['steps', 0.3]], [['chime', 0.1, 'A3'], ['steps', 0.3]], [['steps', 0.05], ['chime', 0.7, 'D5']], [['chime', 0.2, 'A4'], ['chime', 0.35, 'E5'], ['chime', 0.5, 'A5']]],
+  root: ['A2', 'E3', 'C4'],
+};
+
+// =====================================================================
+//  STORY 8: Bobbie the Wonder Dog (true story)
+// =====================================================================
+const BOB = { col: [214, 134, 60], col2: [255, 255, 255], ears: 'up' }, SNOW_E = { top: [110, 160, 235], bot: [236, 244, 255], fog: [222, 234, 252], sunCol: [235, 240, 255], glow: '235,244,255' };
+const BOBBIE = {
+  id: 'bobbie', title: 'Bobbie Comes Home',
+  caption: 'The true story of Bobbie the Wonder Dog, who walked about 2,500 miles to get home. 🐕 (Based on a documented true story, told briefly.)',
+  tags: '#bobbie #truestory #dogs #loyalty #animalstories #shorts', footer: 'Based on the documented 1923-24 story of Bobbie the Wonder Dog (Indiana to Oregon), told briefly. Distance is approximate.',
+  beats: [
+    { d: 4.4, vo: 'This dog walked 2,500 miles to get home.', tags: [{ t: [0, 0.95], text: '2,500 MILES', y: 330, size: 96, bg: '#ffd23f' }] },
+    { d: 5, vo: 'In 1923, Bobbie got lost on a family road trip in Indiana.', tags: [{ t: [0.05, 0.95], text: '1923', y: 330, size: 100, bg: '#ffb86b' }] },
+    { d: 5.2, vo: 'His family searched, then gave up and drove home to Oregon.', tags: [{ t: [0.05, 0.95], text: 'THEY SEARCHED', y: 330, size: 78, bg: '#b9c4ff' }] },
+    { d: 5.2, vo: 'Six months later, a thin, tired dog showed up at their door.', tags: [{ t: [0, 0.95], text: '6 MONTHS LATER', y: 330, size: 70, bg: '#7cc4ff' }] },
+    { d: 5.6, vo: 'It was Bobbie. He had walked about 2,500 miles to get home.', tags: [{ t: [0.1, 0.95], text: 'HOME', y: 330, size: 110, bg: '#ff8aa8' }] },
+  ],
+  build() {
+    [[-90, 200, 60, 40, [150, 170, 240]], [-30, 225, 52, 36, [160, 150, 240]], [48, 215, 72, 46, [140, 170, 245]], [112, 195, 50, 32, [170, 160, 240]]].forEach(([x, z, r2, h, c]) => mountain(x, z, r2, h, c));
+    const r = rng(14); for (let k = 0; k < 44; k++) { const side = r() < 0.5 ? -1 : 1; pineSnow(side * (7 + r() * 40), -25 + r() * 120, 0.9 + r() * 0.7); }
+    cloud(-50, 70, 180, 1.2); cloud(60, 80, 200, 1.4);
+  },
+  env(i) { if (i === 0) return Object.assign({ sat: 1.25, amb: [0.72, 0.76, 0.86], bright: 1.06, fogNear: 40, fogFar: 200 }, SNOW_E); if (i === 1 || i === 2) return { top: [60, 150, 255], bot: [255, 226, 170], fog: [255, 224, 180], sunCol: [255, 220, 170], glow: '255,220,160', sat: 1.3, amb: [0.68, 0.68, 0.76], bright: 1.05, fogNear: 50, fogFar: 220 }; if (i === 3) return { top: [24, 28, 110], bot: [96, 80, 170], fog: [90, 80, 150], sunCol: [150, 170, 255], glow: '120,130,255', sat: 1.3, amb: [0.55, 0.58, 0.8], bright: 0.95, fogNear: 30, fogFar: 160 }; return { top: [96, 70, 190], bot: [255, 170, 120], fog: [255, 190, 160], sunCol: [255, 190, 140], glow: '255,180,120', sat: 1.3, amb: [0.7, 0.66, 0.76], bright: 1.04, fogNear: 40, fogFar: 180 }; },
+  cam(i, p, T, TL) {
+    if (i === 0) { const z = lerp(-4, 22, p); return { pos: [7.5, 1.5, z], tg: [0, 1, z + 1.5] }; }
+    if (i === 1) return { pos: [0, 1.2, 0], tg: [0, 1, 18] };
+    if (i === 2) return { pos: [-4.5, 1.7, 4], tg: [2, 1.2, 12] };
+    if (i === 3) return { pos: [1.8, 1.2, lerp(4, 12, ez(p))], tg: [0, 1.2, 24] };
+    return { pos: [3, 1.5, 17.8], tg: [0, 1, 24.5] };
+  },
+  dyn(T, i, p, TL) {
+    const gc = (x, z) => (i === 1 || i === 2 ? ((Math.floor(x / 8) + Math.floor(z / 8)) & 1 ? [244, 196, 96] : [232, 180, 80]) : Math.abs(x) < 3.5 ? [214, 226, 248] : (Math.floor(x / 8) + Math.floor(z / 8)) & 1 ? [240, 247, 255] : [226, 238, 255]);
+    groundG(XS_A, ZS_A, () => 0, gc, 33);
+    const cz = i === 0 ? lerp(-4, 22, p) : i === 3 ? lerp(4, 12, ez(p)) : 12;
+    if (i === 0 || i === 3 || i === 4) for (let k = 0; k < 34; k++) ico(((k * 37) % 19) - 9.5, 8 - ((T * 2.2 + k * 0.173) % 1) * 8, cz + ((k * 53) % 23) - 6, 0.06, [255, 255, 255], null, 1, { emissive: 1 });
+    const FAM = { dad: { shirt: [60, 140, 230], pants: [50, 50, 80] }, kid: { shirt: [255, 200, 50], pants: [200, 60, 100] } };
+    if (i === 0) { const z = lerp(-4, 22, p); dog(0.2, 0, z, 0, 1.15, Object.assign({ walk: T * 9, amp: 0.5, wag: 0, dip: 0.15 }, BOB)); shadow(0.2, z, 0.6, 1, 0); }
+    if (i === 1) {
+      const z = lerp(22, 8, ez(p)); car(3.5, 0, 30, 0.1, 1, { col: [60, 140, 255] }); person(1.6, 0, 29, 1.2, 0.8, Object.assign({ armR: -2.6 + Math.sin(T * 6) * 0.3 }, FAM.dad)); person(0.2, 0, 31, 0.4, 0.7, Object.assign({ armR: -2.6 + Math.sin(T * 6 + 1) * 0.3, dress: [230, 90, 150] }, {}));
+      dog(0.4, 0, z, Math.PI, 1.15, Object.assign({ walk: T * 9, amp: 0.5, wag: 0, sad: 1, look: Math.sin(T * 1.5) * 0.4 }, BOB)); shadow(0.4, z, 0.6, 1, 0);
+    }
+    if (i === 2) {
+      const g = ez(wn(p, 0.65, 0.85)), cz2 = lerp(12, 12 + 40 * Math.pow(wn(p, 0.8, 1), 2), 1); car(4, 0, cz2, 0, 1, { col: [60, 140, 255] });
+      if (p < 0.85) { [[1.6, 10], [2.8, 13], [-0.2, 12]].forEach(([x, z], k) => person(lerp(x, 4, g), 0, lerp(z, 12, g), Math.sin(T * 1.2 + k) * 1.2 + (k === 2 ? 0 : 1), k === 2 ? 0.7 : 1, Object.assign({ armL: -2.6, armR: -2.6, walk: T * 5, amp: g > 0 && g < 1 ? 0.5 : 0 }, k === 2 ? FAM.kid : FAM.dad))); }
+      dog(-14, 0, 34, 0.6, 1.15, Object.assign({ walk: T * 7, amp: 0.4 }, BOB));
+    }
+    if (i >= 3) cabin(0, 30);
+    const door = (a) => box(0.7, 1.2, 0, 1.4, 2.4, 0.12, [130, 76, 44], comp(rotY(-a), mv(-0.7, 0, 26.5)));
+    if (i === 3) { const z = lerp(8, 23.5, ez(p)); dog(0, 0, z, 0, 1.15, Object.assign({ walk: T * 5, amp: 0.4, dip: 0.3, sad: 1 }, BOB)); const op = ez(wn(p, 0.7, 0.9)); door(op * 1.4); if (p > 0.8) person(0, 0, 25.8, Math.PI, 1, { dress: [230, 90, 150], armR: -2.5, armL: -2.5 }); }
+    if (i === 4) {
+      door(1.4); dog(0, Math.abs(Math.sin(T * 5)) * 0.3, 23.4, 0, 1.15, Object.assign({ wag: T * 14, tongue: 1, pose: 'stand' }, BOB)); person(-1.5, 0, 25.4, Math.PI, 1, Object.assign({ armL: -1.2, armR: -1.2, bend: 0.6 }, FAM.dad)); person(1.5, 0, 25.6, Math.PI, 1, { dress: [230, 90, 150], armL: -1.2, armR: -1.2, bend: 0.6 }); person(0, 0, 26.0, Math.PI, 0.65, Object.assign({ armL: -1.2, armR: -1.2 }, FAM.kid));
+      for (let k = 0; k < 7; k++) heart3d(Math.sin(k * 2.3) * 1.4, 2.2 + ((T * 0.6 + k * 0.31) % 1) * 2.5, 24.6 + Math.cos(k * 1.7) * 0.8, 0.3);
+    }
+  },
+  sfx: [[['wind', 0, 4.4]], [['car', 0.4], ['whimper', 0.1]], [['steps', 0.2], ['car', 0.8]], [['wind', 0, 5.2], ['knock', 0.75]], [['bark', 0.1], ['chime', 0.5, 'D5'], ['chime', 0.65, 'F#5']]],
+  root: ['D3', 'A3', 'F4'],
+};
+
+// =====================================================================
+//  STORY 9: Do elephants grieve? (savanna)
+// =====================================================================
+const SK = [0, 0, 8], SAV = { top: [90, 60, 210], bot: [255, 170, 90], fog: [255, 190, 120], sunCol: [255, 192, 112], glow: '255,170,90', sat: 1.3, amb: [0.68, 0.64, 0.78], bright: 1.04, fogNear: 50, fogFar: 230 };
+const ELEPH = {
+  id: 'elephant', title: 'Do Elephants Grieve',
+  caption: 'Do elephants grieve? Here is what scientists have observed. 🐘',
+  tags: '#elephants #animalbehavior #wildlife #animalfacts #nature #shorts', footer: 'Based on published observations of elephant behavior. Scientists cannot read animals\' minds, so conclusions about feelings are interpretations.',
+  beats: [
+    { d: 4.4, vo: 'Elephants visit the bones of their dead.', tags: [{ t: [0, 0.95], text: 'DO ELEPHANTS GRIEVE?', y: 330, size: 58, bg: '#ffd23f' }] },
+    { d: 5, vo: 'Studies show they pay special attention to the skulls of their own kind.', tags: [{ t: [0.05, 0.95], text: 'THEY TOUCH THE BONES', y: 330, size: 60, bg: '#ffb86b' }] },
+    { d: 5, vo: 'They also comfort upset friends, touching them gently with their trunks.', tags: [{ t: [0.05, 0.95], text: 'THEY COMFORT FRIENDS', y: 330, size: 60, bg: '#ff8aa8' }] },
+    { d: 5.2, vo: 'Their families are tight, led by a matriarch, and bonds can last for decades.', tags: [{ t: [0.05, 0.95], text: 'DEEP BONDS', y: 330, size: 88, bg: '#7cf2c0' }] },
+    { d: 6, vo: "We can't read their minds, but elephants do return to the bones of their dead.", tags: [{ t: [0.05, 0.95], text: 'REAL FEELINGS?', y: 330, size: 76, bg: '#b9a0ff' }] },
+  ],
+  build() {
+    groundG(XS_A, ZS_A, (x, z) => Math.sin(x * 0.07) * Math.cos(z * 0.06) * 0.5, (x, z) => ((Math.floor(x / 10) + Math.floor(z / 10)) & 1 ? [246, 206, 100] : [236, 190, 86]), 55);
+    const r = rng(6); for (let k = 0; k < 40; k++) { const x = -50 + r() * 100, z = -10 + r() * 90; cone(x, 0, z, 0.4, 1.2, 5, [120, 200, 82]); cone(x + 0.3, 0, z + 0.2, 0.3, 0.9, 5, [150, 214, 90]); }
+    [[-18, 20], [22, 26], [-30, 40], [34, 44], [-8, 52], [12, 60], [-40, 16], [40, 12]].forEach(([x, z], k) => acacia(x, z, 1 + (k % 3) * 0.2)); baobab(-24, 70, 1.4); baobab(30, 80, 1.1);
+    [[-90, 190, 50, 22, [214, 120, 140]], [-20, 210, 60, 28, [190, 110, 180]], [60, 200, 56, 24, [220, 130, 130]]].forEach(([x, z, rr, h, c]) => cone(x, 0, z, rr, h, 7, c)); ell(48, 14, 200, 12, 12, 2, [255, 214, 140], null, { emissive: 1 }); cloud(-40, 60, 170, 1.2);
+    skull(SK[0], 0, SK[2], 0.9, 0.3); rock(-4, 6, 0.7, [190, 140, 120], 3); rock(5, 9, 0.9, [200, 150, 120], 4);
+  },
+  env: () => SAV,
+  cam(i, p, T, TL) {
+    if (i === 0) return { pos: [4, 1.2, 3], tg: [0, 1.2, 9] };
+    if (i === 1) return { pos: [3.2, 0.8, 6.8], tg: [0, 0.7, 8.6] };
+    if (i === 2) return { pos: [-0.4, 1.6, -1.6], tg: [0, 1.8, 9] };
+    if (i === 3) { const xm = lerp(-10, 12, p); return { pos: [xm - 1, 1.5, 3.5], tg: [xm + 1.5, 1.7, 12] }; }
+    return { pos: [lerp(3, 13, p), lerp(1.4, 5, p), lerp(5, -3, p)], tg: [0, 1.6, 10] };
+  },
+  dyn(T, i, p, TL) {
+    if (i === 0) { const z = lerp(30, 11.5, ez(p)), tt = lerp3([0, 0.3, 3.0], [0, 0.8, 3.4], ez(wn(p, 0.7, 1))); elephant(0, 0, z, Math.PI, 1, T, { walk: T * 2.2, amp: p < 0.9 ? 0.35 : 0.05, tt }); elephant(-6, 0, 26, Math.PI * 0.9, 0.9, T, { walk: T * 2, amp: 0.3 }); elephant(6, 0, 30, Math.PI * 1.1, 0.5, T, { walk: T * 3, amp: 0.3 }); shadow(0, z, 2, 3, Math.PI); }
+    if (i === 1) { elephant(0, 0, 11.5, Math.PI, 1, T, { dip: 0.12, tt: [Math.sin(T * 0.9) * 0.5, 0.7 + Math.sin(T * 1.8) * 0.08, 3.4], amp: 0 }); shadow(0, 11.5, 2, 3, Math.PI); }
+    if (i === 2) { elephant(-1.5, 0, 10, Math.PI, 1, T, { tt: [-2.0, 2.0 + Math.sin(T * 1.2) * 0.08, 2.6], amp: 0 }); elephant(1.2, 0, 10, Math.PI, 1, T, { dip: 0.15, amp: 0 }); elephant(-0.2, 0, 6.2, Math.PI, 0.45, T, { amp: 0 }); heart3d(0, 5.2, 8.5, 0.4 + 0.05 * Math.sin(T * 3)); shadow(-1.5, 10, 2, 3, Math.PI); shadow(1.2, 10, 2, 3, Math.PI); }
+    if (i === 3) { const xm = lerp(-10, 12, p), w = T * 2.2; elephant(xm, 0, 12, FC, 1.05, T, { walk: w, amp: 0.35 }); elephant(xm - 4.8, 0, 12.8, FC, 0.95, T, { walk: w + 1, amp: 0.35 }); elephant(xm - 8.2, 0, 11.2, FC, 0.9, T, { walk: w + 2, amp: 0.35 }); elephant(xm - 6.4, 0, 10.2, FC, 0.45, T, { walk: w * 1.6, amp: 0.4 }); }
+    if (i === 4) { elephant(0, 0, 11.5, Math.PI, 1, T, { dip: 0.1, tt: [0, 0.8, 3.4], amp: 0 }); shadow(0, 11.5, 2, 3, Math.PI); for (let k = 0; k < 20; k++) ico(-10 + ((k * 7) % 21), 1 + ((T * 0.3 + k * 0.17) % 1) * 4, 4 + ((k * 5) % 14), 0.05, [255, 226, 150], null, 1, { emissive: 1 }); if (p > 0.4) heart3d(0, 3.9 + Math.sin(T * 2) * 0.1, 8.6, 0.45); }
+  },
+  sfx: [[['wind', 0, 4.4], ['trumpet', 0.4]], [['rumble', 0.2]], [['rumble', 0.1], ['heart', 0.5]], [['steps', 0.05], ['rumble', 0.3]], [['wind', 0, 6], ['chime', 0.7, 'D5']]],
+  root: ['C3', 'G3', 'E4'],
+};
+
+// =====================================================================
+//  STORY 10: The cat slow blink (living room)
+// =====================================================================
+const CATP = { col: [255, 150, 44] };
+const CATS = {
+  id: 'cat', title: 'The Cat Slow Blink',
+  caption: 'Cats have a secret way to say I love you: the slow blink. Try it today! 🐱',
+  tags: '#cats #catbehavior #petcare #catlove #animalfacts #shorts', footer: 'Based on research on cat-human communication. Every cat is different, so go slowly and let your cat choose.',
+  beats: [
+    { d: 4.4, vo: 'Cats have a secret way to say I love you.', tags: [{ t: [0, 0.95], text: 'THE SLOW BLINK', y: 330, size: 80, bg: '#ffd23f' }] },
+    { d: 5, vo: "It's called the slow blink. Cats do it when they feel safe and relaxed.", tags: [{ t: [0.05, 0.95], text: 'SLOW BLINK = TRUST', y: 330, size: 62, bg: '#ff8aa8' }] },
+    { d: 4.4, vo: 'Look at your cat, then slowly close your eyes.', tags: [{ t: [0.05, 0.95], text: 'CLOSE YOUR EYES SLOWLY', y: 330, size: 52, bg: '#7cf2c0' }] },
+    { d: 4.8, vo: 'Then look away. Staring can feel like a threat to a cat.', tags: [{ t: [0.05, 0.95], text: "DON'T STARE", y: 330, size: 88, bg: '#ff4d4d', col: '#ffffff' }] },
+    { d: 5.6, vo: "Cats often blink back, and come closer. It's how cats say I love you.", tags: [{ t: [0.05, 0.95], text: 'TRY IT TODAY', y: 330, size: 80, bg: '#7cf2c0' }] },
+  ],
+  build: roomBuild, env: () => ROOM_ENV,
+  cam(i, p) {
+    if (i === 0) return { pos: [lerp(-2.4, -2.8, p), 1.9, lerp(5.6, 6.4, p)], tg: [-2.8, 1.75, 8.4] };
+    if (i === 1) return { pos: [lerp(-2, 1.5, p), 1.0, 2.6], tg: [0.5, 0.8, 5.2] };
+    if (i === 2) return { pos: [0, 1.2, lerp(1.2, 1.9, p)], tg: [0, 1.65, 4.2] };
+    if (i === 3) return { pos: [3.8, 1.2, 3.6], tg: [0, 0.9, 3.6] };
+    return { pos: [lerp(-2.5, 2.5, p), 1.4, 1.6], tg: [0, 0.9, 4.2] };
+  },
+  dyn(T, i, p, TL) {
+    const bt = T - TL.E[i], PR = { shirt: [255, 120, 150], pants: [60, 70, 150], hair: [60, 36, 28] };
+    if (i === 0) { const b = slowBlink(T); cat(-2.8, 1.0, 8.4, Math.PI, 1.1, Object.assign({ blink: b, tail: T * 1.5 }, CATP)); if (b > 0.9) heart3d(-2.8, 2.9, 8.2, 0.25); }
+    if (i === 1) { const b = slowBlink(T); cat(0.5, 0, 5.2, Math.PI, 1.1, Object.assign({ blink: b, tail: T * 1.5 }, CATP)); if (b > 0.8) { heart3d(0.5, 1.9 + (b - 0.8), 5.1, 0.22); heart3d(0.9, 2.2, 5.1, 0.15); } }
+    if (i === 2) { const u = wn(p, 0.15, 0.4), d = wn(p, 0.5, 0.75); person(0, 0, 4.2, Math.PI, 1, Object.assign({ bend: 0.25, blink: u < 1 ? ez(u) : 1 - ez(d) }, PR)); cat(0, 0, 2.6, 0, 1.1, Object.assign({ blink: wn(p, 0.7, 0.85) * (1 - wn(p, 0.9, 1)), tail: T }, CATP)); }
+    if (i === 3) { person(0, 0, 4.2, lerp(Math.PI, Math.PI + 1.3, ez(wn(p, 0.1, 0.4))), 1, PR); const k = ez(wn(p, 0.45, 1)); cat(0, 0, lerp(3.0, 3.8, k), 0, 1.1, Object.assign({ pose: k > 0 && k < 1 ? 'stand' : 'sit', walk: T * 7, blink: slowBlink(T), tail: T * 2 }, CATP)); }
+    if (i === 4) { const a = T * 1.4; person(0, 0, 4.2, Math.PI, 1, Object.assign({ blink: slowBlink(T * 0.8) }, PR)); cat(0.6 * Math.cos(a), 0, 4.2 + 0.6 * Math.sin(a), Math.atan2(-Math.sin(a), Math.cos(a)), 1.1, Object.assign({ pose: 'stand', walk: T * 6, tail: T * 2 }, CATP)); for (let k = 0; k < 4; k++) heart3d(Math.sin(k * 2.4) * 0.9, 2.2 + ((T * 0.5 + k * 0.27) % 1) * 1.6, 4.4 + Math.cos(k * 1.9) * 0.6, 0.22); }
+  },
+  sfx: [[['purr', 0.2]], [['purr', 0], ['meow', 0.6]], [['heart', 0.2]], [['meow', 0.5]], [['purr', 0], ['chime', 0.7, 'D5']]],
+  root: ['F3', 'C4', 'A4'],
+};
+
+
+// =====================================================================
+//  V3 STORIES: "Did you know" facts and short fictional stories
+// =====================================================================
+const CROW_O = { back: [44, 44, 56], breast: [64, 64, 78], head: [50, 50, 62], wing: [34, 34, 46], beak: [44, 44, 52], big: 1 };
+const crow = (x, y, z, f, s, T, o) => bird(x, y, z, f, s, T, Object.assign({}, CROW_O, o));
+const SEA_ENV = { top: [96, 154, 220], bot: [240, 236, 218], fog: [214, 228, 232], sunCol: [255, 244, 220], glow: '255,240,210', sat: 1.1, amb: [0.7, 0.72, 0.8], bright: 1.05, fogNear: 60, fogFar: 260 };
+function seaDyn(T) { for (let z = -6; z < 100; z += 6) for (let x = -60; x < 60; x += 6) { const w = (xx, zz) => Math.sin(xx * 0.3 + zz * 0.22 + T * 1.5) * 0.15, a = [x, w(x, z), z], b = [x + 6, w(x + 6, z), z], c = [x, w(x, z + 6), z + 6], d = [x + 6, w(x + 6, z + 6), z + 6], col = mixc([88, 176, 196], [44, 122, 170], cl((z - 6) / 80)); tri(a, c, b, col, { water: 1 }); tri(b, c, d, mixc(col, [255, 255, 255], 0.12), { water: 1 }); } }
+const jumpD = (T, ph, x0, dx, z, spd) => { const per = 2.6, fr = 0.8, u = (((T / per + ph) % 1) + 1) % 1; if (u > fr) return null; const q = u / fr, x = x0 + dx * (q - 0.5) * spd, y = 3.2 * Math.sin(Math.PI * q), vy = (3.2 * Math.PI * Math.cos(Math.PI * q)) / fr / per, vx = spd / fr / per; return { x, y, z, ang: Math.atan2(vy, vx), q, dx }; };
+const drawJump = (T, j, s) => { if (!j) return; dolphin(j.x, j.y, j.z, j.dx > 0 ? Math.PI / 2 : -Math.PI / 2, s || 1.6, T, { pitch: -j.ang }); if (j.q < 0.1 || j.q > 0.9) ico(j.x, 0.1, j.z, 0.9, [240, 248, 255], null, 0.25); };
+
+// ---------- Did you know: octopus ----------
+const OCTO = {
+  id: 'octopus', title: 'Octopus Hearts',
+  caption: 'Did you know an octopus has three hearts? 🐙',
+  tags: '#didyouknow #octopus #oceanlife #animalfacts #sea #shorts', footer: 'Based on marine biology facts about octopus anatomy and blood.',
+  beats: [
+    { d: 4.4, vo: 'Did you know octopuses have three hearts?', tags: [{ t: [0, 0.95], text: '3 HEARTS', y: 330, size: 100, bg: '#ffd86b' }] },
+    { d: 5.4, vo: 'Two pump blood to the gills, and one pumps it to the rest of the body.', tags: [{ t: [0.05, 0.95], text: '2 + 1', y: 330, size: 100, bg: '#ffb0c0' }] },
+    { d: 4.6, vo: 'Their blood is blue, because it uses copper to carry oxygen.', tags: [{ t: [0.05, 0.95], text: 'BLUE BLOOD', y: 330, size: 82, bg: '#a8d4ff' }] },
+    { d: 5, vo: 'And when an octopus swims, its main heart actually stops beating.', tags: [{ t: [0.05, 0.95], text: 'THE MAIN HEART PAUSES', y: 330, size: 50, bg: '#ffd86b' }] },
+    { d: 4.8, vo: 'So yes, an octopus really has three hearts, and blue blood too.', tags: [{ t: [0.05, 0.95], text: '3 HEARTS · BLUE BLOOD', y: 330, size: 54, bg: '#b9f0d0' }] },
+  ],
+  build() { uwBuild(5); }, env: () => UW_ENV,
+  cam(i, p) {
+    if (i === 0) return { pos: [lerp(0, 0.8, p), 2.4, lerp(1.2, 3.2, p)], tg: [0, 2.4, 8] };
+    if (i === 1) return { pos: [lerp(-1.5, 1.5, p), 2.4, 2.6], tg: [0, 2.2, 8] };
+    if (i === 2) return { pos: [lerp(2.5, -2.5, p), 2.2, 3.4], tg: [0, 2.2, 8] };
+    if (i === 3) { const x = lerp(-6, 6, p); return { pos: [x * 0.4, 2.8, 2.4], tg: [x, 2.8, 8] }; }
+    return { pos: [lerp(-2, 2, p), 2.6, 3], tg: [0, 2.4, 8] };
+  },
+  dyn(T, i, p) {
+    uwDyn(T); const bl = [90, 150, 230];
+    if (i !== 3) octopus(0, 0, 8, Math.PI, 1.2, T, {});
+    if (i === 0) [[-1.5, 4.0], [0, 4.7], [1.5, 4.0]].forEach(([x, y], k) => { const pop = bk(wn(p, 0.2 + k * 0.18, 0.34 + k * 0.18)); if (pop > 0) heart3d(x, y + Math.sin(T * 3 + k) * 0.08, 8, 0.5 * pop); });
+    if (i === 1) { const pl = 1 + 0.12 * Math.sin(T * 6); heart3d(-1.5, 2.4, 7.4, 0.36 * pl, [240, 150, 176]); heart3d(1.5, 2.4, 7.4, 0.36 * pl, [240, 150, 176]); heart3d(0, 1.9, 7.4, 0.6 * pl); }
+    if (i === 2) for (let k = 0; k < 12; k++) { const a = T * 2 + k * 0.52; ico(Math.cos(a) * 1.5, 2.2 + Math.sin(T * 1.5 + k) * 0.5, 8 + Math.sin(a) * 1.2, 0.11, bl, null, 1, { emissive: 1 }); }
+    if (i === 3) { const x = lerp(-6, 6, p); octopus(x, 2.8 + Math.sin(T * 3) * 0.2, 8, Math.PI / 2, 1.1, T, { swim: 1 }); heart3d(x, 5.4, 8, 0.4, [160, 160, 172]); box(x - 0.9, 5.4, 7.9, 0.12, 0.45, 0.05, [240, 240, 244], null, { emissive: 1 }); box(x - 1.15, 5.4, 7.9, 0.12, 0.45, 0.05, [240, 240, 244], null, { emissive: 1 }); }
+    if (i === 4) { const pl = 1 + 0.1 * Math.sin(T * 5); [[-1.4, 4.0], [0, 4.7], [1.4, 4.0]].forEach(([x, y]) => heart3d(x, y, 8, 0.5 * pl)); for (let k = 0; k < 8; k++) { const a = T * 1.6 + k * 0.79; ico(Math.cos(a) * 1.8, 2.4 + Math.sin(T + k) * 0.5, 8 + Math.sin(a) * 1.3, 0.1, bl, null, 1, { emissive: 1 }); } }
+  },
+  post: SHARK.post,
+  sfx: [[['uw', 0, 4.4], ['heart', 0.3]], [['uw', 0, 5.4], ['heart', 0.1]], [['uw', 0, 4.6], ['bubbles', 0.2]], [['uw', 0, 5], ['whoosh', 0.1]], [['uw', 0, 4.8], ['chime', 0.7, 'D5']]],
+  root: ['E2', 'B2', 'G3'],
+};
+
+// ---------- Did you know: crows remember faces ----------
+const CROWP = [[3.2, 0.8, 7.6, Math.PI], [1.6, 0, 9.2, Math.PI], [-1.8, 0, 10, Math.PI], [4.6, 4.4, 3, Math.PI]];
+const CROWS = {
+  id: 'crow', title: 'Crows Remember Faces',
+  caption: 'Did you know crows can remember human faces? 🐦‍⬛',
+  tags: '#didyouknow #crows #animalfacts #birds #smartanimals #shorts', footer: 'Based on published field research on American crows and human faces (University of Washington).',
+  beats: [
+    { d: 4.4, vo: 'Did you know crows can remember human faces?', tags: [{ t: [0, 0.95], text: 'CROWS REMEMBER FACES', y: 330, size: 56, bg: '#ffd86b' }] },
+    { d: 4.6, vo: 'Researchers wore a mask when they briefly caught crows.', tags: [{ t: [0.05, 0.95], text: 'THE MASK TEST', y: 330, size: 80, bg: '#c8b8ff' }] },
+    { d: 4.8, vo: 'Soon even crows that were never caught scolded that mask.', tags: [{ t: [0.05, 0.95], text: 'THEY SCOLD THE MASK', y: 330, size: 62, bg: '#ff8f8f', col: '#ffffff' }] },
+    { d: 4.6, vo: 'And years later, they still did.', tags: [{ t: [0.05, 0.95], text: 'YEARS LATER', y: 330, size: 84, bg: '#a8d4ff' }] },
+    { d: 5, vo: 'So be kind to crows. Crows remember faces.', tags: [{ t: [0.05, 0.95], text: 'BE KIND TO CROWS', y: 330, size: 66, bg: '#b9f0d0' }] },
+  ],
+  build: parkBuild, env: () => PARK_ENV,
+  cam(i, p) {
+    if (i === 0) return { pos: [lerp(3.6, 3.2, p), 1.5, 4.4], tg: [3.2, 1.4, 7.6] };
+    if (i === 1) return { pos: [-2.5, 1.5, 2], tg: [1.5, 1.1, 8] };
+    if (i === 2) return { pos: [-2.5, 1.6, 2.5], tg: [1.2, 1.2, 8.5] };
+    if (i === 3) return { pos: [-2.5, 1.6, 2.5], tg: [1.2, 1.2, 8.5] };
+    return { pos: [lerp(2.6, 3.4, p), 1.5, 4.6], tg: [3.2, 1.4, 7.6] };
+  },
+  dyn(T, i, p) {
+    const MS = { shirt: [206, 96, 86], pants: [50, 56, 90], mask: [232, 232, 236], shape: 1 }, NO = { shirt: [84, 128, 196], pants: [50, 56, 90], shape: 0 }, caw = (T * 3) % 1 < 0.5;
+    const flock = (n, angry) => CROWP.slice(0, n).forEach(([x, y, z, f], k) => crow(x, y, z, f, 2.0, T, { beakOpen: angry && caw ? 1 : 0, dip: angry ? 0.2 + Math.sin(T * 12 + k) * 0.1 : 0 }));
+    if (i === 0) crow(3.2, 0.8, 7.6, Math.PI, 1.7, T, { dip: Math.sin(T * 1.5) * 0.08 });
+    if (i === 1) { crow(3.2, 0.8, 7.6, Math.PI, 2.0, T, {}); crow(1.6, 0, 9.2, Math.PI, 2.0, T, {}); person(0.4, 0, lerp(0, 10, p), 0, 1, Object.assign({ walk: T * 6 }, MS)); }
+    if (i === 2) { flock(Math.min(4, 1 + Math.floor(p * 5)), 1); person(0.4, 0, lerp(0, 10, p), 0, 1, Object.assign({ walk: T * 6 }, MS)); }
+    if (i === 3) { const w = p < 0.5; flock(3, !w); person(0.4, 0, lerp(0, 10, w ? wn(p, 0, 0.5) : wn(p, 0.5, 1)), 0, 1, Object.assign({ walk: T * 6 }, w ? NO : MS)); }
+    if (i === 4) crow(3.2, 0.8, 7.6, Math.PI, 1.7, T, { dip: 0.15 + Math.sin(T * 2) * 0.06 });
+  },
+  sfx: [[['wind', 0, 4.4], ['caw', 0.5]], [['steps', 0.3]], [['caw', 0.2], ['caw', 0.45], ['caw', 0.7]], [['steps', 0.1], ['caw', 0.7]], [['caw', 0.3], ['chime', 0.7, 'D5']]],
+  root: ['D3', 'A3', 'F4'],
+};
+
+// ---------- Did you know: dolphins have names ----------
+const DOLPH = {
+  id: 'dolphin', title: 'Dolphin Names',
+  caption: 'Did you know dolphins have names for each other? 🐬',
+  tags: '#didyouknow #dolphins #animalfacts #oceanlife #smartanimals #shorts', footer: 'Based on research on bottlenose dolphin signature whistles (e.g. University of St Andrews).',
+  beats: [
+    { d: 4.4, vo: 'Did you know dolphins have names for each other?', tags: [{ t: [0, 0.95], text: 'DOLPHINS HAVE NAMES', y: 330, size: 58, bg: '#ffd86b' }] },
+    { d: 4.6, vo: 'Each dolphin invents its own signature whistle.', tags: [{ t: [0.05, 0.95], text: 'SIGNATURE WHISTLE', y: 330, size: 64, bg: '#a8d4ff' }] },
+    { d: 5, vo: 'Other dolphins copy that whistle when they call to it.', tags: [{ t: [0.05, 0.95], text: 'THEY CALL BY NAME', y: 330, size: 68, bg: '#ffb0c0' }] },
+    { d: 5.6, vo: "They can even recognize an old friend's whistle after decades apart.", tags: [{ t: [0.05, 0.95], text: 'AFTER 20+ YEARS', y: 330, size: 72, bg: '#c8b8ff' }] },
+    { d: 4.8, vo: 'So yes, dolphins really do have names for each other.', tags: [{ t: [0.05, 0.95], text: 'REAL NAMES', y: 330, size: 84, bg: '#b9f0d0' }] },
+  ],
+  build() { cloud(-40, 60, 170, 1.2); cloud(50, 70, 190, 1.4); cone(-70, -1, 150, 40, 14, 7, [110, 150, 140]); cone(80, -1, 160, 36, 12, 7, [120, 160, 140]); }, env: () => SEA_ENV,
+  cam: () => ({ pos: [0, 1.4, 0], tg: [0, 2.4, 12] }),
+  dyn(T, i, p) {
+    seaDyn(T);
+    const rings = (j, col, off) => { if (j) for (let k = 0; k < 3; k++) { const a = (((T * 0.9 + k / 3 + (off || 0)) % 1) + 1) % 1; ring3d(j.x, j.y + 0.6, j.z, 0.3 + a * 2.6, 0.1, col); } };
+    if (i === 0) { drawJump(T, jumpD(T, 0, 0, 1, 10, 14)); drawJump(T, jumpD(T, 0.5, 0, -1, 15, 14)); }
+    if (i === 1) { const j = jumpD(T, 0, 0, 1, 11, 12); drawJump(T, j, 1.2); rings(j, [255, 244, 190]); }
+    if (i === 2) { const a = jumpD(T, 0, -3, 1, 10, 10), b = jumpD(T, 0.06, 3, -1, 14, 10); drawJump(T, a); drawJump(T, b); rings(a, [255, 244, 190]); rings(b, [190, 226, 255], 0.5); }
+    if (i === 3) { const a = jumpD(T, 0, lerp(-12, -2.5, p), 1, 12, 8), b = jumpD(T, 0.03, lerp(12, 2.5, p), -1, 12, 8); drawJump(T, a); drawJump(T, b); if (p > 0.75) heart3d(0, 5.2 + Math.sin(T * 3) * 0.1, 12, 0.5); }
+    if (i === 4) { const a = jumpD(T, 0, -2.2, 1, 11, 6), b = jumpD(T, 0.02, 2.2, -1, 11, 6); drawJump(T, a); drawJump(T, b); heart3d(0, 5.4 + Math.sin(T * 3) * 0.1, 11, 0.5); }
+  },
+  sfx: [[['waves', 0, 4.4], ['whistle', 0.4]], [['waves', 0, 4.6], ['whistle', 0.2]], [['waves', 0, 5], ['whistle', 0.2], ['whistle', 0.5]], [['waves', 0, 5.6], ['whistle', 0.5]], [['waves', 0, 4.8], ['chime', 0.7, 'D5']]],
+  root: ['G2', 'D3', 'B3'],
+};
+
+// ---------- Did you know: penguin pebble proposal ----------
+const PENG = {
+  id: 'penguin', title: 'Penguin Pebble',
+  caption: 'Did you know some penguins propose with a pebble? 🐧',
+  tags: '#didyouknow #penguins #animalfacts #animalslove #nature #shorts', footer: 'Based on observations of Adélie and gentoo penguins, which use pebbles in courtship and nests.',
+  beats: [
+    { d: 4.8, vo: 'Did you know some penguins propose with a pebble?', tags: [{ t: [0, 0.95], text: 'A PEBBLE PROPOSAL', y: 330, size: 62, bg: '#ffd86b' }] },
+    { d: 4.4, vo: 'A male searches for the smoothest pebble he can find.', tags: [{ t: [0.05, 0.95], text: 'THE PERFECT PEBBLE', y: 330, size: 60, bg: '#a8d4ff' }] },
+    { d: 4.2, vo: 'Then he places it at his partner\'s feet.', tags: [{ t: [0.05, 0.95], text: 'A GIFT OF LOVE', y: 330, size: 70, bg: '#ffb0c0' }] },
+    { d: 5, vo: 'If she accepts, the pair uses pebbles to build their nest.', tags: [{ t: [0.05, 0.95], text: 'BUILDING A NEST', y: 330, size: 70, bg: '#c8b8ff' }] },
+    { d: 4.6, vo: 'So yes, some penguins really do propose with a pebble.', tags: [{ t: [0.05, 0.95], text: 'PEBBLE = I LOVE YOU', y: 330, size: 58, bg: '#b9f0d0' }] },
+  ],
+  build() {
+    groundG(XS_A, ZS_A, () => 0, (x, z) => ((Math.floor(x / 10) + Math.floor(z / 10)) & 1 ? [236, 242, 250] : [222, 232, 246]), 41);
+    const r = rng(41); for (let k = 0; k < 12; k++) { const w = 2 + r() * 3, h = 1 + r() * 2.5; box(-30 + r() * 60, h / 2, 22 + r() * 40, w, h, w * 0.8, [198, 224, 244]); }
+    for (let k = 0; k < 70; k++) ico(-9 + r() * 18, 0.07, 4 + r() * 10, 0.08 + r() * 0.08, mixc([130, 128, 134], [176, 168, 160], r()), null, 0.6);
+    [[-90, 200, 60, 30, [196, 214, 240]], [20, 220, 70, 36, [206, 220, 244]], [100, 200, 50, 26, [190, 210, 238]]].forEach(([x, z, rr, h, c]) => mountain(x, z, rr, h, c)); cloud(-40, 66, 180, 1.2); cloud(60, 74, 200, 1.3);
+    [[-14, 22], [-9, 26], [10, 24], [15, 20], [6, 30], [-4, 32]].forEach(([x, z], k) => penguin(x, 0, z, Math.PI + (k - 3) * 0.2, 0.9, 0, {}));
+  },
+  env: () => ({ top: [128, 168, 222], bot: [240, 244, 252], fog: [226, 236, 248], sunCol: [245, 247, 255], glow: '245,248,255', sat: 1.05, amb: [0.72, 0.76, 0.86], bright: 1.06, fogNear: 50, fogFar: 220 }),
+  cam(i, p) { if (i === 3) return { pos: [lerp(-2, 2, p), 1.8, 0.8], tg: [0, 1, 8] }; if (i === 1) return { pos: [lerp(-4, -1, p), 1.4, 1.2], tg: [lerp(-3, 0, p), 1.1, 8] }; return { pos: [0, 1.6, 0.6], tg: [0, 1.5, 8] }; },
+  dyn(T, i, p) {
+    const S = 1.1, F = (x) => penguin(x, 0, 8, -Math.PI / 2, S, T, { dip: 0 });
+    if (i === 0) { penguin(-0.9, 0, 8, Math.PI / 2, S, T, {}); F(0.9); ico(-0.1, 1.95, 8, 0.1, [150, 146, 150], null, 0.7); heart3d(0, 3.4 + Math.sin(T * 3) * 0.08, 8, 0.4); }
+    if (i === 1) { const x = lerp(-4.5, -1.2, ez(p)), dip = 0.5 * wn(p, 0.4, 0.55) * (1 - wn(p, 0.6, 0.75)); penguin(x, 0, 8, Math.PI / 2, S, T, { walk: T * 7, dip }); if (p > 0.6) ico(x + 0.55, 1.95, 8, 0.1, [150, 146, 150], null, 0.7); F(3); }
+    if (i === 2) { const x = lerp(-3, -0.3, ez(wn(p, 0, 0.7))); penguin(x, 0, 8, Math.PI / 2, S, T, { walk: p < 0.7 ? T * 7 : 0, dip: 0.4 * wn(p, 0.7, 0.85) }); if (p < 0.72) ico(x + 0.55, 1.95, 8, 0.1, [150, 146, 150], null, 0.7); else { ico(0.5, 0.1, 8, 0.12, [150, 146, 150], null, 0.7); heart3d(0.2, 3.3, 8, 0.4 * bk(wn(p, 0.75, 0.9))); } F(0.9); }
+    if (i === 3) { const n = Math.floor(26 * wn(p, 0.1, 0.85)); for (let k = 0; k < n; k++) { const a = (k / 26) * TAU; ico(Math.cos(a) * 1.1, 0.1, 8.4 + Math.sin(a) * 0.9, 0.13, mixc([140, 136, 142], [180, 170, 160], (k % 3) / 3), null, 0.7); } penguin(-1.9, 0, 8, Math.PI / 2, S, T, { dip: 0.3 * Math.abs(Math.sin(T * 3)) }); F(1.9); }
+    if (i === 4) { penguin(-0.7, 0, 8, Math.PI / 2, S, T, { flap: Math.sin(T * 3) * 0.1 }); F(0.7); for (let k = 0; k < 16; k++) { const a = (k / 16) * TAU; ico(Math.cos(a) * 1.5, 0.1, 8.3 + Math.sin(a) * 1.0, 0.13, [150, 146, 150], null, 0.7); } [[-0.6, 3.4], [0.6, 3.4], [0, 4.0]].forEach(([x, y], k) => heart3d(x, y + Math.sin(T * 3 + k) * 0.1, 8, 0.32)); }
+  },
+  sfx: [[['wind', 0, 4.8], ['chime', 0.4, 'E5']], [['steps', 0.2]], [['steps', 0.1], ['chime', 0.75, 'G5']], [['steps', 0.2], ['knock', 0.5]], [['wind', 0, 4.6], ['chime', 0.7, 'D5']]],
+  root: ['C3', 'G3', 'E4'],
+};
+
+// ---------- Short fictional story: the kitten and the rain ----------
+function house(x, z, open) { box(x, 2, z, 7, 4, 7, [222, 192, 150]); box(x, 4.2, z, 8, 0.4, 8, [170, 70, 60]); cone(x, 4.4, z, 5.4, 2.6, 4, [184, 84, 70], comp(mv(-x, 0, -z), rotY(Math.PI / 4), mv(x, 0, z))); [-2, 2].forEach((d) => box(x + d, 2.2, z - 3.52, 1.3, 1.3, 0.1, [255, 222, 140], null, { emissive: 1 })); box(x, 1.2, z - 3.45, 1.4, 2.4, 0.05, [255, 222, 140], null, { emissive: 1 }); if (!open) box(x, 1.2, z - 3.52, 1.4, 2.4, 0.1, [130, 80, 50]); }
+const RAIN_ENV = { top: [88, 100, 134], bot: [170, 180, 198], fog: [146, 156, 178], sunCol: [196, 206, 232], glow: '190,200,230', sat: 1.0, amb: [0.68, 0.7, 0.8], bright: 0.95, fogNear: 25, fogFar: 150 };
+const KIT = { col: [214, 150, 90] }, RAINCOAT = { shirt: [226, 190, 70], pants: [60, 70, 110], shape: 0 };
+const FICT1 = {
+  id: 'kitten', title: 'The Kitten and the Rain',
+  caption: 'A short fictional story about kindness. 🐱 (This is a made-up story.)',
+  tags: '#shortstory #fiction #kitten #kindness #animalstories #shorts', footer: 'A fictional story, written for entertainment. If you find a real stray, see our "Found an animal" videos.',
+  beats: [
+    { d: 5, vo: 'A tiny kitten waited in the rain for someone kind.', tags: [{ t: [0, 0.95], text: 'A SHORT STORY', y: 330, size: 74, bg: '#ffc8d8' }] },
+    { d: 4.4, vo: 'People hurried past, too busy to notice her.', tags: [{ t: [0.05, 0.95], text: 'NO ONE STOPPED', y: 330, size: 72, bg: '#c8d0e8' }] },
+    { d: 4.6, vo: 'Then a little girl stopped, and shared her umbrella.', tags: [{ t: [0.05, 0.95], text: 'THEN, KINDNESS', y: 330, size: 74, bg: '#ffd86b' }] },
+    { d: 4.8, vo: 'She carried the kitten home, tucked inside her coat.', tags: [{ t: [0.05, 0.95], text: 'GOING HOME', y: 330, size: 80, bg: '#b9f0d0' }] },
+    { d: 5.6, vo: 'The kitten had waited for someone kind, and now she had a home.', tags: [{ t: [0.05, 0.95], text: 'A HOME', y: 330, size: 100, bg: '#ffb0c0' }] },
+  ],
+  build() {
+    groundG([-70, -40, -20, -10, -6, 6, 10, 20, 40, 70], ZS_A, () => 0, (x, z) => (Math.abs(x) < 6 ? [74, 80, 100] : Math.abs(x) < 10 ? [150, 150, 168] : [116, 126, 120]), 61);
+    const r = rng(61), pal = [[170, 150, 150], [150, 160, 176], [180, 160, 130], [140, 150, 170]]; for (let z = -10; z < 80; z += 16) [-1, 1].forEach((d) => building(d * (22 + r() * 4), z, 16 + r() * 6, 14, 14 + r() * 22, pal[Math.floor(r() * 4)]));
+    [-1, 1].forEach((d) => [0, 14, 28, 42].forEach((z) => { prism(d * 8.5, 0, z, 0.1, 5, 5, [70, 70, 86]); ico(d * 8.5, 5.3, z, 0.45, [255, 232, 170], null, 1, { emissive: 1 }); }));
+    for (let k = 0; k < 6; k++) { const x = -4 + (k % 3) * 3.5, z = 6 + k * 4; ell(x, 0.03, z, 1.4, 0.02, 0.9, [120, 140, 176], null); }
+  },
+  env: () => RAIN_ENV,
+  cam(i, p) {
+    if (i === 0) return { pos: [lerp(4.8, 5.4, p), 1.0, 5.8], tg: [7, 0.6, 10] };
+    if (i === 1) return { pos: [4.4, 1.2, 4.8], tg: [8, 0.9, 10] };
+    if (i === 2) return { pos: [lerp(4.6, 5.2, p), 1.3, 5.6], tg: [7.2, 0.9, 9.6] };
+    if (i === 3) { const z = lerp(10, 22, p); return { pos: [4.6, 1.4, z - 4.5], tg: [7.4, 1.0, z] }; }
+    return { pos: [lerp(3.4, 4.4, p), 1.5, 17.6], tg: [6.5, 1.2, 22.6] };
+  },
+  dyn(T, i, p) {
+    rainDyn(T, 6, i === 3 ? lerp(10, 22, p) : i === 4 ? 22 : 9, 70);
+    if (i <= 2) { crate(7, 10, false); cat(7, 0.3, 10, Math.PI, 0.7, Object.assign({ pose: 'sit', look: i === 1 ? Math.sin(T * 1.2) * 0.5 : 0, tail: T }, KIT)); }
+    if (i === 1) for (let k = 0; k < 4; k++) { const x = ((((T * 2.4 + k * 4.1) % 18) + 18) % 18) - 4; person(x, 0, 7.4 + (k % 2) * 0.8, FC, 1, { walk: T * 7 + k, umbrella: PAL[k % 5], shirt: PAL[(k + 2) % 5], pants: [60, 66, 96] }); }
+    if (i === 2) { person(7.2, 0, 8.3, 0, 0.7, Object.assign({ bend: 0.45, umbrella: [210, 90, 90], armR: -1.0 }, RAINCOAT)); }
+    if (i === 3) { const z = lerp(10, 22, p), g = person(7.2, 0, z, 0, 0.7, Object.assign({ walk: T * 7, amp: 0.5, armR: -1.1, armL: -1.1, umbrella: [210, 90, 90] }, RAINCOAT)); cat(g.hR[0] - 0.1, g.hR[1] - 0.25, g.hR[2] + 0.05, 0, 0.32, Object.assign({ pose: 'sit' }, KIT)); house(6, 26, false); }
+    if (i === 4) { house(6, 26, true); person(6.2, 0, 22.4, Math.PI, 0.7, Object.assign({ armR: -1.1, armL: -1.1 }, RAINCOAT)); cat(6.2, 0.9, 22.0, Math.PI, 0.32, Object.assign({ pose: 'sit', blink: slowBlink(T) }, KIT)); [0, 1, 2].forEach((k) => heart3d(5.6 + k * 0.6, 3 + ((T * 0.5 + k * 0.3) % 1) * 1.6, 22, 0.25)); }
+  },
+  sfx: [[['rain', 0, 5], ['meow', 0.5]], [['rain', 0, 4.4], ['steps', 0.2]], [['rain', 0, 4.6], ['chime', 0.6, 'A4']], [['rain', 0, 4.8], ['steps', 0.1]], [['rain', 0, 5.6], ['door', 0.1], ['purr', 0.3], ['chime', 0.7, 'D5']]],
+  root: ['A2', 'E3', 'C4'],
+};
+
+// ---------- Short fictional story: the old dog and the puppy ----------
+const GARDEN_ENV = { top: [96, 156, 226], bot: [246, 238, 214], fog: [220, 230, 226], sunCol: [255, 244, 220], glow: '255,244,210', sat: 1.1, amb: [0.7, 0.7, 0.78], bright: 1.05, fogNear: 50, fogFar: 230 };
+const OLD = { col: [176, 150, 126], col2: [210, 188, 158], muzzle: [226, 220, 212] }, PUP = { col: [236, 200, 130], col2: [214, 150, 84], collar: [200, 90, 100] };
+const FICT2 = {
+  id: 'olddog', title: 'The Old Dog and the Puppy',
+  caption: 'A short fictional story about love and loyalty. 🐕 (This is a made-up story.)',
+  tags: '#shortstory #fiction #dogs #puppy #animalstories #shorts', footer: 'A fictional story, written for entertainment.',
+  beats: [
+    { d: 4.6, vo: 'An old dog had one last lesson to teach.', tags: [{ t: [0, 0.95], text: 'A SHORT STORY', y: 330, size: 74, bg: '#ffc8d8' }] },
+    { d: 5, vo: 'A new puppy bounced around him all day, full of energy.', tags: [{ t: [0.05, 0.95], text: 'ENERGY!', y: 330, size: 90, bg: '#ffd86b' }] },
+    { d: 5, vo: 'The old dog was slow, but he showed the puppy every favorite spot.', tags: [{ t: [0.05, 0.95], text: 'SLOW AND STEADY', y: 330, size: 64, bg: '#b9f0d0' }] },
+    { d: 5, vo: 'When a storm came, the puppy trembled, and the old dog stayed close.', tags: [{ t: [0.05, 0.95], text: 'STAYING CLOSE', y: 330, size: 70, bg: '#a8d4ff' }] },
+    { d: 5.2, vo: 'That was the lesson: love is simply staying close.', tags: [{ t: [0.05, 0.95], text: 'THE LESSON', y: 330, size: 84, bg: '#ffb0c0' }] },
+  ],
+  build() {
+    groundG(XS_A, ZS_A, () => 0, (x, z) => ((Math.floor(x / 8) + Math.floor(z / 8)) & 1 ? [116, 180, 104] : [102, 168, 94]), 71);
+    house(0, 50, true); for (let x = -22; x <= 22; x += 2) { box(x, 0.6, 38, 0.2, 1.2, 0.2, [196, 160, 120]); } box(0, 0.9, 38, 46, 0.12, 0.1, [196, 160, 120]); box(0, 0.4, 38, 46, 0.12, 0.1, [196, 160, 120]);
+    const r = rng(71), leaf = [[84, 166, 98], [112, 176, 84], [66, 148, 118]]; for (let k = 0; k < 10; k++) roundTree((r() < 0.5 ? -1 : 1) * (10 + r() * 24), 6 + r() * 30, 0.9 + r() * 0.5, leaf[k % 3]); roundTree(9, 12, 1.4, [96, 170, 90]);
+    const fc = [[226, 110, 140], [236, 210, 90], [170, 120, 210], [245, 245, 245]]; for (let k = 0; k < 40; k++) ico(-14 + r() * 28, 0.16, 4 + r() * 26, 0.17, fc[k % 4], null, 0.8);
+    [[-80, 160, 50, 24, [110, 170, 140]], [30, 180, 60, 28, [120, 170, 160]]].forEach(([x, z, rr, h, c]) => cone(x, 0, z, rr, h, 7, c)); cloud(-40, 70, 180, 1.2);
+  },
+  env(i, T, p) { if (i === 3) { const fl = Math.sin(T * 7) > 0.92 ? 1.5 : 0; return { top: [60, 64, 96], bot: [130, 136, 156], fog: [110, 116, 140], sunCol: [190, 200, 230], glow: '190,200,230', sat: 1.0, amb: [0.6, 0.62, 0.74], bright: 0.82 + fl * 0.3, fogNear: 25, fogFar: 150 }; } if (i === 4) return { top: [150, 130, 200], bot: [255, 200, 150], fog: [255, 214, 180], sunCol: [255, 210, 160], glow: '255,200,140', sat: 1.1, amb: [0.7, 0.68, 0.78], bright: 1.05, fogNear: 50, fogFar: 230 }; return GARDEN_ENV; },
+  cam(i, p) {
+    if (i === 0) return { pos: [lerp(-2.5, -1.5, p), 1.0, 5], tg: [0, 0.6, 9] };
+    if (i === 1) return { pos: [-3, 1.3, 4.6], tg: [0, 0.8, 9] };
+    if (i === 2) { const x = lerp(-3, 5, ez(p)); return { pos: [x - 1, 1.4, 5.2], tg: [x + 1.5, 0.8, 11] }; }
+    if (i === 3) return { pos: [lerp(-2, -1, p), 1.0, 5.4], tg: [0, 0.6, 9] };
+    return { pos: [lerp(-2.4, -1.6, p), 1.0, 5.4], tg: [0, 0.6, 9] };
+  },
+  dyn(T, i, p) {
+    if (i === 3) rainDyn(T, 0, 9, 80);
+    if (i === 0) dog(0, 0, 9, Math.PI * 0.85, 1.1, Object.assign({ pose: 'lie', wag: T * 1.2 }, OLD));
+    if (i === 1) { dog(0, 0, 9, Math.PI * 0.9, 1.1, Object.assign({ pose: 'lie', wag: T * 2 }, OLD)); const a = T * 3.2; dog(Math.cos(a) * 2.6, Math.abs(Math.sin(T * 7)) * 0.35, 9 + Math.sin(a) * 2.0, Math.atan2(-Math.sin(a), Math.cos(a)) + Math.PI / 2 * 0 + 0, 0.55, Object.assign({ walk: T * 14, wag: T * 14, tongue: 1, amp: 0.8 }, PUP)); }
+    if (i === 2) { const x = lerp(-3, 5, ez(p)); dog(x + 1.5, 0, 9, FC, 1.1, Object.assign({ walk: T * 4, wag: T * 2, amp: 0.35 }, OLD)); dog(x - 0.2, Math.abs(Math.sin(T * 7)) * 0.1, 9.2, FC, 0.55, Object.assign({ walk: T * 8, wag: T * 12, tongue: 1, amp: 0.6 }, PUP)); }
+    if (i === 3) { dog(0, 0, 9, Math.PI * 0.9, 1.1, Object.assign({ pose: 'lie', dip: 0.1 }, OLD)); dog(-0.9 + Math.sin(T * 30) * 0.015, 0, 8.4, Math.PI * 0.9, 0.55, Object.assign({ pose: 'lie', sad: 1 }, PUP)); }
+    if (i === 4) { dog(0, 0, 9, Math.PI * 0.9, 1.1, Object.assign({ pose: 'lie', wag: T * 1.5 }, OLD)); dog(-0.9, 0, 8.4, Math.PI * 0.9, 0.55, Object.assign({ pose: 'lie', wag: T * 3 }, PUP)); [0, 1, 2].forEach((k) => heart3d(-0.4 + k * 0.4, 2 + ((T * 0.5 + k * 0.3) % 1) * 1.5, 8.8, 0.25)); }
+  },
+  sfx: [[['wind', 0, 4.6], ['chime', 0.2, 'A4']], [['bark', 0.3], ['steps', 0.1]], [['steps', 0.1], ['wind', 0, 5]], [['rain', 0, 5], ['thunder', 0.2], ['whimper', 0.6]], [['wind', 0, 5.2], ['chime', 0.5, 'D5'], ['chime', 0.65, 'F#5']]],
+  root: ['F3', 'C4', 'A4'],
+};
+const STORIES = [BEAR, SHARK, SNAKE, BIRD, CHOC, ROAD, HACHI, BOBBIE, ELEPH, CATS, OCTO, CROWS, DOLPH, PENG, FICT1, FICT2];
+
+
+window.TOPIC_IDS = STORIES.map((s) => s.id); Object.entries({ survival: [BEAR, SHARK, SNAKE], help: [BIRD, CHOC, ROAD], tale: [HACHI, BOBBIE], dyk: [ELEPH, CATS, OCTO, CROWS, DOLPH, PENG], fiction: [FICT1, FICT2] }).forEach(([k, a]) => a.forEach((s) => { s.kind = k; }));
+window.TOPIC_KINDS = Object.fromEntries(STORIES.map((s) => [s.id, s.kind]));
+window.loadTopic = loadTopic; window.setVoiceDurations = setVoiceDurations; window.setCel = (b) => { CEL = !!b; STORIES.forEach((x) => { x._static = null; }); };
+
+// =====================================================================
+//  SOUND: low drone and soft plucks, a whoosh on every cut, and effects for each beat
+// =====================================================================
+function noteHz(n) { const m = /^([A-G])([#b]?)(\d)$/.exec(n), S = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }; return 440 * Math.pow(2, (S[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (m[3] - 4) * 12 - 9) / 12); }
+function buildAudio(ctx, vo) {
+  const T = TL.total, sr = ctx.sampleRate, id = hashS(STORY.id);
+  const comp2 = ctx.createDynamicsCompressor(); comp2.threshold.value = -18; comp2.ratio.value = 3; comp2.connect(ctx.destination);
+  const dry = ctx.createGain(); dry.gain.value = vo ? 0.62 : 0.9; dry.connect(comp2);
+  const verb = ctx.createConvolver(); { const n = Math.floor(sr * 1.6), ir = ctx.createBuffer(2, n, sr); for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch), q = rng(7 + ch); let lp = 0; for (let k = 0; k < n; k++) { const u = k / n; lp += (0.5 - 0.35 * u) * ((q() * 2 - 1) - lp); d[k] = lp * Math.pow(1 - u, 3); } } verb.buffer = ir; }
+  const wet = ctx.createGain(); wet.gain.value = 0.35; wet.connect(verb); verb.connect(comp2);
+  const nb = ctx.createBuffer(1, sr * 2, sr); { const d = nb.getChannelData(0), q = rng(99); for (let k = 0; k < d.length; k++) d[k] = q() * 2 - 1; }
+  const out = (node, pan, vb) => { const p = ctx.createStereoPanner(); p.pan.value = pan || 0; node.connect(p); p.connect(dry); if (vb) { const s = ctx.createGain(); s.gain.value = vb; p.connect(s); s.connect(wet); } };
+  function tone(t, f, dur, o) { o = o || {}; if (t > T) return; t = Math.max(t, 0); const os = ctx.createOscillator(); os.type = o.type || 'sine'; if (Array.isArray(f)) { os.frequency.setValueAtTime(f[0], t); os.frequency.exponentialRampToValueAtTime(f[1], t + dur * 0.8); } else os.frequency.value = f; const g = ctx.createGain(), gn = o.g || 0.2; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gn, t + (o.a || 0.004)); g.gain.exponentialRampToValueAtTime(1e-4, t + dur); let nd = os; if (o.lp) { const f2 = ctx.createBiquadFilter(); f2.type = 'lowpass'; f2.frequency.value = o.lp; os.connect(f2); nd = f2; } nd.connect(g); out(g, o.pan, o.vb); os.start(t); os.stop(t + dur + 0.05); }
+  function noise(t, dur, o) { o = o || {}; if (t > T) return; t = Math.max(t, 0); const s = ctx.createBufferSource(); s.buffer = nb; s.loop = true; const f = ctx.createBiquadFilter(); f.type = o.type || 'bandpass'; f.Q.value = o.q || 1; if (Array.isArray(o.f)) { f.frequency.setValueAtTime(o.f[0], t); f.frequency.linearRampToValueAtTime(o.f[1], t + dur); } else f.frequency.value = o.f || 1000; const g = ctx.createGain(), gn = o.g || 0.1; g.gain.setValueAtTime(0, t); if (o.swell) { g.gain.linearRampToValueAtTime(gn, t + dur * 0.5); g.gain.linearRampToValueAtTime(0, t + dur); } else { g.gain.linearRampToValueAtTime(gn, t + (o.a || 0.005)); g.gain.exponentialRampToValueAtTime(1e-4, t + dur); } s.connect(f); f.connect(g); out(g, o.pan, o.vb); s.start(t); s.stop(t + dur + 0.05); }
+  const FX = {
+    whoosh: (t) => noise(t, 0.4, { f: [300, 3200], q: 0.8, g: 0.16, swell: true }),
+    thud: (t) => { tone(t, [120, 42], 0.35, { g: 0.55 }); noise(t, 0.15, { f: 420, type: 'lowpass', g: 0.3 }); },
+    heart: (t) => { [0, 0.42, 1.2, 1.62].forEach((d) => tone(t + d, [90, 48], 0.22, { g: 0.4 })); },
+    chime: (t, n) => { const f = noteHz(n || 'D5'); tone(t, f, 2.6, { g: 0.13, vb: 0.6 }); tone(t, f * 2.76, 0.9, { g: 0.04, vb: 0.5 }); },
+    wind: (t, d) => noise(t, d || 3, { f: [400, 900], q: 0.4, g: 0.07, swell: true }),
+    waves: (t, d) => { for (let k = 0; k < (d || 4) / 2; k++) noise(t + k * 2, 2.4, { f: [500, 1400], q: 0.5, g: 0.09, swell: true }); },
+    steps: (t) => { for (let k = 0; k < 8; k++) noise(t + k * 0.27, 0.05, { f: 1100, type: 'lowpass', g: 0.1, pan: (k % 2) * 0.3 }); },
+    gulls: (t) => { for (let k = 0; k < 5; k++) tone(t + k * 0.4, [2600, 1700], 0.25, { g: 0.04, a: 0.03, pan: (k % 2) - 0.5 }); },
+    growl: (t) => { tone(t, [95, 52], 1.4, { type: 'sawtooth', g: 0.14, lp: 320, a: 0.08 }); noise(t, 1.3, { f: 250, type: 'lowpass', g: 0.12, swell: true }); },
+    hiss: (t) => noise(t, 1.2, { f: 4200, type: 'highpass', g: 0.09, swell: true }),
+    rattle: (t) => { for (let k = 0; k < 30; k++) noise(t + k * 0.045, 0.04, { f: 5500, q: 1.2, g: 0.05 + 0.02 * (k % 2), pan: (k % 3) * 0.2 - 0.2 }); },
+    bubbles: (t) => { for (let k = 0; k < 10; k++) tone(t + k * 0.11 + ((k * 7) % 5) * 0.02, [500 + k * 90, 900 + k * 120], 0.12, { g: 0.05, a: 0.01, pan: (k % 5) * 0.4 - 0.8, vb: 0.3 }); },
+    jaws: (t) => { let tt = 0; for (let k = 0; k < 8; k++) { tone(t + tt, k % 2 ? 87.3 : 82.4, 0.35, { type: 'sawtooth', g: 0.12, lp: 300 }); tt += Math.max(0.2, 0.7 - k * 0.07); } },
+    spray: (t) => noise(t, 0.9, { f: 4500, type: 'highpass', g: 0.14, a: 0.02 }),
+    twig: (t) => { noise(t, 0.06, { f: 2200, g: 0.2 }); noise(t + 0.15, 0.05, { f: 1800, g: 0.15 }); },
+    siren: (t) => { for (let k = 0; k < 4; k++) { tone(t + k * 0.55, [700, 950], 0.28, { g: 0.05 }); tone(t + k * 0.55 + 0.28, [950, 700], 0.28, { g: 0.05 }); } },
+    ping: (t) => tone(t, [1200, 1180], 0.9, { g: 0.06, vb: 0.7 }),
+    caw: (t) => { [0, 0.3].forEach((d) => tone(t + d, [520, 300], 0.22, { type: 'sawtooth', g: 0.1, lp: 1400, a: 0.02, pan: -0.3 + d })); },
+    whistle: (t) => { tone(t, [1800, 3200], 0.3, { g: 0.06, vb: 0.5 }); tone(t + 0.3, [3200, 2000], 0.3, { g: 0.06, vb: 0.5 }); },
+    rain: (t, d) => noise(t, d || 4, { f: 5000, type: 'highpass', g: 0.05, swell: true }),
+    thunder: (t) => { noise(t, 3.4, { f: 120, type: 'lowpass', g: 0.3, swell: true }); tone(t + 0.4, [60, 34], 2.0, { g: 0.3 }); },
+    tweet: (t) => { for (let k = 0; k < 6; k++) tone(t + k * 0.18, [3000 + (k % 3) * 500, 4200], 0.09, { g: 0.04, pan: (k % 4) * 0.5 - 0.75 }); },
+    bark: (t) => { [0, 0.28].forEach((d) => { tone(t + d, [420, 220], 0.16, { type: 'sawtooth', g: 0.14, lp: 900 }); noise(t + d, 0.1, { f: 900, g: 0.1 }); }); },
+    whimper: (t) => { tone(t, [800, 520], 0.5, { g: 0.08, a: 0.05, vb: 0.3 }); tone(t + 0.55, [760, 480], 0.6, { g: 0.07, a: 0.05, vb: 0.3 }); },
+    meow: (t) => { tone(t, [520, 880], 0.18, { type: 'triangle', g: 0.1, a: 0.03 }); tone(t + 0.18, [880, 480], 0.45, { type: 'triangle', g: 0.1, a: 0.01, vb: 0.3 }); },
+    purr: (t) => { for (let k = 0; k < 26; k++) noise(t + k * 0.075, 0.06, { f: 160, type: 'lowpass', g: 0.09 }); },
+    trumpet: (t) => { tone(t, [260, 640], 0.9, { type: 'sawtooth', g: 0.12, lp: 1400, a: 0.1, vb: 0.4 }); tone(t + 0.15, [300, 720], 0.8, { type: 'sawtooth', g: 0.06, lp: 1600, a: 0.1 }); },
+    rumble: (t) => noise(t, 2.6, { f: 160, type: 'lowpass', g: 0.22, swell: true }),
+    car: (t) => { noise(t, 1.6, { f: [250, 1200], q: 0.5, g: 0.16, swell: true }); tone(t, [90, 140], 1.6, { type: 'sawtooth', g: 0.05, lp: 500, a: 0.3 }); },
+    beep: (t) => { for (let k = 0; k < 4; k++) tone(t + k * 0.45, 980, 0.1, { g: 0.06, type: 'square', lp: 2000 }); },
+    knock: (t) => { [0, 0.3, 0.6].forEach((d) => { tone(t + d, [220, 120], 0.12, { g: 0.3 }); noise(t + d, 0.05, { f: 900, type: 'lowpass', g: 0.2 }); }); },
+    door: (t) => { tone(t, [180, 90], 0.4, { g: 0.3 }); noise(t, 0.2, { f: 500, type: 'lowpass', g: 0.2 }); },
+    train: (t) => { noise(t, 3.2, { f: 220, type: 'lowpass', g: 0.2, swell: true }); for (let k = 0; k < 14; k++) noise(t + k * 0.2, 0.05, { f: 900, g: 0.08 }); },
+    uw: (t, d) => { noise(t, d || 4, { f: 260, type: 'lowpass', g: 0.12, swell: true }); for (let k = 0; k < (d || 4) * 1.2; k++) tone(t + k * 0.8 + 0.3, [400, 900], 0.12, { g: 0.03, vb: 0.4, pan: (k % 3) * 0.5 - 0.5 }); },
+    forest: (t, d) => { noise(t, d || 4, { f: [500, 900], q: 0.4, g: 0.04, swell: true }); for (let k = 0; k < 6; k++) { const tt = t + (k * (d || 4)) / 7 + 0.2; tone(tt, [2800 + (k % 3) * 400, 3600], 0.1, { g: 0.025, pan: (k % 5) * 0.4 - 0.8 }); tone(tt + 0.14, [3400, 2900], 0.08, { g: 0.02, pan: (k % 5) * 0.4 - 0.8 }); } },
+  };
+  const CONT = ['wind', 'waves', 'uw', 'forest', 'rain'], R0 = STORY.root.map(noteHz);
+  R0.forEach((f, k) => { const o = ctx.createOscillator(); o.type = k ? 'triangle' : 'sine'; o.frequency.value = f; const g = ctx.createGain(), gn = [0.05, 0.03, 0.02][k] * (vo ? 0.7 : 1); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(gn, 1.5); g.gain.setValueAtTime(gn, Math.max(1.5, T - 1.5)); g.gain.linearRampToValueAtTime(0, T); o.connect(g); out(g, 0, 0.25); o.start(0); o.stop(T + 0.1); });
+  const q = rng(id);
+  for (let t = 0.6; t < T - 1; t += 1.1) if (q() < 0.7) tone(t, R0[Math.floor(q() * 3)] * (q() < 0.5 ? 2 : 4), 1.8, { type: 'triangle', g: (vo ? 0.025 : 0.045), vb: 0.5, pan: q() - 0.5 });
+  STORY.beats.forEach((b, i) => {
+    const e0 = TL.E[i], R = TL.R[i]; if (i > 0) FX.whoosh(e0 - 0.05);
+    (STORY.sfx[i] || []).forEach(([n, f, a]) => { const c = CONT.indexOf(n) >= 0, t = e0 + (c ? f : f * R); if (n === 'chime') FX.chime(t, a); else if (c) FX[n](t, typeof a === 'number' ? Math.min(a, R) : R); else FX[n](t); });
+  });
+  FX.chime(T - END_HOLD + 0.15, 'A5');
+}
+window.renderAudioBase64 = async function (vo) {
+  const sr = 48000, len = Math.ceil(TL.total * sr), ctx = new OfflineAudioContext(2, len, sr); buildAudio(ctx, !!vo);
+  const buf = await ctx.startRendering(), L = buf.getChannelData(0), R = buf.getChannelData(1), o = new Int16Array(len * 2);
+  for (let k = 0; k < len; k++) { o[2 * k] = cl(L[k], -1, 1) * 32767; o[2 * k + 1] = cl(R[k], -1, 1) * 32767; }
+  const bytes = new Uint8Array(o.buffer); let s = ''; for (let k = 0; k < bytes.length; k += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000)); return btoa(s);
+};
+
+// =====================================================================
+//  PAGE: preview player + hooks used by the render script
+// =====================================================================
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+window.frameJPEG = function (t) { explainer(ctx, t); return cv.toDataURL('image/jpeg', 0.92).split(',')[1]; };
+(function ui() {
+  const $ = (id) => document.getElementById(id); let T = 0, playing = false, tPrev = 0, snd = true, loop = true, AC = null, SRC = null, BUF = null, BUFKEY = '';
+  const fmt = (s) => Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
+  function draw() { explainer(ctx, T); $('seek').max = TL.total; $('seek').value = T; $('time').textContent = fmt(T) + ' / ' + fmt(TL.total); }
+  function audioStop() { try { if (SRC) SRC.stop(); } catch (e) {} SRC = null; }
+  async function audioStart(off) { audioStop(); if (!snd) return; const key = STORY.id + TL.total; if (BUFKEY !== key) { const oc = new OfflineAudioContext(2, Math.ceil(TL.total * 44100), 44100); buildAudio(oc, false); BUF = await oc.startRendering(); BUFKEY = key; } if (!playing) return; AC = AC || new (window.AudioContext || window.webkitAudioContext)(); SRC = AC.createBufferSource(); SRC.buffer = BUF; SRC.connect(AC.destination); SRC.start(0, Math.min(off, TL.total - 0.05)); }
+  function frame(now) { if (!playing) return; T += (now - tPrev) / 1000; tPrev = now; if (T >= TL.total) { if (loop) { T = 0; audioStart(0); } else { playing = false; $('play').textContent = 'Play'; T = TL.total - 0.01; audioStop(); } } draw(); requestAnimationFrame(frame); }
+  function play() { playing = true; $('play').textContent = 'Pause'; tPrev = performance.now(); audioStart(T); requestAnimationFrame(frame); }
+  function pause() { playing = false; $('play').textContent = 'Play'; audioStop(); }
+  $('play').onclick = () => (playing ? pause() : play()); $('seek').oninput = () => { T = parseFloat($('seek').value); draw(); if (playing) audioStart(T); };
+  $('snd').onclick = () => { snd = !snd; $('snd').setAttribute('aria-pressed', snd); if (!snd) audioStop(); else if (playing) audioStart(T); };
+  $('loop').onclick = () => { loop = !loop; $('loop').setAttribute('aria-pressed', loop); };
+  $('cel').setAttribute('aria-pressed', CEL); $('cel').onclick = () => { window.setCel(!CEL); $('cel').setAttribute('aria-pressed', CEL); draw(); };
+  $('topic').onchange = () => { pause(); loadTopic($('topic').value); T = 0; draw(); };
+  STORIES.forEach((s) => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.title; $('topic').appendChild(o); });
+  (async () => { try { await document.fonts.load('800 40px Poppins', 'Hello'); await document.fonts.ready; } catch (e) { /* render anyway */ } loadTopic(STORIES[0].id); draw(); $('loading').style.display = 'none'; window._ready = true; })();
+})();
+</script>
+</body>
+</html>
