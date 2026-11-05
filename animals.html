@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Animal Shorts (3D)</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&display=block">
+<title>Animal Shorts (blocky 3D)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&family=Fredoka:wght@600;700&family=Lilita+One&family=Bangers&display=block">
 <style>
   html, body { margin:0; height:100%; background:#14102a; color:#fff; font:15px Poppins, Arial, sans-serif; }
   #app { display:flex; flex-direction:column; height:100%; }
@@ -27,28 +27,30 @@
     <select id="topic" aria-label="Story"></select>
     <input id="seek" type="range" min="0" max="40" step="0.01" value="0" aria-label="Scrub">
     <span id="time">0:00.0 / 0:00.0</span>
+    <button id="look" aria-label="New text look">Look</button>
     <button id="snd" aria-pressed="true" aria-label="Sound on or off">Sound</button>
-    <button id="cel" aria-pressed="false" aria-label="Cel shading on or off">Cel</button>
+    <button id="cel" aria-pressed="false" aria-label="Outlines on or off">Cel</button>
     <button id="loop" aria-pressed="true" aria-label="Loop on or off">Loop</button>
   </div>
 </div>
 <script>
 'use strict';
 // =====================================================================
-//  WILD SAFETY SHORTS: "what to do if..." animal survival tips, vibrant low-poly 3D, English narration + live subtitles.
-//  720x1280. Every frame is a pure function of T (no Math.random). The page API matches the render workflow.
+//  ANIMAL SHORTS: everything is built from boxes (blocky 3D), English narration + live subtitles.
+//  720x1280. Every frame is a pure function of T once a story is loaded. The page API matches the render workflow.
 // =====================================================================
 const W = 720, HH = 1280, TAU = Math.PI * 2, F = 980;
 const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v)), wn = (p, a, b) => cl((p - a) / (b - a)), lerp = (a, b, t) => a + (b - a) * t;
 const ez = (x) => { x = cl(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }, eo = (x) => 1 - Math.pow(1 - cl(x), 3);
 const bk = (x) => { x = cl(x); return 1 + 2.70158 * Math.pow(x - 1, 3) + 1.70158 * Math.pow(x - 1, 2); };
+const bounce = (x) => { x = cl(x); const n = 7.5625, d = 2.75; if (x < 1 / d) return n * x * x; if (x < 2 / d) { x -= 1.5 / d; return n * x * x + 0.75; } if (x < 2.5 / d) { x -= 2.25 / d; return n * x * x + 0.9375; } x -= 2.625 / d; return n * x * x + 0.984375; };
 const hashS = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 function rng(seed) { let a = (seed >>> 0) || 1; const r = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; r.range = (a, b) => a + r() * (b - a); return r; }
 const mixc = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const lerp3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 const satc = (c, k) => { const m = (c[0] + c[1] + c[2]) / 3; return [m + (c[0] - m) * k, m + (c[1] - m) * k, m + (c[2] - m) * k]; };
 const FA = 'Poppins, "Arial Black", Arial, sans-serif';
-const CEL_DEFAULT = true; // cel-shaded look is the default; use ?cel=0 or the Cel button for the plain look
+const CEL_DEFAULT = true; // dark outlines on every block; use ?cel=0 or the Cel button to turn them off
 let CEL = (CEL_DEFAULT && !/[?&]cel=0/.test(location.search)) || /[?&]cel=1/.test(location.search), CAMP = [0, 0, 0];
 
 // ---------- tiny 3D pipeline ----------
@@ -63,8 +65,6 @@ const rotX = (a, v = [0, 0, 0]) => (p) => { const y = p[1] - v[1], z = p[2] - v[
 const rotZ = (a, v = [0, 0, 0]) => (p) => { const x = p[0] - v[0], y = p[1] - v[1]; return [v[0] + x * Math.cos(a) - y * Math.sin(a), v[1] + x * Math.sin(a) + y * Math.cos(a), p[2]]; };
 const mv = (x, y, z) => (p) => [p[0] + x, p[1] + y, p[2] + z], sc = (s) => (p) => [p[0] * s, p[1] * s, p[2] * s];
 const comp = (...fs) => (p) => { let q = p; for (const f of fs) if (f) q = f(q); return q; };
-const ICO = (() => { const t = (1 + Math.sqrt(5)) / 2; const v = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(norm); const f = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]; return { v, f }; })();
-const ICO2 = (() => { const v = ICO.v.slice(), f = [], cache = {}; const mid = (a, b) => { const k = a < b ? a + '_' + b : b + '_' + a; if (cache[k] !== undefined) return cache[k]; v.push(norm(scl(add3(v[a], v[b]), 0.5))); return (cache[k] = v.length - 1); }; ICO.f.forEach(([a, b, c]) => { const ab = mid(a, b), bc = mid(b, c), ca = mid(c, a); f.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]); }); return { v, f }; })();
 
 let TRI = [];
 const tri = (a, b, c, col, o) => TRI.push(Object.assign({ p: [a, b, c], col }, o));
@@ -75,30 +75,41 @@ function mesh(vs, fs, col, center, o, xf, cens) {
   fs.forEach((f, i) => { const c2 = cens ? (xf ? xf(cens[i]) : cens[i]) : cc; tri(P[f[0]], P[f[1]], P[f[2]], typeof col === 'function' ? col(f, i) : col, Object.assign({ center: c2 }, adj ? { nb: adj[i].map((j) => (j < 0 ? -1 : st + j)) } : null, o)); });
 }
 function box(cx, cy, cz, sx, sy, sz, col, xf, o) { const x0 = cx - sx / 2, x1 = cx + sx / 2, y0 = cy - sy / 2, y1 = cy + sy / 2, z0 = cz - sz / 2, z1 = cz + sz / 2; mesh([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], BOXF, col, [cx, cy, cz], o, xf); }
-function prism(cx, y0, cz, r, h, n, col, xf, r2, o) { r2 = r2 == null ? r : r2; const vs = [], fs = []; for (let i = 0; i < n; i++) { const a = (i / n) * TAU; vs.push([cx + Math.cos(a) * r, y0, cz + Math.sin(a) * r]); } for (let i = 0; i < n; i++) { const a = (i / n) * TAU; vs.push([cx + Math.cos(a) * r2, y0 + h, cz + Math.sin(a) * r2]); } for (let i = 0; i < n; i++) { const j = (i + 1) % n; fs.push([i, j, n + j], [i, n + j, n + i]); } for (let i = 1; i < n - 1; i++) fs.push([n, n + i, n + i + 1], [0, i + 1, i]); mesh(vs, fs, col, [cx, y0 + h / 2, cz], o, xf); }
-function cone(cx, y0, cz, r, h, n, col, xf, o) { const vs = [[cx, y0 + h, cz]], fs = []; for (let i = 0; i < n; i++) { const a = (i / n) * TAU; vs.push([cx + Math.cos(a) * r, y0, cz + Math.sin(a) * r]); } for (let i = 0; i < n; i++) fs.push([0, 1 + i, 1 + ((i + 1) % n)]); mesh(vs, fs, col, [cx, y0 + h * 0.3, cz], o, xf); }
-function ico(cx, cy, cz, r, col, xf, sy, o) { sy = sy || 1; mesh(ICO.v.map((v) => [cx + v[0] * r, cy + v[1] * r * sy, cz + v[2] * r]), ICO.f, col, [cx, cy, cz], o, xf); }
-function ell(cx, cy, cz, rx, ry, rz, col, xf, o, hi) { const G = hi ? ICO2 : ICO; mesh(G.v.map((v) => [cx + v[0] * rx, cy + v[1] * ry, cz + v[2] * rz]), G.f, col, [cx, cy, cz], o, xf); }
-function loft(secs, n, colF, xf) {
-  const vs = [], fs = [], cols = [], cens = [], m = secs.length;
-  secs.forEach((s) => { for (let i = 0; i < n; i++) { const t = (i / n) * TAU; vs.push([Math.cos(t) * s.rx, s.y + Math.sin(t) * s.ry, s.z]); } }); const ax = vs.length; secs.forEach((s) => vs.push([0, s.y, s.z]));
-  for (let k = 0; k < m - 1; k++) { const cc = [0, (secs[k].y + secs[k + 1].y) / 2, (secs[k].z + secs[k + 1].z) / 2]; for (let i = 0; i < n; i++) { const j = (i + 1) % n, a = k * n + i, b = k * n + j, c = (k + 1) * n + j, d = (k + 1) * n + i, col = colF(i, k); fs.push([a, b, c], [a, c, d]); cols.push(col, col); cens.push(cc, cc); } }
-  [[0, 1], [m - 1, m - 2]].forEach(([a, b]) => { for (let i = 0; i < n; i++) { const j = (i + 1) % n; fs.push([a * n + i, a * n + j, ax + a]); cols.push(colF(i, a)); cens.push([0, secs[b].y, secs[b].z]); } });
-  mesh(vs, fs, (f, i) => cols[i], [0, 0, 0], null, xf, cens);
+
+// ---------- blocky stand-ins: the old round shapes are all made of boxes now ----------
+function ell(cx, cy, cz, rx, ry, rz, col, xf, o) { box(cx, cy, cz, Math.max(0.02, rx * 1.75), Math.max(0.02, ry * 1.75), Math.max(0.02, rz * 1.75), col, xf, o); }
+function ico(cx, cy, cz, r, col, xf, sy, o) { sy = sy || 1; const s = Math.max(0.02, r * 1.8); box(cx, cy, cz, s, s * sy, s, col, xf, o); }
+function prism(cx, y0, cz, r, h, n, col, xf, r2, o) {
+  r2 = r2 == null ? r : r2;
+  if (Math.abs(r - r2) > 0.06 * r && h > r * 0.8) { const h1 = h / 2, w1 = (r * 0.75 + r2 * 0.25) * 1.8, w2 = (r * 0.25 + r2 * 0.75) * 1.8; box(cx, y0 + h1 / 2, cz, w1, h1, w1, col, xf, o); box(cx, y0 + h1 * 1.5, cz, w2, h1, w2, col, xf, o); }
+  else { const w = (r + r2) * 0.9; box(cx, y0 + h / 2, cz, w, h, w, col, xf, o); }
 }
-function groundG(xs, zs, hf, cf, seed) { const r = rng(seed || 3); for (let j = 0; j < zs.length - 1; j++) for (let i = 0; i < xs.length - 1; i++) { const x0 = xs[i], x1 = xs[i + 1], z0 = zs[j], z1 = zs[j + 1], a = [x0, hf(x0, z0), z0], b = [x1, hf(x1, z0), z0], c = [x0, hf(x0, z1), z1], d = [x1, hf(x1, z1), z1], col = cf((x0 + x1) / 2, (z0 + z1) / 2), j1 = (r() - 0.5) * 16, j2 = (r() - 0.5) * 16; tri(a, c, b, [col[0] + j1, col[1] + j1, col[2] + j1], { terrain: 1 }); tri(b, c, d, [col[0] + j2, col[1] + j2, col[2] + j2], { terrain: 1 }); } }
-function shadow(x, z, rx, rz, face, y) { y = y == null ? 0.04 : y; const c = Math.cos(face || 0), s = Math.sin(face || 0), n = 10, col = [66, 76, 104]; const pt = (a) => { const lx = Math.cos(a) * rx, lz = Math.sin(a) * rz; return [x + lx * c + lz * s, y, z - lx * s + lz * c]; }; for (let i = 0; i < n; i++) tri([x, y, z], pt((i / n) * TAU), pt(((i + 1) / n) * TAU), col, { terrain: 1, bias: -3 }); }
+function cone(cx, y0, cz, r, h, n, col, xf, o) { const st = cl(Math.round(h / Math.max(0.5, r * 0.6)), 3, 5); for (let k = 0; k < st; k++) { const w = Math.max(0.04, 2 * r * (1 - k / st) * 0.95); box(cx, y0 + (h / st) * (k + 0.5), cz, w, h / st, w, col, xf, o); } }
+function groundG(xs, zs, hf, cf, seed) {
+  const r = rng(seed || 3);
+  for (let j = 0; j < zs.length - 1; j++) for (let i = 0; i < xs.length - 1; i++) {
+    const x0 = xs[i], x1 = xs[i + 1], z0 = zs[j], z1 = zs[j + 1], cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, top = Math.round(hf(cx, cz) / 0.5) * 0.5, col = cf(cx, cz), jt = (r() - 0.5) * 14;
+    box(cx, top - 3, cz, x1 - x0, 6, z1 - z0, [col[0] + jt, col[1] + jt, col[2] + jt], null, { grd: top, bias: Math.max(2, 0.3 * Math.max(x1 - x0, z1 - z0)) });
+  }
+}
+function shadow(x, z, rx, rz, face, y) { y = y == null ? 0.04 : y; box(x, y, z, rx * 2, 0.05, rz * 2, [58, 68, 96], comp(mv(-x, 0, -z), rotY(face || 0), mv(x, 0, z)), { bias: -3, noedge: 1 }); }
+function strip(x0, x1, z0, z1, col, y, bias) { box((x0 + x1) / 2, y + 0.01, (z0 + z1) / 2, x1 - x0, 0.05, z1 - z0, col, null, { bias: bias || -5, noedge: 1 }); }
 
 // ---------- scenery ----------
 function pine(x, z, s, col) { prism(x, 0, z, 0.24 * s, 1.6 * s, 6, [126, 78, 44], null, 0.2 * s); [[0.9, 1.9, 1.7], [2.1, 1.55, 1.5], [3.3, 1.15, 1.3]].forEach(([y, r, h], k) => cone(x, y * s, z, r * s, h * s, 7, mixc(col, [255, 255, 120], k * 0.1))); }
-function rock(x, z, s, col, seed) { const r = rng(seed || 1); mesh(ICO.v.map((v) => { const k = 0.75 + r() * 0.5; return [x + v[0] * s * k * 1.2, Math.max(0, v[1] * s * k * 0.8 + s * 0.4), z + v[2] * s * k]; }), ICO.f, (f, i) => mixc(col, [255, 255, 255], (i % 4) * 0.05), [x, s * 0.3, z]); }
+function rock(x, z, s, col, seed) { const r = rng(seed || 1); box(x, s * 0.4, z, s * 2.4 * (0.85 + r() * 0.3), s * 0.8, s * 1.9, col); box(x + (r() - 0.5) * s * 0.5, s * 1.0, z + (r() - 0.5) * s * 0.4, s * 1.5, s * 0.6, s * 1.2, mixc(col, [255, 255, 255], 0.07)); box(x + (r() - 0.5) * s * 0.6, s * 1.5, z, s * 0.8, s * 0.5, s * 0.7, mixc(col, [255, 255, 255], 0.14)); }
 function mountain(x, z, r, h, col) { cone(x, 0, z, r, h, 7, col); cone(x, h * 0.72, z, r * 0.29, h * 0.28, 7, [250, 250, 255]); }
-function cloud(x, y, z, s) { ell(x, y, z, 7 * s, 2.4 * s, 3 * s, [255, 255, 255], null, null, 0); ell(x + 5 * s, y + 1 * s, z, 5 * s, 2.2 * s, 2.6 * s, [255, 250, 250], null); ell(x - 5 * s, y + 0.6 * s, z, 5 * s, 2 * s, 2.6 * s, [250, 255, 255], null); }
+function cloud(x, y, z, s) { box(x, y, z, 12 * s, 3.4 * s, 5 * s, [255, 255, 255]); box(x + 5 * s, y + 1.5 * s, z, 8 * s, 3.2 * s, 4.4 * s, [255, 250, 250]); box(x - 5 * s, y + 0.9 * s, z, 8 * s, 3 * s, 4.4 * s, [250, 255, 255]); }
 function cactus(x, z, s) { const G = [34, 196, 112], G2 = [24, 160, 96]; prism(x, 0, z, 0.38 * s, 3.4 * s, 8, G, null, 0.3 * s); ico(x, 3.45 * s, z, 0.32 * s, G2, null, 1); box(x + 0.4 * s, 1.6 * s, z, 0.8 * s, 0.3 * s, 0.3 * s, G); prism(x + 0.75 * s, 1.5 * s, z, 0.17 * s, 1.3 * s, 6, G, null, 0.15 * s); ico(x + 0.75 * s, 2.85 * s, z, 0.2 * s, G2, null, 1); box(x - 0.4 * s, 2.2 * s, z, 0.8 * s, 0.3 * s, 0.3 * s, G); prism(x - 0.75 * s, 2.1 * s, z, 0.17 * s, 1.1 * s, 6, G, null, 0.15 * s); ico(x - 0.75 * s, 3.25 * s, z, 0.2 * s, G2, null, 1); ico(x, 3.8 * s, z, 0.14 * s, [255, 90, 160], null, 1); }
 function mesa(x, z, w, d, h, c1) { for (let k = 0; k < 4; k++) { const hh = h / 4, ww = w * (1 - 0.07 * k * (k % 2 ? 1 : 0.6)); box(x, hh * (k + 0.5), z, ww, hh, d * (1 - 0.05 * k), k % 2 ? mixc(c1, [255, 170, 90], 0.25) : c1); } box(x, h + 0.3, z, w * 0.82, 0.6, d * 0.8, mixc(c1, [255, 210, 150], 0.3)); }
-function palm(x, z, s, T, ph, y0) { y0 = y0 || 0; const sw = Math.sin(T * 1.2 + ph) * 0.06, xf = rotZ(0.1 + sw, [x, y0, z]); prism(x, y0, z, 0.3 * s, 6.5 * s, 6, [170, 120, 70], xf, 0.2 * s); for (let k = 0; k < 7; k++) { const a = (k / 7) * TAU, tp = xf([x, y0 + 6.5 * s, z]); tri(tp, [tp[0] + Math.cos(a) * 3.4 * s, tp[1] + 0.4 * s, tp[2] + Math.sin(a) * 3.4 * s], [tp[0] + Math.cos(a + 0.35) * 2.6 * s, tp[1] - 1.2 * s, tp[2] + Math.sin(a + 0.35) * 2.6 * s], k % 2 ? [40, 200, 100] : [20, 170, 90], { twoSided: 1 }); } }
-function kelp(x, y0, z, h, T, col) { const N = 6; let prev = null; for (let k = 0; k <= N; k++) { const y = y0 + (k * h) / N, sw = Math.sin(T * 1.5 + z * 0.3 + k * 0.6) * 0.14 * k, w = 0.15 * (1 - k / (N + 1)), a = [x + sw - w, y, z], b = [x + sw + w, y, z]; if (prev) { tri(prev[0], prev[1], a, col, { twoSided: 1 }); tri(prev[1], b, a, col, { twoSided: 1 }); } prev = [a, b]; } }
-function fish(x, y, z, face, s, col, T, ph) { const xf = comp(sc(s), rotY(face), mv(x, y, z)), sw = Math.sin(T * 9 + ph) * 0.25; ell(0, 0, 0, 0.26, 0.28, 0.66, col, xf); tri(xf([0, 0, -0.55]), xf([sw, 0.4, -1.1]), xf([sw, -0.4, -1.1]), mixc(col, [255, 255, 255], 0.25), { twoSided: 1, outl: 1 }); tri(xf([0, 0.24, 0.2]), xf([0, 0.62, -0.2]), xf([0, 0.22, -0.4]), mixc(col, [255, 255, 255], 0.25), { twoSided: 1, outl: 1 }); ell(0.17, 0.08, 0.4, 0.06, 0.06, 0.06, [20, 20, 40], xf); ell(-0.17, 0.08, 0.4, 0.06, 0.06, 0.06, [20, 20, 40], xf); }
+function palm(x, z, s, T, ph, y0) {
+  y0 = y0 || 0; const sw = Math.sin(T * 1.2 + ph) * 0.05;
+  for (let k = 0; k < 5; k++) box(x + (k * 0.16 + sw * k) * s, y0 + (k + 0.5) * 1.3 * s, z, 0.62 * s * (1 - k * 0.07), 1.3 * s, 0.62 * s * (1 - k * 0.07), k % 2 ? [176, 126, 76] : [160, 112, 66]);
+  const tx = x + (5 * 0.16 + sw * 5) * s, ty = y0 + 6.5 * s; box(tx, ty, z, 0.9 * s, 0.5 * s, 0.9 * s, [110, 76, 44]);
+  for (let k = 0; k < 6; k++) { const a = (k / 6) * TAU, xf = comp(rotY(a), mv(tx, ty, z)); box(1.2 * s, 0.25 * s, 0, 2.4 * s, 0.22 * s, 0.9 * s, k % 2 ? [40, 200, 100] : [20, 170, 90], xf); box(2.7 * s, -0.25 * s, 0, 1.6 * s, 0.22 * s, 0.7 * s, k % 2 ? [40, 200, 100] : [20, 170, 90], xf); }
+}
+function kelp(x, y0, z, h, T, col) { const N = 6; for (let k = 0; k < N; k++) { const sw = Math.sin(T * 1.5 + z * 0.3 + k * 0.6) * 0.14 * k; box(x + sw, y0 + ((k + 0.5) * h) / N, z, 0.36 - 0.03 * k, h / N, 0.3, col); } }
+function fish(x, y, z, face, s, col, T, ph) { const xf = comp(sc(s), rotY(face), mv(x, y, z)), sw = Math.sin(T * 9 + ph) * 0.25; box(0, 0, 0, 0.55, 0.6, 1.3, col, xf); box(sw, 0, -0.85, 0.12, 0.7, 0.45, mixc(col, [255, 255, 255], 0.25), xf); box(0, 0.42, 0.1, 0.1, 0.3, 0.5, mixc(col, [255, 255, 255], 0.25), xf); box(0.3, 0.1, 0.45, 0.1, 0.16, 0.16, [20, 20, 40], xf); box(-0.3, 0.1, 0.45, 0.1, 0.16, 0.16, [20, 20, 40], xf); }
 
 // ---------- people ----------
 function person(x, y, z, face, s, o) {
@@ -132,32 +143,31 @@ function person(x, y, z, face, s, o) {
   return { hL: ub(hL), hR: ub(hR) };
 }
 
-
 // ---------- animals ----------
 function bear(x, y, z, face, s, o) {
   o = o || {}; const C = o.col || [164, 88, 38], D = mixc(C, [70, 30, 12], 0.5), L = [240, 190, 124], K = [26, 18, 20], ph = o.walk || 0, gal = o.gallop || 0, st = o.stand || 0, amp = gal ? 0.95 : 0.5;
   const bob = gal ? Math.abs(Math.sin(ph)) * 0.14 : 0, base = comp(sc(s), rotY(face), mv(x, y + bob * s, z)), up = st ? comp(rotX(-st * 1.1, [0, 1.0, -0.72]), base) : base;
   const fur = (k) => (f, i) => mixc(k, [255, 200, 130], (i % 5) * 0.03);
-  ell(0, 1.2, 0.05, 0.66, 0.64, 1.0, fur(C), up, null, 1); ell(0, 1.72, 0.45, 0.5, 0.38, 0.5, fur(D), up, null, 1); ell(0, 1.25, -0.75, 0.52, 0.5, 0.5, fur(C), up); ell(0, 1.3, -1.18, 0.12, 0.12, 0.12, D, up);
+  box(0, 1.2, 0.05, 1.3, 1.25, 1.9, fur(C), up); box(0, 1.75, 0.45, 0.95, 0.65, 0.9, fur(D), up); box(0, 1.25, -0.8, 0.95, 0.9, 0.8, fur(C), up); box(0, 1.3, -1.25, 0.24, 0.24, 0.2, D, up);
   const hd = comp(rotX(o.dip || 0), rotY(o.look || 0), mv(0, 1.5, 1.3), up), m = o.mouth || 0;
-  ell(0, 0, 0, 0.4, 0.36, 0.42, fur(C), hd, null, 1); ell(0, -0.1, 0.42, 0.21, 0.17, 0.28, L, hd); ell(0, -0.03, 0.68, 0.085, 0.07, 0.06, K, hd);
-  [-1, 1].forEach((d) => { ell(d * 0.27, 0.3, -0.12, 0.13, 0.13, 0.07, D, hd); ell(d * 0.27, 0.3, -0.06, 0.07, 0.07, 0.03, L, hd); ell(d * 0.17, 0.1, 0.34, 0.05, 0.055, 0.04, K, hd); ell(d * 0.17 + 0.012, 0.12, 0.375, 0.016, 0.016, 0.016, [255, 255, 255], hd, { emissive: 1 }); ell(d * 0.17, 0.19 - m * 0.03, 0.3, 0.1, 0.04, 0.08, D, hd); });
-  if (m > 0.05) { ell(0, -0.2, 0.38, 0.16, 0.05 + 0.08 * m, 0.22, [200, 40, 70], hd); ell(0, -0.25 - 0.16 * m, 0.36, 0.16, 0.06, 0.24, L, hd); [-1, 1].forEach((d) => { tri(hd([d * 0.1 - 0.025, -0.2, 0.55]), hd([d * 0.1 + 0.025, -0.2, 0.55]), hd([d * 0.1, -0.2 - 0.11, 0.55]), [255, 255, 248], { twoSided: 1 }); tri(hd([d * 0.1 - 0.025, -0.25 - 0.16 * m, 0.52]), hd([d * 0.1 + 0.025, -0.25 - 0.16 * m, 0.52]), hd([d * 0.1, -0.14 - 0.16 * m, 0.52]), [255, 255, 248], { twoSided: 1 }); }); }
-  const leg = (lx, lz, ang, xb) => { const f = comp(rotX(ang, [lx, 1.0, lz]), xb); prism(lx, 0, lz, 0.2, 1.0, 6, fur(C), f, 0.3); ell(lx, 0.06, lz + 0.08, 0.23, 0.11, 0.3, D, f); [-1, 0, 1].forEach((c) => cone(lx + c * 0.09, 0.02, lz + 0.36, 0.03, 0.16, 4, [250, 246, 230], comp(rotX(1.35, [lx + c * 0.09, 0.06, lz + 0.36]), f))); };
-  const sA = gal ? Math.sin(ph) * amp : Math.sin(ph) * amp, sB = gal ? Math.sin(ph + 1.3) * amp : -Math.sin(ph) * amp;
+  box(0, 0, 0, 0.8, 0.7, 0.8, fur(C), hd); box(0, -0.1, 0.5, 0.42, 0.32, 0.5, L, hd); box(0, -0.03, 0.78, 0.17, 0.14, 0.1, K, hd);
+  [-1, 1].forEach((d) => { box(d * 0.27, 0.32, -0.12, 0.26, 0.26, 0.14, D, hd); box(d * 0.27, 0.32, -0.05, 0.13, 0.13, 0.05, L, hd); box(d * 0.17, 0.1, 0.4, 0.1, 0.11, 0.07, K, hd); box(d * 0.17 + 0.012, 0.12, 0.44, 0.03, 0.03, 0.03, [255, 255, 255], hd, { emissive: 1 }); box(d * 0.17, 0.2 - m * 0.03, 0.38, 0.2, 0.07, 0.14, D, hd); });
+  if (m > 0.05) { box(0, -0.2, 0.5, 0.34, 0.1 + 0.14 * m, 0.46, [200, 40, 70], hd); box(0, -0.27 - 0.16 * m, 0.5, 0.36, 0.1, 0.5, L, hd); [-1, 1].forEach((d) => { box(d * 0.12, -0.26, 0.72, 0.05, 0.12, 0.05, [255, 255, 248], hd); box(d * 0.12, -0.2 - 0.16 * m, 0.7, 0.05, 0.12, 0.05, [255, 255, 248], hd); }); }
+  const leg = (lx, lz, ang, xb) => { const f = comp(rotX(ang, [lx, 1.0, lz]), xb); box(lx, 0.5, lz, 0.44, 1.0, 0.46, fur(C), f); box(lx, 0.07, lz + 0.12, 0.5, 0.16, 0.66, D, f); [-1, 0, 1].forEach((c) => box(lx + c * 0.14, 0.05, lz + 0.5, 0.06, 0.06, 0.12, [250, 246, 230], f)); };
+  const sA = Math.sin(ph) * amp, sB = gal ? Math.sin(ph + 1.3) * amp : -Math.sin(ph) * amp;
   leg(-0.38, 0.62, sA + st * 1.1, up); leg(0.38, 0.62, (gal ? sA : -sA) + st * 1.1, up); leg(-0.4, -0.72, sB, base); leg(0.4, -0.72, gal ? sB : -sB, base);
 }
 function shark(x, y, z, face, s, T, o) {
   o = o || {}; const TOP = [48, 122, 222], TOP2 = [32, 96, 198], BEL = [248, 253, 255], FIN = [30, 88, 184], K = [18, 20, 30], base = comp(sc(s), rotY(face), mv(x, y, z));
   const bend = (p) => [p[0] + Math.sin(T * 2.6 + p[2] * 0.8) * 0.3 * Math.pow(Math.max(0, (0.8 - p[2]) / 3.4), 1.5), p[1], p[2]], xf = comp(bend, base);
-  const secs = [{ z: -2.6, rx: 0.05, ry: 0.08, y: 0.15 }, { z: -2.0, rx: 0.14, ry: 0.2, y: 0.12 }, { z: -1.2, rx: 0.3, ry: 0.38, y: 0.05 }, { z: -0.3, rx: 0.52, ry: 0.58, y: 0 }, { z: 0.6, rx: 0.62, ry: 0.66, y: 0 }, { z: 1.4, rx: 0.5, ry: 0.5, y: -0.03 }, { z: 2.0, rx: 0.3, ry: 0.28, y: -0.08 }, { z: 2.45, rx: 0.1, ry: 0.1, y: -0.1 }], n = 10;
-  loft(secs, n, (i, k) => (Math.sin(((i + 0.5) / n) * TAU) > -0.05 ? (k % 2 ? TOP : TOP2) : BEL), xf);
-  const F3 = (a, b, c, col) => tri(xf(a), xf(b), xf(c), col, { twoSided: 1, outl: 1 });
-  F3([0, 0.62, 0.55], [0, 1.6, -0.3], [0, 0.58, -0.75], FIN); F3([0, 0.35, -1.6], [0, 0.7, -1.95], [0, 0.3, -1.95], FIN);
-  F3([0, 0.12, -2.45], [0, 1.55, -3.5], [0, 0.1, -2.0], FIN); F3([0, 0.08, -2.45], [0, -1.0, -3.1], [0, 0.05, -2.0], mixc(FIN, [255, 255, 255], 0.1));
-  [-1, 1].forEach((d) => { F3([d * 0.5, -0.2, 1.0], [d * 1.7, -0.8, -0.2], [d * 0.5, -0.1, 0.15], FIN); F3([d * 0.3, -0.55, -0.5], [d * 0.8, -0.9, -1.0], [d * 0.25, -0.45, -1.0], FIN); ell(d * 0.37, 0.2, 1.75, 0.07, 0.07, 0.07, K, xf); for (let k = 0; k < 4; k++) box(d * 0.575, 0.12, 0.75 + k * 0.14, 0.03, 0.34, 0.05, [24, 70, 170], xf); });
+  const secs = [[-2.3, 0.3, 0.5, 1.0, 0.15], [-1.4, 0.6, 0.85, 1.0, 0.1], [-0.5, 1.0, 1.15, 1.0, 0.02], [0.5, 1.25, 1.35, 1.1, 0], [1.4, 1.0, 1.05, 0.9, -0.03], [2.1, 0.55, 0.55, 0.7, -0.08]];
+  secs.forEach(([zz, w, h, l, yy], k) => { box(0, yy + h * 0.22, zz, w, h * 0.56, l, k % 2 ? TOP : TOP2, xf); box(0, yy - h * 0.28, zz, w * 0.94, h * 0.44, l, BEL, xf); });
+  box(0, 0.95, -0.1, 0.14, 0.9, 0.9, FIN, xf); box(0, 1.5, -0.35, 0.14, 0.5, 0.5, FIN, xf); box(0, 0.55, -1.7, 0.1, 0.4, 0.5, FIN, xf);
+  box(0, 0.75, -3.0, 0.14, 1.4, 0.55, FIN, xf); box(0, -0.45, -2.85, 0.12, 0.9, 0.45, mixc(FIN, [255, 255, 255], 0.1), xf);
+  [-1, 1].forEach((d) => { box(d * 1.05, -0.5, 0.5, 1.2, 0.12, 0.8, FIN, xf); box(d * 0.65, -0.6, -0.9, 0.7, 0.1, 0.5, FIN, xf); box(d * 0.6, 0.35, 1.9, 0.14, 0.14, 0.14, K, xf); for (let k = 0; k < 3; k++) box(d * 0.64, 0.12, 0.8 + k * 0.2, 0.04, 0.4, 0.07, [24, 70, 170], xf); });
   const m = o.mouth || 0;
-  if (m > 0.02) { ell(0, -0.26, 1.75, 0.26, 0.04 + 0.1 * m, 0.38, [170, 24, 56], xf); for (let k = -3; k <= 3; k++) { const zz = 1.95 - Math.abs(k) * 0.05; F3([k * 0.07 - 0.025, -0.2, zz], [k * 0.07 + 0.025, -0.2, zz], [k * 0.07, -0.2 - 0.13 * m - 0.05, zz], [255, 255, 250]); } } else box(0, -0.25, 1.8, 0.36, 0.02, 0.04, [20, 44, 100], xf);
+  if (m > 0.02) { box(0, -0.3, 2.0, 0.5, 0.06 + 0.2 * m, 0.7, [170, 24, 56], xf); for (let k = -2; k <= 2; k++) box(k * 0.1, -0.22 - 0.2 * m, 2.35, 0.06, 0.14, 0.06, [255, 255, 250], xf); }
+  else box(0, -0.3, 2.3, 0.5, 0.04, 0.06, [20, 44, 100], xf);
   return base;
 }
 function coilPose(cx, cz, N, T, rise) {
@@ -167,23 +177,24 @@ function coilPose(cx, cz, N, T, rise) {
 function slitherPose(N, x0, z0, hu) { const P = []; for (let k = 0; k < N; k++) { const q = hu - k * 0.1, u = k / (N - 1); P.push([x0 - q, 0.07 + 0.11 * Math.sin(Math.PI * Math.pow(u, 0.65)), z0 + 0.38 * Math.sin(q * 3.4 + 0.6)]); } return P; }
 function snakeDraw(P, N, T, o) {
   o = o || {}; const A = [240, 180, 50], B = [128, 46, 24], CR = [252, 232, 170], rad = (k) => 0.05 + 0.11 * Math.sin(Math.PI * Math.pow(k / (N - 1), 0.65));
-  for (let k = N - 1; k >= 1; k--) { const p = P[k], r = rad(k); ell(p[0], p[1], p[2], r, r * 0.95, r * 1.1, k % 6 < 2 ? B : A, null); }
+  for (let k = N - 1; k >= 1; k--) { const p = P[k], r = rad(k); box(p[0], p[1], p[2], r * 1.9, r * 1.8, r * 2.1, k % 6 < 2 ? B : A); }
   const p0 = P[0], d = sub(p0, P[1]), yaw = Math.atan2(d[0], d[2]), pitch = Math.atan2(d[1], Math.hypot(d[0], d[2])), hx = comp(rotX(-pitch), rotY(yaw), mv(p0[0], p0[1], p0[2]));
-  ell(0, 0, 0.06, 0.15, 0.1, 0.26, A, hx, null, 1); ell(0, 0.09, 0.0, 0.1, 0.03, 0.12, B, hx);
-  [-1, 1].forEach((dd) => { ell(dd * 0.11, 0.06, 0.12, 0.034, 0.034, 0.034, [255, 236, 40], hx, { emissive: 1 }); ell(dd * 0.125, 0.06, 0.135, 0.012, 0.03, 0.012, [10, 10, 10], hx); });
-  if (o.tongue) { const e = Math.max(0, Math.sin(T * 8)); if (e > 0.05) { const R = [255, 40, 80], y = -0.03; tri(hx([0.012, y, 0.3]), hx([-0.012, y, 0.3]), hx([0, y, 0.3 + 0.16 * e]), R, { twoSided: 1, emissive: 1 }); tri(hx([0, y, 0.3 + 0.14 * e]), hx([0.07, y, 0.3 + 0.3 * e]), hx([0.012, y, 0.3 + 0.17 * e]), R, { twoSided: 1, emissive: 1 }); tri(hx([0, y, 0.3 + 0.14 * e]), hx([-0.07, y, 0.3 + 0.3 * e]), hx([-0.012, y, 0.3 + 0.17 * e]), R, { twoSided: 1, emissive: 1 }); } }
-  const last = P[N - 1], dir = norm(sub(last, P[N - 2])); for (let j = 1; j <= 5; j++) { const jt = Math.sin(T * 70 + j) * 0.012 * (o.rattle || 0); ell(last[0] + dir[0] * j * 0.1 + jt, last[1] + 0.02 * j, last[2] + dir[2] * j * 0.1 + jt, 0.075 - j * 0.006, 0.075 - j * 0.006, 0.065, CR, null); }
+  box(0, 0, 0.06, 0.28, 0.18, 0.46, A, hx); box(0, 0.1, 0, 0.18, 0.05, 0.22, B, hx);
+  [-1, 1].forEach((dd) => { box(dd * 0.12, 0.06, 0.12, 0.07, 0.07, 0.07, [255, 236, 40], hx, { emissive: 1 }); box(dd * 0.14, 0.06, 0.15, 0.025, 0.06, 0.025, [10, 10, 10], hx); });
+  if (o.tongue) { const e = Math.max(0, Math.sin(T * 8)); if (e > 0.05) { box(0, -0.03, 0.3 + 0.1 * e, 0.025, 0.02, 0.2 * e, [255, 40, 80], hx, { emissive: 1, noedge: 1 }); box(0.05, -0.03, 0.3 + 0.22 * e, 0.025, 0.02, 0.1 * e, [255, 40, 80], hx, { emissive: 1, noedge: 1 }); box(-0.05, -0.03, 0.3 + 0.22 * e, 0.025, 0.02, 0.1 * e, [255, 40, 80], hx, { emissive: 1, noedge: 1 }); } }
+  const last = P[N - 1], dir = norm(sub(last, P[N - 2])); for (let j = 1; j <= 5; j++) { const jt = Math.sin(T * 70 + j) * 0.012 * (o.rattle || 0); box(last[0] + dir[0] * j * 0.1 + jt, last[1] + 0.02 * j, last[2] + dir[2] * j * 0.1 + jt, 0.2 - j * 0.015, 0.2 - j * 0.015, 0.17, CR); }
 }
 
 // ---------- shading + drawing ----------
 function renderScene(ctx, cam, env) {
-  const SUN = norm(env.sun || [0.45, 0.6, -0.65]), AMB = env.amb || [0.64, 0.64, 0.72], out = [], SAT = 0.92 + ((env.sat || 1.1) - 1) * 0.2, N = TRI.length, NR = new Array(N), CN = new Array(N), FR = new Uint8Array(N);
+  const SUN = norm(env.sun || [0.45, 0.6, -0.65]), AMB = env.amb || [0.64, 0.64, 0.72], out = [], SAT = 0.92 + ((env.sat || 1.1) - 1) * 0.2, N = TRI.length, NR = new Array(N), FR = new Uint8Array(N);
   for (let i = 0; i < N; i++) {
     const t = TRI[i], [a, b, c] = t.p; let n = norm(cross(sub(b, a), sub(c, a))); const cen = scl(add3(add3(a, b), c), 1 / 3);
+    if (t.grd != null && cam.pos[1] < t.grd) { NR[i] = n; FR[i] = 0; continue; }
     if (t.terrain || t.water) { if (n[1] < 0) n = scl(n, -1); } else if (t.center) { if (dot(n, sub(cen, t.center)) < 0) n = scl(n, -1); }
     const toCam = sub(cam.pos, cen);
     if (t.twoSided) { if (dot(n, toCam) < 0) n = scl(n, -1); FR[i] = 1; } else FR[i] = dot(n, toCam) > 0 ? 1 : 0;
-    NR[i] = n; CN[i] = cen;
+    NR[i] = n;
   }
   for (let i = 0; i < N; i++) {
     if (!FR[i]) continue; const t = TRI[i], [a, b, c] = t.p, n = NR[i];
@@ -194,7 +205,7 @@ function renderScene(ctx, cam, env) {
     if (t.emissive) col = t.col; else { let lam = Math.max(0, dot(n, SUN)); if (CEL) lam = lam > 0.55 ? 1 : lam > 0.2 ? 0.55 : 0.12; col = [0, 1, 2].map((k) => t.col[k] * (AMB[k] * 0.78 + (env.sunCol[k] / 255) * lam * 0.62) * (env.bright || 1)); col = satc(col, SAT); if (t.snow) col = mixc(col, [245, 245, 252], t.snow); }
     const fk = cl(Math.pow(wn(depth, env.fogNear || 40, env.fogFar || 260), 1.1) * 0.92) * (t.emissive ? 0.4 : 1); col = mixc(col, env.fog, fk);
     let edges = null;
-    if (CEL && !t.terrain && !t.water && !clipped && pts.length === 3) { const nb = t.nb; for (let e = 0; e < 3; e++) { let on; if (nb) { const j = nb[e]; on = j < 0 || !FR[j] || dot(n, NR[j]) < 0.3; } else on = !!t.outl; if (on) (edges || (edges = [])).push(e); } }
+    if (CEL && !t.terrain && !t.water && !t.noedge && !clipped && pts.length === 3) { const nb = t.nb; for (let e = 0; e < 3; e++) { let on; if (nb) { const j = nb[e]; on = j < 0 || !FR[j] || dot(n, NR[j]) < 0.3; } else on = !!t.outl; if (on) (edges || (edges = [])).push(e); } }
     out.push({ pts, depth, col, edges, lw: cl(170 / Math.max(depth, 1), 1.2, 5) });
   }
   out.sort((p, q) => q.depth - p.depth); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -205,24 +216,52 @@ function renderScene(ctx, cam, env) {
 }
 function skyDraw(ctx, env) {
   const hz = HH * 0.5, br = env.bright || 1, tp = satc(env.top, 0.82), bt2 = satc(env.bot, 0.85), g = ctx.createLinearGradient(0, 0, 0, hz + 160); g.addColorStop(0, `rgb(${tp.map((v) => cl(v * br, 0, 255) | 0)})`); g.addColorStop(1, `rgb(${bt2.map((v) => cl(v * br, 0, 255) | 0)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, W, HH);
-  const gl = ctx.createRadialGradient(W * 0.62, hz - 20, 20, W * 0.62, hz - 20, 420); gl.addColorStop(0, `rgba(${env.glow || '255,230,180'},.55)`); gl.addColorStop(1, `rgba(${env.glow || '255,230,180'},0)`); ctx.fillStyle = gl; ctx.fillRect(0, 0, W, HH);
+  if (!env.nosun) { const gc = env.glow || '255,230,180', sx = W * 0.62, sy = hz - 20; [[300, 0.12], [210, 0.2], [130, 0.32]].forEach(([sz, a]) => { ctx.fillStyle = `rgba(${gc},${a})`; ctx.fillRect(sx - sz / 2, sy - sz / 2, sz, sz); }); ctx.fillStyle = `rgba(255,255,240,.9)`; ctx.fillRect(sx - 45, sy - 45, 90, 90); }
 }
 
-// ---------- cut-corner tags (the on-screen labels) ----------
-function tag(c, x, y, text, o) {
-  o = o || {}; const size = o.size || 44, k = o.k == null ? 1 : o.k; if (k <= 0) return;
-  c.save(); c.font = `800 ${size}px ${FA}`; const w = c.measureText(text).width + size * 1.2, h = size * 1.7, ch = h * 0.3, fit = Math.min(1, (W - 40) / w); c.translate(x, y); c.scale(k * fit, k * fit);
-  const pts = [[-w / 2 + ch, -h / 2], [w / 2, -h / 2], [w / 2, h / 2 - ch], [w / 2 - ch, h / 2], [-w / 2, h / 2], [-w / 2, -h / 2 + ch]], path = (dx) => { c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(p[0] + dx, p[1] + dx) : c.moveTo(p[0] + dx, p[1] + dx))); c.closePath(); };
-  c.fillStyle = 'rgba(20,10,50,.45)'; path(6); c.fill(); c.fillStyle = o.bg || '#fff6a8'; path(0); c.fill();
-  c.fillStyle = 'rgba(255,255,255,.4)'; c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); c.lineTo(pts[1][0], pts[1][1]); c.lineTo(w / 2 - h * 0.6, 0); c.lineTo(-w / 2, 0); c.lineTo(pts[5][0], pts[5][1]); c.closePath(); c.fill();
-  c.fillStyle = o.col || '#2a1f4f'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, 0, 3); c.restore();
+// ---------- text looks: a few different styles, fonts and animations, picked once per video ----------
+const TAGSTYLES = ['cut', 'pill', 'banner', 'sticker', 'plain', 'block'], TAGANIMS = ['pop', 'slide', 'drop', 'wipe', 'wobble', 'zoom'], SUBSTYLES = ['cut', 'pill', 'plain', 'band', 'card'];
+const TFONTS = [{ w: 800, f: 'Poppins', k: 1 }, { w: 700, f: 'Fredoka', k: 1.05 }, { w: 400, f: '"Lilita One"', k: 1.12 }, { w: 400, f: 'Bangers', k: 1.25 }];
+const SFONTS = [{ w: 900, f: 'Poppins', k: 1 }, { w: 700, f: 'Fredoka', k: 1.05 }, { w: 400, f: '"Lilita One"', k: 1.1 }];
+const HIS = ['#ffd23f', '#3ff2b4', '#ff8a3d', '#ff6bd6', '#7cc4ff'];
+const fontStr = (f, size) => `${f.w} ${size}px ${f.f}, Poppins, "Arial Black", Arial, sans-serif`;
+function makeVar(n) {
+  const qs = /[?&]seed=(\d+)/.exec(location.search), seed = qs ? parseInt(qs[1], 10) : (Math.random() * 4e9) >>> 0, r = rng(seed), pick = (a) => a[Math.floor(r() * a.length)];
+  return { seed, hi: pick(HIS), tagStyle: pick(TAGSTYLES), tagFont: pick(TFONTS), tagAnims: Array.from({ length: n }, () => pick(TAGANIMS)), subStyle: pick(SUBSTYLES), subFont: pick(SFONTS), subHi: pick(['color', 'box', 'under']), subY: pick([945, 965, 990]), subAnim: pick(['pop', 'rise', 'none']) };
 }
-// ---------- live subtitles: word-by-word, current word highlighted ----------
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+function tagDraw(c, text, o) {
+  const { u, v, anim, style, font, bg, col, y, T, dir } = o; if (u <= 0 || v >= 1) return;
+  let size = (o.size || 76) * font.k; c.save(); c.font = fontStr(font, size); let tw = c.measureText(text).width;
+  while (tw + size * 1.3 > W - 60 && size > 16) { size -= 2; c.font = fontStr(font, size); tw = c.measureText(text).width; }
+  const w = tw + size * 1.3, h = size * 1.7, vis = 1 - v; let sx = 1, sy = 1, tx = 0, ty = 0, rot = 0, al = 1, rev = 1;
+  if (anim === 'pop') sx = sy = bk(u); else if (anim === 'slide') tx = (1 - eo(u)) * dir * W; else if (anim === 'drop') ty = -(1 - bounce(u)) * 340; else if (anim === 'wipe') rev = eo(u);
+  else if (anim === 'wobble') { sx = sy = bk(u); rot = Math.sin(T * 6) * 0.035 * vis; } else if (anim === 'zoom') { sx = sy = lerp(2.2, 1, eo(u)); al = eo(u); }
+  const ex = 1 + 0.08 * v; sx *= ex; sy *= ex; al *= vis; c.globalAlpha = al;
+  c.translate(W / 2 + tx, y + ty); c.rotate(rot + (style === 'sticker' ? -0.045 : 0)); c.scale(Math.max(0.001, sx), Math.max(0.001, sy));
+  if (rev < 1) { c.beginPath(); c.rect(-w / 2 - 20, -h, (w + 40) * rev, h * 2); c.clip(); }
+  const sh = 'rgba(20,10,50,.45)';
+  if (style === 'cut') {
+    const ch = h * 0.3, pts = [[-w / 2 + ch, -h / 2], [w / 2, -h / 2], [w / 2, h / 2 - ch], [w / 2 - ch, h / 2], [-w / 2, h / 2], [-w / 2, -h / 2 + ch]], path = (dx) => { c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(p[0] + dx, p[1] + dx) : c.moveTo(p[0] + dx, p[1] + dx))); c.closePath(); };
+    c.fillStyle = sh; path(6); c.fill(); c.fillStyle = bg || '#fff6a8'; path(0); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.4)'; c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); c.lineTo(pts[1][0], pts[1][1]); c.lineTo(w / 2 - h * 0.6, 0); c.lineTo(-w / 2, 0); c.lineTo(pts[5][0], pts[5][1]); c.closePath(); c.fill();
+  } else if (style === 'pill') { c.fillStyle = sh; rr(c, -w / 2 + 5, -h / 2 + 7, w, h, h / 2); c.fill(); rr(c, -w / 2, -h / 2, w, h, h / 2); c.fillStyle = bg || '#fff6a8'; c.fill(); c.lineWidth = 5; c.strokeStyle = 'rgba(255,255,255,.9)'; c.stroke(); }
+  else if (style === 'banner') {
+    const nt = h * 0.3, poly = (dx) => { c.beginPath(); c.moveTo(-w / 2 + dx, -h / 2 + dx); c.lineTo(w / 2 + dx, -h / 2 + dx); c.lineTo(w / 2 - nt + dx, dx); c.lineTo(w / 2 + dx, h / 2 + dx); c.lineTo(-w / 2 + dx, h / 2 + dx); c.lineTo(-w / 2 + nt + dx, dx); c.closePath(); };
+    c.fillStyle = sh; poly(7); c.fill(); c.fillStyle = bg || '#fff6a8'; poly(0); c.fill(); c.save(); poly(0); c.clip(); c.fillStyle = 'rgba(0,0,0,.14)'; c.fillRect(-w / 2, h * 0.22, w, h * 0.3); c.restore();
+  } else if (style === 'sticker') { rr(c, -w / 2, -h / 2, w, h, h * 0.3); c.lineJoin = 'round'; c.lineWidth = 16; c.strokeStyle = '#ffffff'; c.stroke(); c.fillStyle = bg || '#fff6a8'; c.fill(); c.lineWidth = 3; c.strokeStyle = 'rgba(0,0,0,.18)'; c.stroke(); }
+  else if (style === 'block') { c.fillStyle = sh; c.fillRect(-w / 2 + 10, -h / 2 + 10, w, h); c.fillStyle = '#140a30'; c.fillRect(-w / 2 - 6, -h / 2 - 6, w + 12, h + 12); c.fillStyle = bg || '#fff6a8'; c.fillRect(-w / 2, -h / 2, w, h); }
+  c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = fontStr(font, size);
+  if (style === 'plain') { c.lineJoin = 'round'; c.lineWidth = size * 0.26; c.strokeStyle = 'rgba(20,10,50,.5)'; c.strokeText(text, 4, size * 0.08 + 5); c.strokeStyle = '#140a30'; c.strokeText(text, 0, size * 0.08); c.fillStyle = bg || '#fff6a8'; c.fillText(text, 0, size * 0.08); }
+  else { c.fillStyle = col || '#2a1f4f'; c.fillText(text, 0, size * 0.06); }
+  c.restore();
+}
+// live subtitles: word by word, current word highlighted
 function subtitleChunks(text) {
   const words = text.split(/\s+/).filter(Boolean), chunks = []; let cur = [];
   words.forEach((w) => { cur.push(w); if (cur.length >= 4 || /[.,?!:;]$/.test(w)) { chunks.push(cur); cur = []; } }); if (cur.length) chunks.push(cur); return chunks;
 }
-function drawSubtitle(c, T, hi) {
+function drawSubtitle(c, T, V) {
   const B = STORY.beats; let idx = -1;
   for (let i = 0; i < B.length; i++) { const s = TL.starts[i], dur = VD ? VD[i] : Math.max(1, B[i].d - 0.4); if (T >= s - 0.02 && T <= s + dur + 0.25) { idx = i; break; } }
   if (idx < 0) return;
@@ -230,14 +269,28 @@ function drawSubtitle(c, T, hi) {
   for (let k = 0; k < chunks.length; k++) { const d = (dur * chunks[k].join(' ').length) / tot; if (T < t0 + d || k === chunks.length - 1) { ci = k; cs = t0; cd = d; break; } t0 += d; }
   const ch = chunks[ci].map((w) => w.toUpperCase()), chars = ch.reduce((a, w) => a + w.length, 0) || 1; let acc = 0;
   for (let k = 0; k < ch.length; k++) { if (T >= cs + (cd * acc) / chars) wi = k; acc += ch[k].length; }
-  let size = 60; c.save(); c.textBaseline = 'alphabetic'; c.textAlign = 'left'; c.direction = 'ltr';
-  const measure = () => { c.font = `900 ${size}px ${FA}`; return ch.map((w) => c.measureText(w).width); };
+  const FN = V.subFont, st = V.subStyle, hl = st === 'card' ? 'box' : V.subHi; let size = Math.round(60 * FN.k); c.save(); c.textBaseline = 'alphabetic'; c.textAlign = 'left'; c.direction = 'ltr';
+  const measure = () => { c.font = fontStr(FN, size); return ch.map((w) => c.measureText(w).width); };
   let ws = measure(), gap = size * 0.28, total = ws.reduce((a, b) => a + b, 0) + gap * (ch.length - 1);
-  if (total > W - 60) { size = Math.floor((size * (W - 60)) / total); ws = measure(); gap = size * 0.28; total = ws.reduce((a, b) => a + b, 0) + gap * (ch.length - 1); }
-  const y = 960, pop = 1 + 0.08 * Math.max(0, 1 - (T - cs) / 0.15); let x = W / 2 - total / 2;
-  c.translate(W / 2, y - size * 0.3); c.scale(pop, pop); c.translate(-W / 2, -(y - size * 0.3));
-  c.fillStyle = 'rgba(14,8,36,.5)'; const bw = total + 50, bh = size * 1.55, bx = W / 2 - bw / 2, by = y - size * 1.1; c.beginPath(); c.moveTo(bx + 16, by); c.lineTo(bx + bw, by); c.lineTo(bx + bw, by + bh - 16); c.lineTo(bx + bw - 16, by + bh); c.lineTo(bx, by + bh); c.lineTo(bx, by + 16); c.closePath(); c.fill();
-  ch.forEach((w, k) => { c.lineJoin = 'round'; c.lineWidth = size * 0.16; c.strokeStyle = '#140a30'; c.strokeText(w, x, y); c.fillStyle = k === wi ? hi : '#ffffff'; c.fillText(w, x, y); x += ws[k] + gap; });
+  if (total > W - 90) { size = Math.floor((size * (W - 90)) / total); ws = measure(); gap = size * 0.28; total = ws.reduce((a, b) => a + b, 0) + gap * (ch.length - 1); }
+  const y = V.subY, age = T - cs; let pop = 1, ty = 0, al = 1;
+  if (V.subAnim === 'pop') pop = 1 + 0.08 * Math.max(0, 1 - age / 0.15); else if (V.subAnim === 'rise') { const k = eo(cl(age / 0.18)); ty = (1 - k) * 22; al = 0.4 + 0.6 * k; }
+  c.globalAlpha = al; c.translate(W / 2, y - size * 0.3 + ty); c.scale(pop, pop); c.translate(-W / 2, -(y - size * 0.3));
+  const bw = total + 50, bh = size * 1.55, bx = W / 2 - bw / 2, by = y - size * 1.1;
+  if (st === 'cut') { c.fillStyle = 'rgba(14,8,36,.5)'; c.beginPath(); c.moveTo(bx + 16, by); c.lineTo(bx + bw, by); c.lineTo(bx + bw, by + bh - 16); c.lineTo(bx + bw - 16, by + bh); c.lineTo(bx, by + bh); c.lineTo(bx, by + 16); c.closePath(); c.fill(); }
+  else if (st === 'pill') { c.fillStyle = 'rgba(14,8,36,.58)'; rr(c, bx, by, bw, bh, bh / 2); c.fill(); }
+  else if (st === 'band') { c.fillStyle = 'rgba(14,8,36,.5)'; c.fillRect(-20, by - 6, W + 40, bh + 12); }
+  else if (st === 'card') { c.fillStyle = 'rgba(255,255,255,.93)'; rr(c, bx, by, bw, bh, 16); c.fill(); c.lineWidth = 4; c.strokeStyle = '#140a30'; c.stroke(); }
+  let x = W / 2 - total / 2;
+  ch.forEach((w, k) => {
+    const cur = k === wi;
+    if (cur && hl === 'box') { c.fillStyle = V.hi; rr(c, x - 9, y - size * 0.98, ws[k] + 18, size * 1.25, 12); c.fill(); }
+    if (st !== 'card' && !(cur && hl === 'box')) { c.lineJoin = 'round'; c.lineWidth = size * (st === 'plain' ? 0.22 : 0.16); c.strokeStyle = '#140a30'; c.strokeText(w, x, y); }
+    if (cur && hl === 'box') c.fillStyle = '#14102a'; else if (st === 'card') c.fillStyle = '#1a1030'; else c.fillStyle = cur && hl === 'color' ? V.hi : '#ffffff';
+    c.fillText(w, x, y);
+    if (cur && hl === 'under') { c.fillStyle = V.hi; c.fillRect(x, y + size * 0.14, ws[k], size * 0.12); }
+    x += ws[k] + gap;
+  });
   c.restore();
 }
 
@@ -245,11 +298,10 @@ function drawSubtitle(c, T, hi) {
 const VOICE_OFF = 0.1, VOICE_TAIL = 0.28, END_HOLD = 1.1, CUT = 0.14;
 let STORY = null, TL = null, VD = null, VAR = null;
 function buildTL(v) { const n = STORY.beats.length, E = [], R = [], starts = []; let t = 0; for (let i = 0; i < n; i++) { const d = STORY.beats[i].d, r = v && v[i] > 0 ? Math.max(1.6, VOICE_OFF + v[i] + VOICE_TAIL) : d; E.push(t); R.push(r); starts.push(t + VOICE_OFF); t += r; } return { E, R, starts, total: t + END_HOLD }; }
-function loadTopic(id) { STORY = STORIES.find((x) => x.id === id) || STORIES[0]; VD = null; TL = buildTL(null); const r = rng(hashS(STORY.id + new Date().toISOString().slice(0, 10))); VAR = { hi: ['#ffd23f', '#3ff2b4', '#ff8a3d'][Math.floor(r() * 3)] }; return { id: STORY.id, title: STORY.title, vo: STORY.beats.map((b) => b.vo), caption: STORY.caption, tags: STORY.tags, footer: STORY.footer, kind: STORY.kind || 'story', lang: 'en', tr: [] }; }
+function loadTopic(id) { STORY = STORIES.find((x) => x.id === id) || STORIES[0]; VD = null; TL = buildTL(null); VAR = makeVar(STORY.beats.length); return { id: STORY.id, title: STORY.title, vo: STORY.beats.map((b) => b.vo), caption: STORY.caption, tags: STORY.tags, footer: STORY.footer, kind: STORY.kind || 'story', lang: 'en', tr: [] }; }
 function setVoiceDurations(v) { VD = v; TL = buildTL(v); return { starts: TL.starts, total: TL.total }; }
 
 // ---------- frame ----------
-let GRAIN = null;
 function explainer(ctx, T) {
   const S = STORY; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.clearRect(0, 0, W, HH);
   let i = S.beats.length - 1; for (let k = 0; k < S.beats.length; k++) if (T < TL.E[k] + TL.R[k]) { i = k; break; }
@@ -260,36 +312,35 @@ function explainer(ctx, T) {
   const sh = bt < 0.25 && i > 0 ? Math.sin(bt * 90) * (1 - bt / 0.25) * 0.12 : 0, cam = lookCam([cv.pos[0] + sh, cv.pos[1] + sh * 0.6, cv.pos[2]], cv.tg);
   skyDraw(ctx, env); renderScene(ctx, cam, env);
   if (S.post) S.post(ctx, T, i, p, TL);
-  // overlays
-  (b.tags || []).forEach((tg) => { const a = tg.t[0], e = tg.t[1], k = bk(wn(p, a, a + 0.1)) * (1 - wn(p, e - 0.08, e)); const txt = typeof tg.text === 'function' ? tg.text(p) : tg.text; tag(ctx, W / 2, tg.y || 330, txt, { size: tg.size || 76, k, bg: tg.bg, col: tg.col }); });
-  drawSubtitle(ctx, T, VAR.hi);
+  (b.tags || []).forEach((tg) => { const a = tg.t[0], e = tg.t[1], txt = typeof tg.text === 'function' ? tg.text(p) : tg.text; tagDraw(ctx, txt, { u: wn(p, a, a + 0.1), v: wn(p, e - 0.08, e), anim: VAR.tagAnims[i] || 'pop', style: VAR.tagStyle, font: VAR.tagFont, bg: tg.bg, col: tg.col, y: tg.y || 330, size: tg.size || 76, T, dir: i % 2 ? -1 : 1 }); });
+  drawSubtitle(ctx, T, VAR);
   if (i > 0 && bt < CUT) { ctx.fillStyle = `rgba(255,255,255,${0.55 * (1 - bt / CUT)})`; ctx.fillRect(0, 0, W, HH); }
-  // finish: light vignette + a little film grain
-  const g = ctx.createRadialGradient(W / 2, HH / 2, 420, W / 2, HH / 2, 900); g.addColorStop(0, 'rgba(10,5,30,0)'); g.addColorStop(1, 'rgba(10,5,30,.28)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, HH);
-  if (!GRAIN) { GRAIN = document.createElement('canvas'); GRAIN.width = GRAIN.height = 128; const x = GRAIN.getContext('2d'), im = x.createImageData(128, 128), d = im.data, q = rng(9); for (let k = 0; k < d.length; k += 4) { const v = (q() * 255) | 0; d[k] = d[k + 1] = d[k + 2] = v; d[k + 3] = 255; } x.putImageData(im, 0, 0); GRAIN.pat = ctx.createPattern(GRAIN, 'repeat'); }
-  const f = Math.floor(T * 12); ctx.save(); ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = 0.1; ctx.translate((f * 37) % 128, (f * 91) % 128); ctx.fillStyle = GRAIN.pat; ctx.fillRect(-128, -128, W + 256, HH + 256); ctx.restore();
 }
 
 // =====================================================================
-//  V2 ADDITIONS: helpers, new models (dog, cat, bird, elephant, car, van), a room, and 7 new stories
+//  helpers + models shared by the stories (all boxes)
 // =====================================================================
 const handW = (x, y, z, face, s, bend, ang, side) => comp(rotX(ang, [0, 1.46, 0]), bend ? rotX(bend, [0, 0.84, 0]) : null, sc(s), rotY(face), mv(x, y, z))([side * 0.31, 0.8, 0]);
 const midHands = (P, a, b, face) => { const l = handW(P.x, 0, P.z, face, 1, b, a, -1), r = handW(P.x, 0, P.z, face, 1, b, a, 1); return [(l[0] + r[0]) / 2, (l[1] + r[1]) / 2, (l[2] + r[2]) / 2]; };
 const PAL = [[206, 96, 86], [84, 128, 196], [88, 168, 122], [216, 178, 84], [148, 108, 196]];
 const slowBlink = (t) => { const u = (((t % 3.4) + 3.4) % 3.4) / 3.4; return u < 0.25 ? 0 : u < 0.45 ? ez((u - 0.25) / 0.2) : u < 0.65 ? 1 : u < 0.85 ? 1 - ez((u - 0.65) / 0.2) : 0; };
-function quadGrid(o, u, v, nu, nv, col, opt) { for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const p = (a, b) => [o[0] + u[0] * (i + a) + v[0] * (j + b), o[1] + u[1] * (i + a) + v[1] * (j + b), o[2] + u[2] * (i + a) + v[2] * (j + b)], c = typeof col === 'function' ? col(i, j) : col; tri(p(0, 0), p(1, 0), p(0, 1), c, opt); tri(p(1, 0), p(1, 1), p(0, 1), c, opt); } }
-function strip(x0, x1, z0, z1, col, y, bias) { const o = { terrain: 1, bias: bias || -5 }; tri([x0, y, z0], [x0, y, z1], [x1, y, z0], col, o); tri([x1, y, z0], [x0, y, z1], [x1, y, z1], col, o); }
-function heart3d(x, y, z, s, hc) { const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z), xf = comp(rotY(yaw), mv(x, y, z)), pts = []; for (let k = 0; k < 14; k++) { const t = (k / 14) * TAU; pts.push([(16 * Math.pow(Math.sin(t), 3)) / 17, (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 17]); } const fan = (k2, col, b) => { for (let k = 0; k < 14; k++) { const A = pts[k], B = pts[(k + 1) % 14]; tri(xf([0, 0, 0]), xf([A[0] * s * k2, A[1] * s * k2, 0]), xf([B[0] * s * k2, B[1] * s * k2, 0]), col, { twoSided: 1, emissive: 1, bias: b }); } }; if (CEL) fan(1.22, [60, 10, 40], -1.5); fan(1, hc || [236, 84, 120], -2); }
+const HEART_P = ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'];
+function heart3d(x, y, z, s, hc) {
+  const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z), xf = comp(rotY(yaw), mv(x, y, z)), c = s * 0.3;
+  const draw = (k, col, zo, b) => HEART_P.forEach((row, r) => { let c0 = -1; for (let q = 0; q <= 7; q++) { if (q < 7 && row[q] === 'X') { if (c0 < 0) c0 = q; } else if (c0 >= 0) { box(((c0 + q) / 2 - 3.5) * c, (2.5 - r) * c, zo, (q - c0) * c * k, c * k, c * 0.6, col, xf, { emissive: 1, noedge: 1, bias: b }); c0 = -1; } } });
+  draw(1.3, [60, 10, 40], -0.05 * s, -1.5); draw(1, hc || [236, 84, 120], 0, -2);
+}
 function xmark(x, y, z, s) { const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z); [0.785, -0.785].forEach((a) => box(0, 0, 0, s, s * 0.16, s * 0.06, [255, 50, 60], comp(rotZ(a), rotY(yaw), mv(x, y, z)), { emissive: 1, bias: -2 })); }
-function warn3d(x, y, z, s) { const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z), xf = comp(rotY(yaw), mv(x, y, z)), o = { twoSided: 1, emissive: 1, bias: -2 }; tri(xf([-s, -0.8 * s, 0]), xf([s, -0.8 * s, 0]), xf([0, 0.95 * s, 0]), [40, 20, 50], o); tri(xf([-0.82 * s, -0.7 * s, 0.01]), xf([0.82 * s, -0.7 * s, 0.01]), xf([0, 0.76 * s, 0.01]), [255, 222, 50], { twoSided: 1, emissive: 1, bias: -2.5 }); box(0, 0.05 * s, 0.03, 0.14 * s, 0.6 * s, 0.02, [40, 20, 50], xf, { emissive: 1, bias: -3 }); box(0, -0.45 * s, 0.03, 0.15 * s, 0.15 * s, 0.02, [40, 20, 50], xf, { emissive: 1, bias: -3 }); }
-function roundTree(x, z, s, col) { prism(x, 0, z, 0.3 * s, 2.2 * s, 6, [130, 84, 50], null, 0.22 * s); ell(x, 3.2 * s, z, 1.7 * s, 1.5 * s, 1.7 * s, col, null, null, 1); ell(x + 0.7 * s, 3.9 * s, z - 0.3 * s, 1.1 * s, 1.0 * s, 1.1 * s, mixc(col, [255, 255, 140], 0.2), null); }
+function warn3d(x, y, z, s) { const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z), xf = comp(rotY(yaw), mv(x, y, z)), o = { emissive: 1, bias: -2 }; box(0, 0, 0, 1.5 * s, 1.5 * s, 0.1 * s, [40, 20, 50], comp(rotZ(Math.PI / 4), xf), o); box(0, 0, 0.06 * s, 1.2 * s, 1.2 * s, 0.05 * s, [255, 222, 50], comp(rotZ(Math.PI / 4), xf), { emissive: 1, bias: -2.5, noedge: 1 }); box(0, 0.12 * s, 0.1 * s, 0.14 * s, 0.5 * s, 0.04 * s, [40, 20, 50], xf, { emissive: 1, bias: -3, noedge: 1 }); box(0, -0.32 * s, 0.1 * s, 0.15 * s, 0.15 * s, 0.04 * s, [40, 20, 50], xf, { emissive: 1, bias: -3, noedge: 1 }); }
+function ring3d(x, y, z, r, w, col) { const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z), xf = comp(rotY(yaw), mv(x, y, z)), n = 14; for (let k = 0; k < n; k++) { const a = (k / n) * TAU; box(Math.cos(a) * (r + w / 2), Math.sin(a) * (r + w / 2), 0, w * 1.6, w * 1.6, w, col, xf, { emissive: 1, noedge: 1, bias: -2 }); } }
+function roundTree(x, z, s, col) { box(x, 1.1 * s, z, 0.7 * s, 2.2 * s, 0.7 * s, [130, 84, 50]); box(x, 3.2 * s, z, 3.2 * s, 2.6 * s, 3.2 * s, col); box(x + 0.5 * s, 4.9 * s, z - 0.2 * s, 2.0 * s, 1.5 * s, 2.0 * s, mixc(col, [255, 255, 140], 0.2)); }
 function bench(x, z, face) { const xf = comp(rotY(face), mv(x, 0, z)), W2 = [200, 120, 70]; box(0, 0.7, 0, 2.4, 0.14, 0.7, W2, xf); box(0, 1.2, -0.3, 2.4, 0.7, 0.1, W2, xf); [-1, 1].forEach((d) => box(d * 1.05, 0.35, 0, 0.12, 0.7, 0.6, [60, 60, 90], xf)); }
 function building(x, z, w, d, h, col) { box(x, h / 2, z, w, h, d, col); box(x, h + 0.25, z, w + 0.6, 0.5, d + 0.6, mixc(col, [40, 40, 50], 0.4)); for (let k = 1; k * 4 < h - 1; k++) box(x, k * 4, z - d / 2 - 0.05, w * 0.8, 0.9, 0.12, [255, 226, 150], null, { emissive: 1 }); }
 function pineSnow(x, z, s) { prism(x, 0, z, 0.24 * s, 1.6 * s, 6, [120, 80, 50], null, 0.2 * s); [[0.9, 1.9, 1.7], [2.1, 1.55, 1.5], [3.3, 1.15, 1.3]].forEach(([y, r, h]) => cone(x, y * s, z, r * s, h * s, 7, [28, 134, 100], null, { snow: 0.55 })); }
-function acacia(x, z, s) { prism(x, 0, z, 0.22 * s, 2.8 * s, 6, [130, 86, 52], null, 0.16 * s); ell(x, 3.2 * s, z, 2.8 * s, 0.55 * s, 2.3 * s, [70, 184, 96], null); ell(x + 0.5 * s, 3.55 * s, z, 2 * s, 0.45 * s, 1.6 * s, [120, 210, 90], null); }
-function baobab(x, z, s) { prism(x, 0, z, 1.1 * s, 5 * s, 8, [170, 116, 84], null, 0.8 * s); ell(x, 6 * s, z, 2.2 * s, 0.9 * s, 2.2 * s, [90, 176, 80], null); }
+function acacia(x, z, s) { box(x, 1.4 * s, z, 0.5 * s, 2.8 * s, 0.5 * s, [130, 86, 52]); box(x, 3.2 * s, z, 5 * s, 0.9 * s, 4 * s, [70, 184, 96]); box(x + 0.5 * s, 3.9 * s, z, 3.4 * s, 0.7 * s, 2.8 * s, [120, 210, 90]); }
+function baobab(x, z, s) { box(x, 2.5 * s, z, 2.2 * s, 5 * s, 2.2 * s, [170, 116, 84]); box(x, 3.5 * s, z, 1.6 * s, 3 * s, 1.6 * s, [160, 108, 78]); box(x, 6 * s, z, 4.4 * s, 1.5 * s, 4.4 * s, [90, 176, 80]); }
 function cabin(x, z) { box(x, 2, z, 7, 4, 7, [204, 130, 84]); box(x, 4.2, z, 8, 0.4, 8, [210, 62, 72]); cone(x, 4.4, z, 5.4, 2.6, 4, [238, 246, 255], comp(mv(-x, 0, -z), rotY(Math.PI / 4), mv(x, 0, z))); box(x + 2.2, 5.6, z + 1.5, 0.9, 2.2, 0.9, [150, 90, 70]); [-2, 2].forEach((d) => box(x + d, 2.2, z - 3.52, 1.3, 1.3, 0.1, [255, 214, 120], null, { emissive: 1 })); box(x, 1.2, z - 3.45, 1.4, 2.4, 0.05, [255, 214, 120], null, { emissive: 1 }); }
-function skull(x, y, z, s, face) { const b = comp(sc(s), rotY(face || 0), mv(x, y, z)), B = [250, 240, 214], Dk = [76, 64, 66]; ell(0, 0.7, 0, 0.85, 0.75, 0.9, B, b, null, 1); ell(0, 0.25, 0.9, 0.4, 0.3, 0.6, B, b); ell(0, 0.08, 0.3, 0.5, 0.1, 0.8, B, b); [-1, 1].forEach((d) => { ell(d * 0.45, 0.95, 0.62, 0.17, 0.17, 0.12, Dk, b); cone(d * 0.35, 0.2, 1.0, 0.14, 1.8, 5, B, comp(rotX(1.7, [d * 0.35, 0.2, 1.0]), b)); }); ell(0, 0.5, 1.4, 0.18, 0.2, 0.1, Dk, b); }
+function skull(x, y, z, s, face) { const b = comp(sc(s), rotY(face || 0), mv(x, y, z)), B = [250, 240, 214], Dk = [76, 64, 66]; ell(0, 0.7, 0, 0.85, 0.75, 0.9, B, b); ell(0, 0.25, 0.9, 0.4, 0.3, 0.6, B, b); ell(0, 0.08, 0.3, 0.5, 0.1, 0.8, B, b); [-1, 1].forEach((d) => { ell(d * 0.45, 0.95, 0.62, 0.17, 0.17, 0.12, Dk, b); cone(d * 0.35, 0.2, 1.0, 0.14, 1.8, 5, B, comp(rotX(1.7, [d * 0.35, 0.2, 1.0]), b)); }); ell(0, 0.5, 1.4, 0.18, 0.2, 0.1, Dk, b); }
 
 // ---------- vehicles ----------
 function car(x, y, z, face, s, o) {
@@ -300,16 +351,16 @@ function car(x, y, z, face, s, o) {
 function van(x, y, z, face, s, o) {
   o = o || {}; const C = o.col || [40, 120, 255], xf = comp(sc(s), rotY(face), mv(x, y, z)), W2 = [255, 255, 255], fl = Math.floor((o.T || 0) * 4) % 2;
   box(0, 1.7, -0.3, 2.6, 2.2, 4.0, W2, xf); box(0, 1.25, 2.0, 2.5, 1.6, 1.5, W2, xf); box(0, 1.8, 2.76, 2.0, 0.7, 0.06, [130, 224, 255], xf, { emissive: 1 }); box(0, 1.25, -0.3, 2.64, 0.35, 4.04, C, xf);
-  [-1, 1].forEach((d) => { ell(d * 1.32, 1.95, -0.5, 0.04, 0.36, 0.3, C, xf, { emissive: 1 }); [-0.28, 0, 0.28].forEach((q, k) => ell(d * 1.32, 2.45 - Math.abs(q) * 0.3, -0.5 + q * 1.0, 0.04, 0.13, 0.11, C, xf, { emissive: 1 })); [-1.4, 1.9].forEach((wz) => prism(0, -0.15, 0, 0.5, 0.3, 10, [30, 30, 38], comp(rotZ(Math.PI / 2), mv(d * 1.3, 0.5, wz), xf))); });
+  [-1, 1].forEach((d) => { ell(d * 1.32, 1.95, -0.5, 0.04, 0.36, 0.3, C, xf, { emissive: 1 }); [-0.28, 0, 0.28].forEach((q) => ell(d * 1.32, 2.45 - Math.abs(q) * 0.3, -0.5 + q * 1.0, 0.04, 0.13, 0.11, C, xf, { emissive: 1 })); [-1.4, 1.9].forEach((wz) => prism(0, -0.15, 0, 0.5, 0.3, 10, [30, 30, 38], comp(rotZ(Math.PI / 2), mv(d * 1.3, 0.5, wz), xf))); });
   box(-0.5, 2.9, 1.6, 0.5, 0.2, 0.3, fl ? [255, 40, 50] : [90, 20, 30], xf, { emissive: 1 }); box(0.5, 2.9, 1.6, 0.5, 0.2, 0.3, fl ? [30, 40, 90] : [70, 130, 255], xf, { emissive: 1 });
 }
 
 // ---------- animals ----------
 function dog(x, y, z, face, s, o) {
   o = o || {}; const C1 = o.col || [244, 232, 208], C2 = o.col2 || [222, 170, 100], K = [36, 26, 30], pose = o.pose || 'stand', amp = o.amp == null ? 0.6 : o.amp, sw = Math.sin(o.walk || 0) * amp, sit = pose === 'sit', lie = pose === 'lie', base = comp(sc(s), rotY(face), mv(x, y, z)), bY = lie ? 0.3 : 0.62, bx = sit ? comp(rotX(-0.6, [0, 0.3, -0.3]), base) : base;
-  ell(0, bY, 0, 0.3, 0.3, 0.62, C1, bx, null, 1); ell(0, bY + 0.12, -0.05, 0.27, 0.17, 0.5, C2, bx);
+  ell(0, bY, 0, 0.3, 0.3, 0.62, C1, bx); ell(0, bY + 0.12, -0.05, 0.27, 0.17, 0.5, C2, bx);
   const hp = lie ? [0, 0.52, 0.68] : sit ? [0, 1.2, 0.36] : [0, 0.98, 0.66], hd = comp(rotX(o.dip || 0), rotY(o.look || 0), mv(hp[0], hp[1], hp[2]), base);
-  ell(0, 0, 0, 0.24, 0.22, 0.26, C1, hd, null, 1); ell(0, -0.06, 0.24, 0.12, 0.1, 0.17, o.muzzle || C2, hd); ell(0, -0.02, 0.4, 0.05, 0.04, 0.04, K, hd);
+  ell(0, 0, 0, 0.24, 0.22, 0.26, C1, hd); ell(0, -0.06, 0.24, 0.12, 0.1, 0.17, o.muzzle || C2, hd); ell(0, -0.02, 0.4, 0.05, 0.04, 0.04, K, hd);
   [-1, 1].forEach((d) => { ell(d * 0.1, 0.07, 0.17, 0.035, 0.04, 0.03, K, hd); ell(d * 0.1 + 0.01, 0.085, 0.19, 0.012, 0.012, 0.012, [255, 255, 255], hd, { emissive: 1 }); if (o.sad) ell(d * 0.1, 0.15, 0.17, 0.065, 0.012, 0.04, K, comp(rotZ(d * 0.35, [d * 0.1, 0.15, 0.17]), hd)); if (o.ears === 'up') { cone(d * 0.13, 0.16, -0.02, 0.075, 0.2, 4, C1, comp(rotZ(-d * 0.15, [d * 0.13, 0.16, 0]), hd)); cone(d * 0.13, 0.17, 0.0, 0.04, 0.12, 4, C2, comp(rotZ(-d * 0.15, [d * 0.13, 0.16, 0]), hd)); } else ell(d * 0.2, -0.02, -0.02, 0.06, 0.15, 0.09, C2, comp(rotZ(d * 0.2, [d * 0.2, 0.1, 0]), hd)); });
   if (o.tongue) ell(0, -0.14, 0.3, 0.04, 0.015, 0.1, [255, 92, 126], hd); if (o.collar) ell(0, -0.17, -0.12, 0.2, 0.07, 0.2, o.collar, hd);
   if (lie) [-1, 1].forEach((d) => { ell(d * 0.13, 0.07, 0.6, 0.07, 0.07, 0.2, C1, base); ell(d * 0.22, 0.16, -0.3, 0.16, 0.14, 0.24, C1, base); });
@@ -319,20 +370,20 @@ function dog(x, y, z, face, s, o) {
 }
 function cat(x, y, z, face, s, o) {
   o = o || {}; const C = o.col || [255, 150, 44], D = mixc(C, [130, 50, 10], 0.65), Wh = [255, 246, 236], K = [18, 16, 22], G = [232, 196, 96], pose = o.pose || 'sit', bl = o.blink || 0, sw = Math.sin(o.walk || 0) * 0.5, sit = pose === 'sit', base = comp(sc(s), rotY(face), mv(x, y, z));
-  if (sit) { ell(0, 0.4, -0.06, 0.22, 0.36, 0.28, C, comp(rotX(-0.15, [0, 0.1, 0]), base), null, 1); ell(0, 0.34, 0.1, 0.13, 0.24, 0.1, Wh, base); [-1, 1].forEach((d) => { ell(d * 0.17, 0.16, -0.1, 0.15, 0.15, 0.22, C, base); prism(d * 0.09, 0, 0.1, 0.05, 0.6, 6, C, base, 0.1); ell(d * 0.09, 0.03, 0.14, 0.07, 0.04, 0.1, Wh, base); }); }
-  else { ell(0, 0.4, 0, 0.2, 0.2, 0.45, C, base, null, 1); ell(0, 0.32, 0.18, 0.12, 0.1, 0.2, Wh, base); const leg = (lx, lz, ang) => { const f = comp(rotX(ang, [lx, 0.38, lz]), base); prism(lx, 0, lz, 0.04, 0.38, 6, C, f, 0.06); ell(lx, 0.03, lz + 0.03, 0.06, 0.04, 0.09, Wh, f); }; leg(-0.1, 0.3, sw); leg(0.1, 0.3, -sw); leg(-0.1, -0.3, -sw); leg(0.1, -0.3, sw); }
+  if (sit) { ell(0, 0.4, -0.06, 0.22, 0.36, 0.28, C, comp(rotX(-0.15, [0, 0.1, 0]), base)); ell(0, 0.34, 0.1, 0.13, 0.24, 0.1, Wh, base); [-1, 1].forEach((d) => { ell(d * 0.17, 0.16, -0.1, 0.15, 0.15, 0.22, C, base); prism(d * 0.09, 0, 0.1, 0.05, 0.6, 6, C, base, 0.1); ell(d * 0.09, 0.03, 0.14, 0.07, 0.04, 0.1, Wh, base); }); }
+  else { ell(0, 0.4, 0, 0.2, 0.2, 0.45, C, base); ell(0, 0.32, 0.18, 0.12, 0.1, 0.2, Wh, base); const leg = (lx, lz, ang) => { const f = comp(rotX(ang, [lx, 0.38, lz]), base); prism(lx, 0, lz, 0.04, 0.38, 6, C, f, 0.06); ell(lx, 0.03, lz + 0.03, 0.06, 0.04, 0.09, Wh, f); }; leg(-0.1, 0.3, sw); leg(0.1, 0.3, -sw); leg(-0.1, -0.3, -sw); leg(0.1, -0.3, sw); }
   const hp = sit ? [0, 0.88, 0.1] : [0, 0.66, 0.5], hd = comp(rotX(o.dip || 0), rotY(o.look || 0), mv(hp[0], hp[1], hp[2]), base), ey = Math.max(0.012, 1 - bl);
-  ell(0, 0, 0, 0.2, 0.17, 0.18, C, hd, null, 1); ell(0, -0.1, 0.14, 0.1, 0.05, 0.08, Wh, hd); ell(0, -0.03, 0.18, 0.03, 0.02, 0.02, [255, 150, 170], hd);
-  [-1, 1].forEach((d) => { const ef = comp(rotZ(-d * 0.2, [d * 0.12, 0.12, 0]), hd); cone(d * 0.12, 0.12, -0.02, 0.07, 0.15, 4, C, ef); cone(d * 0.12, 0.13, 0.0, 0.04, 0.1, 4, [255, 150, 170], ef); if (bl > 0.6) ell(d * 0.085, 0.03, 0.17, 0.055, 0.01, 0.02, K, hd); else { ell(d * 0.085, 0.03, 0.15, 0.055, 0.06 * ey, 0.025, G, hd); ell(d * 0.085, 0.03, 0.17, 0.014, 0.05 * ey, 0.012, K, hd); } ell(d * 0.05, 0.16, 0.04, 0.015, 0.01, 0.06, D, hd); [-1, 1].forEach((k) => tri(hd([d * 0.05, -0.05, 0.17]), hd([d * 0.4, -0.05 + k * 0.05, 0.2]), hd([d * 0.05, -0.045, 0.18]), [255, 255, 255], { twoSided: 1, emissive: 1 })); });
+  ell(0, 0, 0, 0.2, 0.17, 0.18, C, hd); ell(0, -0.1, 0.14, 0.1, 0.05, 0.08, Wh, hd); ell(0, -0.03, 0.18, 0.03, 0.02, 0.02, [255, 150, 170], hd);
+  [-1, 1].forEach((d) => { const ef = comp(rotZ(-d * 0.2, [d * 0.12, 0.12, 0]), hd); cone(d * 0.12, 0.12, -0.02, 0.07, 0.15, 4, C, ef); cone(d * 0.12, 0.13, 0.0, 0.04, 0.1, 4, [255, 150, 170], ef); if (bl > 0.6) ell(d * 0.085, 0.03, 0.17, 0.055, 0.01, 0.02, K, hd); else { ell(d * 0.085, 0.03, 0.15, 0.055, 0.06 * ey, 0.025, G, hd); ell(d * 0.085, 0.03, 0.17, 0.014, 0.05 * ey, 0.012, K, hd); } box(d * 0.3, -0.05, 0.2, 0.3, 0.012, 0.012, [255, 255, 255], hd, { emissive: 1, noedge: 1 }); });
   const tw = Math.sin(o.tail || 0) * 0.25; for (let k = 0; k < 6; k++) { const t = k / 5; ell((sit ? t * 0.3 : 0) + tw * t, 0.12 + (sit ? 0.25 : 0.9) * t, -0.3 - (sit ? 0.05 : 0.3) * t, 0.055 - t * 0.012, 0.055 - t * 0.012, 0.07, k > 3 ? D : C, base); }
 }
 function bird(x, y, z, face, s, T, o) {
   o = o || {}; const BK = o.back || [150, 106, 76], BR = o.breast || [226, 128, 74], HD = o.head || [112, 82, 66], WG = o.wing || mixc(BK, [40, 26, 20], 0.35), WG2 = mixc(WG, [255, 255, 255], 0.14), K = [22, 20, 26], BEAK = o.beak || [232, 190, 80], hurt = o.hurt || 0, bo = o.beakOpen || 0, base = comp(o.tilt ? rotZ(o.tilt) : null, sc(s), rotY(face), mv(x, y, z));
-  ell(0, 0.34, 0, 0.25, 0.23, 0.31, BK, base, null, 1); ell(0, 0.3, 0.1, 0.21, 0.2, 0.23, BR, base, null, 1);
-  const hd = comp(rotX(o.dip || 0), mv(0, 0.6, 0.15), base); ell(0, 0, 0, 0.17, 0.16, 0.17, HD, hd, null, 1);
+  ell(0, 0.34, 0, 0.25, 0.23, 0.31, BK, base); ell(0, 0.3, 0.1, 0.21, 0.2, 0.23, BR, base);
+  const hd = comp(rotX(o.dip || 0), mv(0, 0.6, 0.15), base); ell(0, 0, 0, 0.17, 0.16, 0.17, HD, hd);
   cone(0, 0, 0, 0.045 + o.big * 0.01 || 0.045, 0.15 + (o.big || 0) * 0.06, 4, BEAK, comp(rotX(Math.PI / 2 - bo * 0.3), mv(0, -0.01, 0.15), hd)); cone(0, 0, 0, 0.035, 0.12 + (o.big || 0) * 0.05, 4, mixc(BEAK, [0, 0, 0], 0.12), comp(rotX(Math.PI / 2 + bo * 0.5), mv(0, -0.05, 0.14), hd));
   [-1, 1].forEach((d) => { ell(d * 0.1, 0.05, 0.1, 0.05, 0.05, 0.03, [250, 248, 240], hd); ell(d * 0.105, 0.05, 0.125, 0.026, 0.026 * (hurt ? 0.35 : 1), 0.015, K, hd);
-    const dr = hurt && d < 0 ? 0.9 + Math.sin(T * 9) * 0.06 : 0.14, wx = comp(rotZ(d * dr), mv(d * 0.21, 0.44, -0.02), base); ell(0, -0.13, 0, 0.055, 0.2, 0.28, WG, wx, null, 1); ell(0, -0.3, -0.1, 0.05, 0.1, 0.22, WG2, wx);
+    const dr = hurt && d < 0 ? 0.9 + Math.sin(T * 9) * 0.06 : 0.14, wx = comp(rotZ(d * dr), mv(d * 0.21, 0.44, -0.02), base); ell(0, -0.13, 0, 0.055, 0.2, 0.28, WG, wx); ell(0, -0.3, -0.1, 0.05, 0.1, 0.22, WG2, wx);
     if (!o.tilt) { prism(d * 0.07, 0.02, 0.04, 0.014, 0.15, 4, [196, 150, 100], base); [-1, 0, 1].forEach((k) => ell(d * 0.07 + k * 0.025, 0.012, 0.09, 0.012, 0.012, 0.05, [196, 150, 100], comp(rotY(k * 0.25), base))); } });
   [-1, 0, 1].forEach((k) => ell(k * 0.07, 0.24, -0.4, 0.05, 0.025, 0.21, k ? WG : WG2, comp(rotY(k * 0.18), base)));
   if (o.crest) cone(0, 0.14, -0.04, 0.07, 0.2, 4, HD, comp(rotX(-0.4, [0, 0.14, -0.04]), hd));
@@ -340,10 +391,10 @@ function bird(x, y, z, face, s, T, o) {
 }
 function elephant(x, y, z, face, s, T, o) {
   o = o || {}; const C = o.col || [146, 146, 160], D = mixc(C, [60, 50, 70], 0.4), P = [226, 170, 180], K = [20, 18, 30], base = comp(sc(s), rotY(face), mv(x, y, z)), ph = o.walk || 0, amp = o.amp == null ? 0.4 : o.amp;
-  ell(0, 2.1, 0, 1.25, 1.2, 1.9, C, base, null, 1);
+  ell(0, 2.1, 0, 1.25, 1.2, 1.9, C, base);
   const hd = comp(rotX(o.dip || 0), mv(0, 2.4, 1.9), base), fl = 0.35 + Math.sin(T * 1.1) * 0.12;
-  ell(0, 0, 0, 0.9, 0.95, 0.95, C, hd, null, 1);
-  [-1, 1].forEach((d) => { const ef = comp(rotY(d * fl), mv(d * 0.8, 0.15, -0.15), hd); ell(d * 0.1, -0.2, 0, 0.07, 0.85, 0.7, C, ef, null, 1); ell(d * 0.14, -0.2, 0.02, 0.03, 0.62, 0.5, P, ef); ell(d * 0.5, 0.15, 0.62, 0.07, 0.07, 0.05, K, hd); ell(d * 0.5 + 0.015, 0.17, 0.66, 0.02, 0.02, 0.02, [255, 255, 255], hd, { emissive: 1 }); if (o.tusks !== false) cone(d * 0.4, -0.6, 0.7, 0.12, 1.3, 5, [255, 250, 236], comp(rotX(1.9, [d * 0.4, -0.6, 0.7]), hd)); });
+  ell(0, 0, 0, 0.9, 0.95, 0.95, C, hd);
+  [-1, 1].forEach((d) => { const ef = comp(rotY(d * fl), mv(d * 0.8, 0.15, -0.15), hd); ell(d * 0.1, -0.2, 0, 0.07, 0.85, 0.7, C, ef); ell(d * 0.14, -0.2, 0.02, 0.03, 0.62, 0.5, P, ef); ell(d * 0.5, 0.15, 0.62, 0.07, 0.07, 0.05, K, hd); ell(d * 0.5 + 0.015, 0.17, 0.66, 0.02, 0.02, 0.02, [255, 255, 255], hd, { emissive: 1 }); if (o.tusks !== false) cone(d * 0.4, -0.6, 0.7, 0.12, 1.3, 5, [255, 250, 236], comp(rotX(1.9, [d * 0.4, -0.6, 0.7]), hd)); });
   const P0 = [0, 1.9, 2.8], E = o.tt || [Math.sin(T * 0.8) * 0.25, 0.35, 3.0], Cc = [E[0] * 0.5, (P0[1] + E[1]) / 2 - 0.1, Math.max(P0[2], E[2]) + 0.5];
   for (let k = 0; k <= 8; k++) { const t = k / 8, a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t, r = 0.34 * (1 - t) + 0.12 * t; ell(a * P0[0] + b * Cc[0] + c * E[0], a * P0[1] + b * Cc[1] + c * E[1], a * P0[2] + b * Cc[2] + c * E[2], r, r, r * 1.3, k > 6 ? D : C, base); }
   [[-0.7, 1.1], [0.7, 1.1], [-0.7, -1.1], [0.7, -1.1]].forEach(([lx, lz]) => { const f = comp(rotX(Math.sin(ph + (lx * lz > 0 ? 0 : Math.PI)) * amp, [lx, 1.5, lz]), base); prism(lx, 0, lz, 0.38, 1.6, 7, C, f, 0.45); [-1, 0, 1].forEach((k) => ell(lx + k * 0.17, 0.06, lz + 0.3, 0.07, 0.07, 0.09, [255, 248, 230], f)); });
@@ -352,8 +403,8 @@ function elephant(x, y, z, face, s, T, o) {
 
 // ---------- a cozy room (used by the chocolate and cat stories) ----------
 function roomBuild() {
-  quadGrid([-6, 0, -2], [2, 0, 0], [0, 0, 2], 6, 6, (i, j) => (i >= 2 && i <= 4 && j >= 2 && j <= 4 ? (i === 3 && j === 3 ? [132, 176, 206] : (i + j) & 1 ? [206, 124, 130] : [226, 198, 130]) : (i + j) & 1 ? [238, 176, 108] : [224, 158, 94]), { terrain: 1 });
-  quadGrid([-6, 0, 10], [2, 0, 0], [0, 2, 0], 6, 3, () => [240, 212, 172], { twoSided: 1 }); quadGrid([-6, 0, -2], [0, 0, 2], [0, 2, 0], 6, 3, () => [222, 178, 168], { twoSided: 1 }); quadGrid([6, 0, -2], [0, 0, 2], [0, 2, 0], 6, 3, () => [222, 178, 168], { twoSided: 1 });
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) { const rug = i >= 2 && i <= 4 && j >= 2 && j <= 4, col = rug ? (i === 3 && j === 3 ? [132, 176, 206] : (i + j) & 1 ? [206, 124, 130] : [226, 198, 130]) : (i + j) & 1 ? [238, 176, 108] : [224, 158, 94]; box(-5 + i * 2, rug ? -0.11 : -0.15, -1 + j * 2, 2, rug ? 0.38 : 0.3, 2, col, null, { bias: 1 }); }
+  box(0, 3, 10.15, 12.6, 6, 0.3, [240, 212, 172]); box(-6.15, 3, 4, 0.3, 6, 12.6, [222, 178, 168]); box(6.15, 3, 4, 0.3, 6, 12.6, [222, 178, 168]);
   for (let k = 0; k < 6; k++) box(-5 + k * 2, 0.15, 9.92, 2, 0.3, 0.1, [255, 255, 255], null, { bias: -1.5 });
   box(3, 3.4, 9.94, 3.2, 2.6, 0.1, [255, 255, 255], null, { bias: -4 }); box(3, 3.4, 9.88, 2.8, 2.2, 0.08, [150, 200, 232], null, { emissive: 1, bias: -5 }); box(3, 3.4, 9.84, 0.1, 2.2, 0.06, [255, 255, 255], null, { bias: -6 }); box(3, 3.4, 9.84, 2.8, 0.1, 0.06, [255, 255, 255], null, { bias: -6 });
   box(-3, 3.7, 9.94, 1.5, 1.1, 0.08, [200, 120, 140], null, { emissive: 1, bias: -4 }); box(-3, 3.7, 9.88, 1.1, 0.7, 0.06, [232, 210, 130], null, { emissive: 1, bias: -5 });
@@ -363,37 +414,31 @@ function roomBuild() {
   prism(-5.3, 0, 5.5, 0.4, 0.6, 6, [255, 122, 82], null, 0.32); ico(-5.3, 1.3, 5.5, 0.6, [60, 200, 92], null, 1); ico(-5.1, 1.8, 5.6, 0.45, [90, 220, 100], null, 1); ico(-5.5, 1.7, 5.3, 0.4, [40, 180, 100], null, 1);
   box(5.94, 2, 4, 0.1, 4, 2, [150, 90, 56], null, { bias: -4 }); ico(5.8, 2, 3.3, 0.12, [255, 224, 90], null, 1, { bias: -5 });
 }
-const ROOM_ENV = { top: [255, 210, 160], bot: [255, 230, 190], fog: [255, 220, 180], sunCol: [255, 244, 220], glow: '255,240,200', sat: 1.25, amb: [0.82, 0.8, 0.84], bright: 1.04, fogNear: 200, fogFar: 600 };
+const ROOM_ENV = { top: [255, 210, 160], bot: [255, 230, 190], fog: [255, 220, 180], sunCol: [255, 244, 220], glow: '255,240,200', sat: 1.25, amb: [0.82, 0.8, 0.84], bright: 1.04, fogNear: 200, fogFar: 600, nosun: 1 };
 const XS_A = [-70, -56, -44, -34, -26, -19, -13, -8, -3, 3, 8, 13, 19, 26, 34, 44, 56, 70];
 const ZS_A = (() => { const z = []; for (let k = -40; k <= 60; k += 6) z.push(k); for (let k = 72; k <= 160; k += 16) z.push(k); return z; })();
 
-
-
-// ---------- v3 models and scene builders ----------
-function ring3d(x, y, z, r, w, col, a) { const yaw = Math.atan2(CAMP[0] - x, CAMP[2] - z), xf = comp(rotY(yaw), mv(x, y, z)), n = 24; for (let k = 0; k < n; k++) { const a0 = (k / n) * TAU, a1 = ((k + 1) / n) * TAU, p = (rr, aa) => xf([Math.cos(aa) * rr, Math.sin(aa) * rr, 0]); const o = { twoSided: 1, emissive: 1, bias: -2 }; tri(p(r, a0), p(r + w, a0), p(r, a1), col, o); tri(p(r + w, a0), p(r + w, a1), p(r, a1), col, o); } }
+// ---------- more models and scene builders ----------
 function octopus(x, y, z, face, s, T, o) {
   o = o || {}; const C = o.col || [190, 110, 118], D = mixc(C, [80, 40, 80], 0.45), L = mixc(C, [255, 230, 220], 0.35), K = [24, 18, 30], base = comp(sc(s), rotY(face), mv(x, y, z)), sw = o.swim || 0;
-  ell(0, 1.4, -0.25, 0.72, 0.9, 0.72, C, base, null, 1); ell(0, 0.85, 0.1, 0.62, 0.45, 0.58, C, base, null, 1); ell(0, 1.2, 0.3, 0.5, 0.3, 0.3, L, base);
+  ell(0, 1.4, -0.25, 0.72, 0.9, 0.72, C, base); ell(0, 0.85, 0.1, 0.62, 0.45, 0.58, C, base); ell(0, 1.2, 0.3, 0.5, 0.3, 0.3, L, base);
   [-1, 1].forEach((d) => { ell(d * 0.42, 0.95, 0.52, 0.2, 0.2, 0.13, [250, 244, 230], base); ell(d * 0.42, 0.95, 0.63, 0.1, 0.05, 0.05, K, base); ell(d * 0.42, 1.12, 0.55, 0.24, 0.05, 0.1, D, base); });
-  for (let a = 0; a < 8; a++) { const ang = (a / 8) * TAU, ca = Math.cos(ang), sa = Math.sin(ang); for (let k = 0; k <= 8; k++) { const t = k / 8, r = 0.2 * (1 - 0.8 * t) + 0.02, wv = Math.sin(T * 1.8 + a * 0.9 + t * 3) * 0.3 * t, rad = 0.45 + t * 1.5 * (1 - sw), px = ca * rad + sa * wv * 0.5, pz = sa * rad - sw * t * 2.4 * 1 + (sw ? 0.2 : 0), py = 0.6 - t * 0.5 * (1 - sw) + wv * 0.6 + Math.sin(t * 3) * 0.1 * (1 - sw); ell(px, Math.max(0.12, py), pz, r, r, r * 1.2, k % 2 ? C : D, base); } }
+  for (let a = 0; a < 8; a++) { const ang = (a / 8) * TAU, ca = Math.cos(ang), sa = Math.sin(ang); for (let k = 0; k <= 8; k++) { const t = k / 8, r = 0.2 * (1 - 0.8 * t) + 0.02, wv = Math.sin(T * 1.8 + a * 0.9 + t * 3) * 0.3 * t, rad = 0.45 + t * 1.5 * (1 - sw), px = ca * rad + sa * wv * 0.5, pz = sa * rad - sw * t * 2.4 + (sw ? 0.2 : 0), py = 0.6 - t * 0.5 * (1 - sw) + wv * 0.6 + Math.sin(t * 3) * 0.1 * (1 - sw); ell(px, Math.max(0.12, py), pz, r, r, r * 1.2, k % 2 ? C : D, base); } }
 }
 function dolphin(x, y, z, face, s, T, o) {
-  o = o || {}; const TOP = [104, 126, 156], BEL = [226, 234, 244], K = [20, 20, 30], base = comp(sc(s), rotY(face), mv(x, y, z)), pitch = o.pitch || 0, xf = comp((p) => [p[0], p[1] + Math.sin(T * 5 + p[2] * 1.2) * 0.2 * Math.pow(Math.max(0, (0.4 - p[2]) / 2.6), 1.5), p[2]], rotX(pitch), base);
-  const secs = [{ z: -2.4, rx: 0.06, ry: 0.1, y: 0 }, { z: -1.8, rx: 0.16, ry: 0.22, y: 0.02 }, { z: -0.8, rx: 0.34, ry: 0.42, y: 0.04 }, { z: 0.3, rx: 0.42, ry: 0.5, y: 0.04 }, { z: 1.2, rx: 0.36, ry: 0.4, y: 0.02 }, { z: 1.8, rx: 0.2, ry: 0.22, y: -0.02 }, { z: 2.1, rx: 0.12, ry: 0.1, y: -0.06 }, { z: 2.6, rx: 0.07, ry: 0.06, y: -0.08 }], n = 10;
-  loft(secs, n, (i, k) => (Math.sin(((i + 0.5) / n) * TAU) > -0.2 ? TOP : BEL), xf);
-  const F3 = (a, b, c, col) => tri(xf(a), xf(b), xf(c), col, { twoSided: 1, outl: 1 }), FIN = mixc(TOP, [30, 40, 60], 0.2);
-  F3([0, 0.45, 0.2], [0, 1.1, -0.45], [0, 0.4, -0.7], FIN); F3([-0.05, 0, -2.3], [-1.0, 0.25, -3.1], [-0.05, 0.1, -2.0], FIN); F3([0.05, 0, -2.3], [1.0, 0.25, -3.1], [0.05, 0.1, -2.0], FIN);
-  [-1, 1].forEach((d) => { F3([d * 0.4, -0.2, 0.9], [d * 1.1, -0.65, 0.2], [d * 0.4, -0.1, 0.4], FIN); ell(d * 0.33, 0.22, 1.3, 0.05, 0.05, 0.03, K, xf); });
-  ell(0, -0.03, 2.35, 0.1, 0.01, 0.12, [240, 220, 220], xf);
+  o = o || {}; const TOP = [104, 126, 156], BEL = [226, 234, 244], K = [20, 20, 30], FIN = mixc(TOP, [30, 40, 60], 0.2), base = comp(sc(s), rotY(face), mv(x, y, z)), pitch = o.pitch || 0;
+  const xf = comp((p) => [p[0], p[1] + Math.sin(T * 5 + p[2] * 1.2) * 0.2 * Math.pow(Math.max(0, (0.4 - p[2]) / 2.6), 1.5), p[2]], rotX(pitch), base);
+  [[-1.9, 0.3, 0.4, 1.0], [-1.0, 0.6, 0.8, 1.0], [0, 0.9, 1.0, 1.1], [1.0, 0.8, 0.9, 1.0], [1.8, 0.45, 0.5, 0.8], [2.4, 0.28, 0.28, 0.6]].forEach(([zz, w, h, l], k) => { box(0, h * 0.2, zz, w, h * 0.6, l, TOP, xf); box(0, -h * 0.28, zz, w * 0.9, h * 0.4, l, BEL, xf); });
+  box(0, 0.75, 0, 0.14, 0.7, 0.8, FIN, xf); box(0, 1.15, -0.2, 0.14, 0.4, 0.4, FIN, xf); box(0, 0.1, -2.6, 1.7, 0.12, 0.5, FIN, xf);
+  [-1, 1].forEach((d) => { box(d * 0.75, -0.55, 0.7, 0.7, 0.1, 0.5, FIN, xf); box(d * 0.4, 0.2, 2.0, 0.1, 0.1, 0.1, K, xf); });
 }
 function penguin(x, y, z, face, s, T, o) {
   o = o || {}; const DK = [36, 40, 52], WH = [244, 244, 248], OR = [232, 150, 60], sway = Math.sin(o.walk || 0) * 0.12, base = comp(rotZ(sway), sc(s), rotY(face), mv(x, y, z));
-  ell(0, 0.95, 0, 0.5, 0.85, 0.45, DK, base, null, 1); ell(0, 0.9, 0.17, 0.4, 0.7, 0.32, WH, base, null, 1);
-  const hd = comp(rotX(o.dip || 0), mv(0, 1.85, 0.05), base); ell(0, 0, 0, 0.3, 0.3, 0.3, DK, hd, null, 1); ell(0, -0.05, 0.12, 0.2, 0.2, 0.2, WH, hd); cone(0, 0, 0, 0.06, 0.2, 4, OR, comp(rotX(Math.PI / 2), mv(0, -0.02, 0.28), hd));
+  ell(0, 0.95, 0, 0.5, 0.85, 0.45, DK, base); ell(0, 0.9, 0.17, 0.4, 0.7, 0.32, WH, base);
+  const hd = comp(rotX(o.dip || 0), mv(0, 1.85, 0.05), base); ell(0, 0, 0, 0.3, 0.3, 0.3, DK, hd); ell(0, -0.05, 0.12, 0.2, 0.2, 0.2, WH, hd); cone(0, 0, 0, 0.06, 0.2, 4, OR, comp(rotX(Math.PI / 2), mv(0, -0.02, 0.28), hd));
   [-1, 1].forEach((d) => { ell(d * 0.13, 0.08, 0.27, 0.05, 0.05, 0.03, [250, 250, 250], hd); ell(d * 0.13, 0.08, 0.3, 0.025, 0.028, 0.015, [10, 10, 20], hd); ell(d * 0.52, 1.05, 0, 0.08, 0.45, 0.22, DK, comp(rotZ(d * (0.35 + (o.flap || 0))), base)); ell(d * 0.17, 0.06, 0.18, 0.14, 0.06, 0.24, OR, base); });
   ell(0, 0.3, -0.42, 0.15, 0.08, 0.2, DK, base);
 }
-// underwater world (floor, coral, rocks) + dynamic kelp, bubbles, fish
 const UW_ENV = { top: [14, 96, 170], bot: [52, 160, 190], fog: [36, 128, 170], sunCol: [235, 245, 235], glow: '200,240,240', sat: 1.1, amb: [0.72, 0.8, 0.86], bright: 1.06, fogNear: 8, fogFar: 70 };
 function uwBuild(seed) {
   groundG(XS_A, ZS_A, (x, z) => Math.sin(x * 0.2) * 0.2, (x, z) => ((Math.floor(x / 10) + Math.floor(z / 10)) & 1 ? [226, 208, 156] : [214, 196, 146]), seed || 5);
@@ -412,17 +457,15 @@ function parkBuild() {
   for (let k = 0; k < 20; k++) { const side = r() < 0.5 ? -1 : 1; roundTree(side * (6 + r() * 34), -12 + r() * 70, 0.9 + r() * 0.6, leaf[k % 4]); }
   const fc = [[226, 110, 140], [236, 210, 90], [170, 120, 210], [245, 245, 245], [236, 150, 80]]; for (let k = 0; k < 60; k++) { const side = r() < 0.5 ? -1 : 1; ico(side * (3.8 + r() * 14), 0.16, -6 + r() * 40, 0.17, fc[k % 5], null, 0.8); }
   bench(3.2, 7.6, Math.PI); [[-4, 14], [4.6, 3]].forEach(([x, z]) => { prism(x, 0, z, 0.08, 4, 5, [70, 70, 90]); ico(x, 4.3, z, 0.4, [250, 236, 170], null, 1, { emissive: 1 }); });
-  [[-70, 150, 50, 26, [110, 170, 140]], [20, 170, 60, 30, [120, 170, 160]], [90, 150, 44, 22, [130, 180, 130]]].forEach(([x, z, rr, h, c]) => cone(x, 0, z, rr, h, 7, c)); cloud(-40, 70, 180, 1.2); cloud(50, 80, 200, 1.4);
+  [[-70, 150, 50, 26, [110, 170, 140]], [20, 170, 60, 30, [120, 170, 160]], [90, 150, 44, 22, [130, 180, 130]]].forEach(([x, z, rr2, h, c]) => cone(x, 0, z, rr2, h, 7, c)); cloud(-40, 70, 180, 1.2); cloud(50, 80, 200, 1.4);
 }
 const PARK_ENV = { top: [96, 156, 226], bot: [246, 236, 212], fog: [214, 228, 226], sunCol: [255, 244, 220], glow: '255,244,210', sat: 1.1, amb: [0.7, 0.7, 0.78], bright: 1.05, fogNear: 50, fogFar: 230 };
-function rainDyn(T, cx, cz, n) { for (let k = 0; k < n; k++) { const x = cx + ((k * 37) % 30) - 15, y = 12 - ((T * 9 + k * 0.173) % 1) * 12, z = cz + ((k * 53) % 26) - 6; tri([x, y, z], [x + 0.03, y, z], [x + 0.08, y - 0.8, z], [190, 210, 240], { twoSided: 1, emissive: 1 }); } }
-
+function rainDyn(T, cx, cz, n) { for (let k = 0; k < n; k++) { const x = cx + ((k * 37) % 30) - 15, y = 12 - ((T * 9 + k * 0.173) % 1) * 12, z = cz + ((k * 53) % 26) - 6; box(x, y, z, 0.07, 0.8, 0.07, [190, 210, 240], null, { emissive: 1, noedge: 1 }); } }
 </script>
 <script src="content.js"></script>
+<script src="content2.js"></script>
 <script>
 'use strict';
-
-
 window.TOPIC_IDS = STORIES.map((s) => s.id); window.TOPIC_KINDS = Object.fromEntries(STORIES.map((s) => [s.id, s.kind]));
 window.loadTopic = loadTopic; window.setVoiceDurations = setVoiceDurations; window.setCel = (b) => { CEL = !!b; STORIES.forEach((x) => { x._static = null; }); };
 
@@ -476,8 +519,14 @@ function buildAudio(ctx, vo) {
     train: (t) => { noise(t, 3.2, { f: 220, type: 'lowpass', g: 0.2, swell: true }); for (let k = 0; k < 14; k++) noise(t + k * 0.2, 0.05, { f: 900, g: 0.08 }); },
     uw: (t, d) => { noise(t, d || 4, { f: 260, type: 'lowpass', g: 0.12, swell: true }); for (let k = 0; k < (d || 4) * 1.2; k++) tone(t + k * 0.8 + 0.3, [400, 900], 0.12, { g: 0.03, vb: 0.4, pan: (k % 3) * 0.5 - 0.5 }); },
     forest: (t, d) => { noise(t, d || 4, { f: [500, 900], q: 0.4, g: 0.04, swell: true }); for (let k = 0; k < 6; k++) { const tt = t + (k * (d || 4)) / 7 + 0.2; tone(tt, [2800 + (k % 3) * 400, 3600], 0.1, { g: 0.025, pan: (k % 5) * 0.4 - 0.8 }); tone(tt + 0.14, [3400, 2900], 0.08, { g: 0.02, pan: (k % 5) * 0.4 - 0.8 }); } },
+    hoot: (t) => { tone(t, [420, 340], 0.5, { g: 0.12, a: 0.06, vb: 0.5 }); tone(t + 0.7, [420, 320], 0.8, { g: 0.1, a: 0.06, vb: 0.5 }); },
+    buzz: (t, d) => { noise(t, d || 2, { f: [190, 250], q: 6, g: 0.16, swell: true }); tone(t, 190, d || 2, { type: 'sawtooth', g: 0.02, lp: 700, a: 0.3 }); },
+    crickets: (t, d) => { for (let k = 0; k < (d || 4) * 5; k++) { tone(t + k * 0.2, 4300, 0.05, { type: 'square', g: 0.012, lp: 6000 }); tone(t + k * 0.2 + 0.07, 4300, 0.05, { type: 'square', g: 0.012, lp: 6000 }); } },
+    splash: (t) => noise(t, 0.6, { f: [1800, 500], q: 0.6, g: 0.14 }),
+    squeak: (t) => { tone(t, [1800, 2600], 0.1, { g: 0.05, vb: 0.3 }); tone(t + 0.16, [1900, 2800], 0.1, { g: 0.05, vb: 0.3 }); },
+    flap: (t) => { for (let k = 0; k < 7; k++) noise(t + k * 0.09, 0.07, { f: 600, type: 'lowpass', g: 0.1 }); },
   };
-  const CONT = ['wind', 'waves', 'uw', 'forest', 'rain'], R0 = STORY.root.map(noteHz);
+  const CONT = ['wind', 'waves', 'uw', 'forest', 'rain', 'buzz', 'crickets'], R0 = STORY.root.map(noteHz);
   R0.forEach((f, k) => { const o = ctx.createOscillator(); o.type = k ? 'triangle' : 'sine'; o.frequency.value = f; const g = ctx.createGain(), gn = [0.05, 0.03, 0.02][k] * (vo ? 0.7 : 1); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(gn, 1.5); g.gain.setValueAtTime(gn, Math.max(1.5, T - 1.5)); g.gain.linearRampToValueAtTime(0, T); o.connect(g); out(g, 0, 0.25); o.start(0); o.stop(T + 0.1); });
   const q = rng(id);
   for (let t = 0.6; t < T - 1; t += 1.1) if (q() < 0.7) tone(t, R0[Math.floor(q() * 3)] * (q() < 0.5 ? 2 : 4), 1.8, { type: 'triangle', g: (vo ? 0.025 : 0.045), vb: 0.5, pan: q() - 0.5 });
@@ -511,10 +560,11 @@ window.frameJPEG = function (t) { explainer(ctx, t); return cv.toDataURL('image/
   $('play').onclick = () => (playing ? pause() : play()); $('seek').oninput = () => { T = parseFloat($('seek').value); draw(); if (playing) audioStart(T); };
   $('snd').onclick = () => { snd = !snd; $('snd').setAttribute('aria-pressed', snd); if (!snd) audioStop(); else if (playing) audioStart(T); };
   $('loop').onclick = () => { loop = !loop; $('loop').setAttribute('aria-pressed', loop); };
+  $('look').onclick = () => { VAR = makeVar(STORY.beats.length); draw(); };
   $('cel').setAttribute('aria-pressed', CEL); $('cel').onclick = () => { window.setCel(!CEL); $('cel').setAttribute('aria-pressed', CEL); draw(); };
   $('topic').onchange = () => { pause(); loadTopic($('topic').value); T = 0; draw(); };
   STORIES.forEach((s) => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.title; $('topic').appendChild(o); });
-  (async () => { try { await document.fonts.load('800 40px Poppins', 'Hello'); await document.fonts.ready; } catch (e) { /* render anyway */ } loadTopic(STORIES[0].id); draw(); $('loading').style.display = 'none'; window._ready = true; })();
+  (async () => { try { await Promise.all([['800', 'Poppins'], ['900', 'Poppins'], ['700', 'Fredoka'], ['400', '"Lilita One"'], ['400', 'Bangers']].map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, 'Hello'))); await document.fonts.ready; } catch (e) { /* render anyway */ } loadTopic(STORIES[0].id); draw(); $('loading').style.display = 'none'; window._ready = true; })();
 })();
 </script>
 </body>
