@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Animal Shorts (blocky 3D)</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&family=Fredoka:wght@600;700&family=Lilita+One&family=Bangers&display=block">
+<script>
+window._errs = [];
+window.addEventListener('error', function (e) {
+  if (e.target && e.target !== window && (e.target.src || e.target.href)) window._errs.push('failed to load ' + (e.target.src || e.target.href));
+  else window._errs.push((e.message || 'error') + ' @ ' + String(e.filename || '').split('/').pop() + ':' + e.lineno);
+}, true);
+window.addEventListener('unhandledrejection', function (e) { window._errs.push('promise: ' + (e.reason && e.reason.stack || e.reason)); });
+</script>
 <style>
   html, body { margin:0; height:100%; background:#14102a; color:#fff; font:15px Poppins, Arial, sans-serif; }
   #app { display:flex; flex-direction:column; height:100%; }
@@ -463,9 +471,9 @@ const PARK_ENV = { top: [96, 156, 226], bot: [246, 236, 212], fog: [214, 228, 22
 function rainDyn(T, cx, cz, n) { for (let k = 0; k < n; k++) { const x = cx + ((k * 37) % 30) - 15, y = 12 - ((T * 9 + k * 0.173) % 1) * 12, z = cz + ((k * 53) % 26) - 6; box(x, y, z, 0.07, 0.8, 0.07, [190, 210, 240], null, { emissive: 1, noedge: 1 }); } }
 </script>
 <script src="content.js"></script>
-<script src="content2.js"></script>
 <script>
 'use strict';
+if (typeof STORIES === 'undefined') window._errs.push('STORIES is not defined: content.js did not load (is it next to animals.html?)');
 window.TOPIC_IDS = STORIES.map((s) => s.id); window.TOPIC_KINDS = Object.fromEntries(STORIES.map((s) => [s.id, s.kind]));
 window.loadTopic = loadTopic; window.setVoiceDurations = setVoiceDurations; window.setCel = (b) => { CEL = !!b; STORIES.forEach((x) => { x._static = null; }); };
 
@@ -564,7 +572,11 @@ window.frameJPEG = function (t) { explainer(ctx, t); return cv.toDataURL('image/
   $('cel').setAttribute('aria-pressed', CEL); $('cel').onclick = () => { window.setCel(!CEL); $('cel').setAttribute('aria-pressed', CEL); draw(); };
   $('topic').onchange = () => { pause(); loadTopic($('topic').value); T = 0; draw(); };
   STORIES.forEach((s) => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.title; $('topic').appendChild(o); });
-  (async () => { try { await Promise.all([['800', 'Poppins'], ['900', 'Poppins'], ['700', 'Fredoka'], ['400', '"Lilita One"'], ['400', 'Bangers']].map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, 'Hello'))); await document.fonts.ready; } catch (e) { /* render anyway */ } loadTopic(STORIES[0].id); draw(); $('loading').style.display = 'none'; window._ready = true; })();
+  (async () => {
+    try { await Promise.race([Promise.all([['800', 'Poppins'], ['900', 'Poppins'], ['700', 'Fredoka'], ['400', '"Lilita One"'], ['400', 'Bangers']].map(([w, f]) => document.fonts.load(`${w} 40px ${f}`, 'Hello'))), new Promise((r) => setTimeout(r, 5000))]); } catch (e) { /* render anyway */ }
+    try { loadTopic(STORIES[0].id); draw(); window._ready = true; } catch (e) { window._errs.push('init: ' + (e && e.stack || e)); }
+    $('loading').style.display = 'none';
+  })();
 })();
 </script>
 </body>
