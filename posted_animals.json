@@ -36,6 +36,16 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "hachi",
+      "kind": "tale",
+      "date": "2026-11-06",
+      "fb_id": "953130760973542",
+      "yt_id": "4VRDvSkwass",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
