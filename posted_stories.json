@@ -26,6 +26,15 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "dance",
+      "kind": "tale",
+      "date": "2026-11-08",
+      "yt_id": "83g4smfXf7c",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
