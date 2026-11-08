@@ -53,6 +53,15 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "rip",
+      "kind": "survival",
+      "date": "2026-11-08",
+      "yt_id": "h-QlmpL_zWw",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
