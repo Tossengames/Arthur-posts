@@ -17,6 +17,15 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "honey",
+      "kind": "dyk",
+      "date": "2026-11-08",
+      "yt_id": "_TAqWdEfWZU",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
