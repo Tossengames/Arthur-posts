@@ -765,3 +765,385 @@ const STORIES = [MOLASSES, WOJTEK, STINK, DANCE, WOOD, HONEY, WOMBAT, LIGHTNING,
 
   NEW.forEach((s) => STORIES.push(s));
 })();
+// =====================================================================
+//  PART 2  (stories 26-40)  -- paste this AFTER p1.js (needs p1's models/sets)
+// =====================================================================
+(() => {
+  const { roomSet } = window.KITX;
+
+  // =====================================================================
+  //  NEW MODELS
+  // =====================================================================
+  defP('sled', { h: 1.6, r: 1.8, cat: 'vehicles' }, (M) => {
+    [-0.5, 0.5].forEach((x) => bb(M, x, 0.15, 0, 0.12, 0.15, 3.2, 'wood', { ne: 1 }));
+    bb(M, 0, 0.45, 0, 1.3, 0.2, 2.6, [170, 110, 60], { tex: 'plank', cell: 0.5 });
+    bb(M, 0, 0.9, -1.4, 1.2, 0.12, 0.1, 'wood', { ne: 1 });
+    [-0.6, 0.6].forEach((x) => bb(M, x, 0.7, -1.4, 0.08, 0.5, 0.08, 'wood', { ne: 1 }));
+    bb(M, 0, 0.65, 0.2, 0.9, 0.3, 1.2, [180, 60, 60], { cell: 0.4 });
+  });
+
+  defP('hive', { h: 2.4, r: 1.4, cat: 'props' }, (M) => {
+    [0, 1, 2].forEach((i) => bb(M, 0, 0.4 + i * 0.7, 0, 1.6, 0.6, 1.6, [250, 230, 170], { tex: 'plank', cell: 0.4, salt: i }));
+    bb(M, 0, 2.3, 0, 1.9, 0.15, 1.9, [160, 110, 70], { ne: 1 });
+    bb(M, 0, 0.25, -0.82, 0.5, 0.15, 0.06, 'dark', { ne: 1 });
+    [-0.7, 0.7].forEach((x) => bb(M, x, 0.05, 0, 0.2, 0.1, 1.4, 'wood', { ne: 1 }));
+  });
+
+  defP('beedance', { h: 6, r: 0, cat: 'effects', sh: 0 }, (M, o, T) => {
+    bb(M, 0, 0, 0, 6.4, 6.4, 0.3, [246, 190, 60], { tex: 'check', cell: 0.8 });
+    bb(M, 0, 0, 0.2, 0.05, 5.6, 0.04, 'white', { ne: 1 });
+    bb(M, -2.5, 2.5, 0.2, 0.7, 0.7, 0.1, [255, 236, 90], { em: 1, ne: 1 });
+    const ang = (o.ang || 0) * D2R, L = o.len || 1.6, t = T * 0.8, ph = t % 1, k = (Math.floor(t) & 1) ? 1 : -1, dx = Math.sin(ang), dy = Math.cos(ang);
+    let x, y;
+    if (ph < 0.5) { const s = ph / 0.5, w = Math.sin(T * 50) * 0.12; x = dx * (s * 2 - 1) * L + dy * w; y = dy * (s * 2 - 1) * L - dx * w; }
+    else { const th = Math.PI * ((ph - 0.5) / 0.5); x = dx * L * Math.cos(th) + dy * k * L * 0.6 * Math.sin(th); y = dy * L * Math.cos(th) - dx * k * L * 0.6 * Math.sin(th); }
+    bb(M, x, y, 0.4, 0.4, 0.4, 0.3, 'yellow', { ne: 1 }); bb(M, x, y, 0.4, 0.42, 0.12, 0.32, 'black', { ne: 1 });
+  });
+
+  defP('fossil', { h: 1.4, r: 2.4, cat: 'props', sh: 0 }, (M, o) => {
+    const k = o.k == null ? 1 : o.k, bone = [236, 226, 200], n = o.plesio ? 9 : 7, len = o.plesio ? 7 : 5.5;
+    bb(M, 0, 0.12, 0, 0.18, 0.18, len, bone, { ne: 1 });
+    for (let i = 0; i < n; i++) if (i / n <= k) { const z = -len / 2 + 0.6 + i * (len - 1.2) / (n - 1); [-1, 1].forEach((d) => bb(M, d * 0.35, 0.12, z, 0.6, 0.12, 0.14, bone, { ne: 1 })); }
+    if (k > 0.2) bb(M, 0, 0.18, len / 2 + 0.5, 0.7, 0.4, 1.2, bone, { cell: 0.4 });
+    if (k > 0.5) [-1, 1].forEach((d) => bb(M, d * 1.0, 0.1, len * 0.2, 1.2, 0.1, 0.5, bone, { ne: 1 }));
+    if (o.plesio && k > 0.5) bb(M, 0, 0.7, len / 2 + 1.2, 0.2, 1.4, 0.2, bone, { ne: 1 });
+  });
+
+  defP('radio', { h: 1.4, r: 1, cat: 'props' }, (M) => {
+    bb(M, 0, 0.6, 0, 1.6, 1.2, 0.8, 'wood', { tex: 'plank', cell: 0.4 });
+    bb(M, -0.3, 0.65, 0.41, 0.8, 0.7, 0.04, [240, 220, 150], { em: 1, ne: 1 });
+    bb(M, 0.55, 0.85, 0.42, 0.18, 0.18, 0.06, 'dark', { ne: 1 }); bb(M, 0.55, 0.4, 0.42, 0.18, 0.18, 0.06, 'dark', { ne: 1 });
+  });
+
+  defP('martian', { h: 3, r: 1, cat: 'props' }, (M, o, T) => {
+    const c = cc(o, 'a', [90, 200, 110]);
+    bb(M, 0, 2.0, 0, 1.6, 1.4, 1.4, c, { cell: 0.5 });
+    [-0.4, 0.4].forEach((x) => { bb(M, x, 2.1, 0.72, 0.4, 0.5, 0.06, 'white', { ne: 1 }); bb(M, x, 2.1, 0.76, 0.18, 0.3, 0.04, 'black', { ne: 1 }); bb(M, x, 3.0 + Math.sin(T * 4 + x) * 0.05, 0, 0.08, 0.7, 0.08, c, { ne: 1 }); });
+    for (let i = 0; i < 4; i++) bb(M, (i - 1.5) * 0.45 + Math.sin(T * 3 + i) * 0.08, 0.7, 0, 0.2, 1.4, 0.2, sh(c, 0.9), { ne: 1 });
+  });
+
+  defP('computer', { h: 1.6, r: 1, cat: 'props' }, (M, o) => {
+    if (o.next) { bb(M, 0, 0.6, 0, 1.2, 1.2, 1.2, 'black', { cell: 0.6 }); bb(M, 0, 0.6, 0.61, 0.9, 0.6, 0.04, [90, 220, 200], { em: 1, ne: 1 }); }
+    else { bb(M, 0, 0.55, 0, 1.3, 1.1, 1.1, [220, 214, 196], { cell: 0.4 }); bb(M, 0, 0.62, 0.56, 1.0, 0.8, 0.05, [90, 220, 200], { em: 1, ne: 1 }); bb(M, 0, 0.1, 1.0, 1.2, 0.12, 0.5, [200, 196, 184], { ne: 1 }); }
+  });
+
+  defP('press', { h: 3.4, r: 1.8, cat: 'props' }, (M, o, T) => {
+    [-1, 1].forEach((x) => bb(M, x, 1.6, 0, 0.25, 3.2, 0.25, 'wood', { ne: 1 }));
+    bb(M, 0, 3.2, 0, 2.4, 0.3, 0.4, 'wood', { ne: 1 });
+    bb(M, 0, 2.2, 0, 0.2, 2.0, 0.2, 'dark', { ne: 1 });
+    bb(mm(M, mm(mT(0, 2.9, 0), mRy(T * 1.5))), 0, 0, 0, 1.8, 0.1, 0.1, 'wood', { ne: 1 });
+    bb(M, 0, 1.0, 0, 1.8, 0.2, 1.2, 'dark', { ne: 1 });
+    bb(M, 0, 0.5, 0, 2.2, 0.6, 1.6, 'wood', { tex: 'plank', cell: 0.5 });
+  });
+
+  defP('bookstack', { h: 1.6, r: 0.9, cat: 'props' }, (M, o) => {
+    const n = o.n || 5;
+    for (let i = 0; i < n; i++) bb(M, 0, 0.15 + i * 0.3, 0, 1.2 - (i % 2) * 0.1, 0.28, 0.9, [[170, 60, 60], [60, 100, 170], [70, 150, 90], [200, 160, 60]][i % 4], { cell: 0.4, salt: i });
+  });
+
+  // =====================================================================
+  //  NEW SETS
+  // =====================================================================
+  SETS.factory = roomSet([150, 150, 160], [138, 138, 148], [176, 150, 130], 71, 'brick', () => { bb(MI, 0, 0.45, 40, 84, 0.9, 4.2, [70, 70, 84], { cell: 4 }); });
+  SETS.tunnel = roomSet([96, 92, 104], [84, 80, 92], [150, 100, 80], 72, 'brick', () => { [-1.5, 1.5].forEach((x) => bb(MI, x, 0.12, 26, 0.3, 0.2, 100, 'grey', { ne: 1 })); });
+  SETS.studio = roomSet([60, 56, 76], [52, 48, 68], [96, 64, 92], 76, 'plank');
+  SETS.workshop = roomSet([160, 120, 76], [148, 108, 66], [196, 170, 130], 73, 'plank');
+  SETS.track = { time: 'day', build() {
+    ground(-80, 80, -30, 140, 5, (x, z) => (Math.abs(x) < 16 ? [168, 98, 84] : (((Math.floor(x / 10) + Math.floor(z / 10)) & 1) ? [88, 190, 96] : [76, 176, 86])), 74);
+    for (let x = -12; x <= 12; x += 4) bb(MI, x, 0.04, 60, 0.25, 0.05, 180, 'white', { ne: 1 });
+    farM(180, [14, 20], [130, 150, 200]);
+    scat(10, 75, -70, 70, 10, 100, (x, z, q) => put('tree', x, 0, z, q() * 360, 1 + q() * 0.4), (x) => Math.abs(x) < 20);
+  } };
+
+  const HUSKY = { a: [150, 150, 160], b: [240, 240, 246] };
+  const NEW = [];
+
+  // ---- 26. Model T assembly line (cat 2) ----
+  NEW.push({
+    id: 'modelt', kind: 'tale', cat: '2', title: 'The Assembly Line', set: 'factory', music: 'fun',
+    caption: 'In 1913, Henry Ford made cars move past the workers, and building a Model T got dramatically faster. 🚗 (True story, told briefly.)',
+    tags: '#truestory #history #cars #henryford #modelt #shorts',
+    footer: "Based on Ford's moving assembly line at Highland Park, Michigan (1913-1914), which cut Model T assembly time from about 12.5 hours to 93 minutes. Figures are approximate.",
+    beats: [
+      { vo: 'Before 1913, building one Model T took workers about twelve and a half hours.', cam: { mode: 'dolly', from: [-6, 3, 2], to: [-2, 3.2, 12], look: [0, 2, 30] }, tags: [{ t: [0.1, 0.95], text: '12.5 HOURS PER CAR', size: 56, bg: '#ffb86b' }], sfx: ['clack', 'hum'],
+        actors: [{ id: 'cr', m: 'car', at: [0, 30], y: 0.9, face: 200, s: 1.2, c: { a: 'black' } }, { id: 'w1', m: 'worker', at: [-5, 30], face: 90, anim: 'work' }, { id: 'w2', m: 'worker', at: [5, 30], face: 270, anim: 'work', c: { shirt: 'teal' } }, { id: 'w3', m: 'worker', at: [-3, 26], face: 160, anim: 'work', c: { shirt: 'green' } }, { id: 'w4', m: 'worker', at: [3, 26], face: 200, anim: 'work' }, { id: 'cx', m: 'crate', at: [-9, 34], s: 1.3 }] },
+      { vo: "Then Henry Ford's factory in Michigan started moving the car past the workers.", cam: { mode: 'static', at: [0, 4, 6], look: [0, 2, 40] }, tags: [{ t: [0.1, 0.95], text: 'HIGHLAND PARK, 1913', size: 50, bg: '#7cc4ff' }], sfx: ['hum', 'clack@0.5'],
+        actors: [{ id: 'gf', m: 'gentleman', at: [-9, 22], face: 190, anim: 'point', ex: 'determined' }, { id: 'c1', m: 'car', at: [-24, 40], to: [24, 40], y: 0.9, s: 1.2, c: { a: 'black' } }, { id: 'c2', m: 'car', at: [-44, 40], to: [4, 40], y: 0.9, s: 1.2, c: { a: 'black' } }] },
+      { vo: 'Each person did one small job, again and again, as the line rolled.', cam: { mode: 'static', at: [0, 3.4, 16], look: [0, 2, 40] }, tags: [{ t: [0.1, 0.95], text: 'ONE SMALL JOB EACH', size: 52, bg: '#7cf2c0' }], sfx: ['clack', 'hum'],
+        actors: [{ id: 'c1', m: 'car', at: [-30, 40], to: [30, 40], y: 0.9, s: 1.2, c: { a: 'black' } }, { id: 'a1', m: 'worker', at: [-12, 36], face: 0, anim: 'work' }, { id: 'a2', m: 'worker', at: [-8, 36], face: 0, anim: 'work', c: { shirt: 'teal' } }, { id: 'a3', m: 'worker', at: [-4, 36], face: 0, anim: 'work', c: { shirt: 'green' } }, { id: 'a4', m: 'worker', at: [0, 36], face: 0, anim: 'work' }, { id: 'a5', m: 'worker', at: [4, 36], face: 0, anim: 'work', c: { shirt: 'purple' } }, { id: 'a6', m: 'worker', at: [8, 36], face: 0, anim: 'work', c: { shirt: 'teal' } }, { id: 'a7', m: 'worker', at: [12, 36], face: 0, anim: 'work', c: { shirt: 'green' } }] },
+      { vo: 'Soon a car took just ninety-three minutes, and prices fell.', cam: { mode: 'dolly', from: [-8, 3, 10], to: [-2, 3, 18], look: [0, 2, 40] }, tags: [{ t: [0.1, 0.95], count: [750, 93], suffix: ' MINUTES', size: 70, bg: '#ffd23f' }], sfx: ['clack', 'hum', 'chime@0.8'],
+        actors: [{ id: 'c1', m: 'car', at: [-40, 40], to: [40, 40], y: 0.9, s: 1.2, c: { a: 'black' } }, { id: 'c2', m: 'car', at: [-60, 40], to: [20, 40], y: 0.9, s: 1.2, c: { a: 'black' } }, { id: 'c3', m: 'car', at: [-80, 40], to: [0, 40], y: 0.9, s: 1.2, c: { a: 'black' } }, { id: 'a1', m: 'worker', at: [-8, 36], face: 0, anim: 'work' }, { id: 'a2', m: 'worker', at: [-2, 36], face: 0, anim: 'work', c: { shirt: 'teal' } }, { id: 'a3', m: 'worker', at: [4, 36], face: 0, anim: 'work', c: { shirt: 'green' } }] },
+      { vo: 'Cars became affordable for ordinary families, and the world changed with them.', set: 'street', time: 'day', fx: ['confetti'], cam: { mode: 'orbit', target: 'cr', r: 9, h: 2.4, a0: -35, a1: 25 }, tags: [{ t: [0.1, 0.95], text: 'CARS FOR EVERYONE', size: 56, bg: '#7cf2c0' }], sfx: ['chime@0.4', 'cheer@0.6', 'birds'],
+        actors: [{ id: 'cr', m: 'car', at: [0, 18], face: 200, c: { a: 'black' } }, { id: 'm1', m: 'man', at: [-3, 14], face: 170, anim: 'celebrate', ex: 'laugh' }, { id: 'w1', m: 'woman', at: [3.4, 14], face: 190, anim: 'celebrate', ex: 'laugh', c: { dress: 'teal' } }, { id: 'b1', m: 'boy', at: [0.6, 13], face: 180, anim: 'celebrate', ex: 'laugh' }] },
+    ] });
+
+  // ---- 27. London Underground (cat 2) ----
+  NEW.push({
+    id: 'subway', kind: 'tale', cat: '2', title: 'The First Subway', set: 'street', music: 'tense',
+    caption: 'In 1863, London opened the first underground railway. Steam trains, gas lamps, and tens of thousands of curious riders. 🚇 (True story, told briefly.)',
+    tags: '#truestory #history #london #subway #trains #shorts',
+    footer: "Based on the Metropolitan Railway between Paddington and Farringdon, opened 10 January 1863. Opening-day ridership is usually quoted as roughly 30,000-40,000 (often 38,000).",
+    beats: [
+      { vo: "In 1863, London opened the world's first underground railway, under busy streets.", time: 'day', cam: { mode: 'dolly', from: [-5, 2.2, 0], to: [-1, 2.4, 6], look: [0, 2, 24] }, tags: [{ t: [0.1, 0.95], text: 'LONDON, 1863', size: 70 }], sfx: ['crowd', 'steps@0.3', 'bell@0.7'],
+        actors: [{ id: 'ct', m: 'cart', at: [-14, 20], to: [10, 20] }, { id: 'hz', m: 'horse', at: [-9.6, 20], to: [14.4, 20] }, { id: 'cw', m: 'crowd', at: [5, 12], o: { n: 5, spread: 6, seed: 41, kinds: ['gentleman', 'lady', 'worker'] } }] },
+      { vo: 'Workers dug a trench, built a tunnel, then covered it back over.', set: 'tunnel', time: 'tomb', cam: { mode: 'static', at: [0, 4, 10], look: [0, 2, 40] }, tags: [{ t: [0.1, 0.95], text: 'CUT AND COVER', size: 62, bg: '#ffb86b' }], sfx: ['clack', 'clack@0.5', 'drip@0.7'],
+        actors: [{ id: 'w1', m: 'worker', at: [-6, 36], face: 180, anim: 'work' }, { id: 'w2', m: 'worker', at: [-2, 38], face: 180, anim: 'work', c: { shirt: 'teal' } }, { id: 'w3', m: 'worker', at: [3, 36], face: 180, anim: 'work' }, { id: 'w4', m: 'worker', at: [7, 38], face: 180, anim: 'work', c: { shirt: 'green' } }, { id: 'ct', m: 'cart', at: [-12, 40], face: 90 }, { id: 't1', m: 'torch', at: [-10, 30] }, { id: 't2', m: 'torch', at: [10, 30] }] },
+      { vo: 'Steam trains pulled gas-lit wooden carriages between Paddington and Farringdon.', set: 'tunnel', time: 'tomb', fx: ['fog'], cam: { mode: 'static', at: [0, 2.6, 10], look: [0, 2.4, 36] }, tags: [{ t: [0.1, 0.95], text: 'STEAM + GAS LAMPS', size: 56, bg: '#ffd23f' }], sfx: ['rumble', 'whoosh@0.3', 'bell@0.6'],
+        actors: [{ id: 'tr', m: 'train', at: [0, 60], to: [0, 34], c: { a: [120, 90, 60] } }, { id: 'pf', m: 'puff', at: [0, 52], to: [0, 28], y: 4.4, s: 1.8, c: { a: 'grey' } }] },
+      { vo: 'Tens of thousands of people rode on opening day, January tenth.', set: 'tunnel', time: 'tomb', cam: { mode: 'static', at: [0, 3, 8], look: [0, 2.2, 36] }, tags: [{ t: [0.1, 0.95], count: [0, 38000], suffix: ' RIDERS', size: 60, bg: '#7cf2c0' }], sfx: ['crowd', 'cheer@0.6', 'bell@0.8'],
+        actors: [{ id: 'tr', m: 'train', at: [0, 52], face: 180, c: { a: [120, 90, 60] } }, { id: 'cw', m: 'crowd', at: [0, 30], anim: 'celebrate', o: { n: 8, spread: 12, seed: 42, kinds: ['gentleman', 'lady', 'worker'] } }] },
+      { vo: 'Today, that first line has grown into a huge network used by millions.', set: 'station', time: 'day', cam: { mode: 'dolly', from: [-6, 2.2, 4], to: [-2, 2.4, 9], look: [0, 2, 26] }, tags: [{ t: [0.1, 0.95], text: 'THE TUBE', size: 90, bg: '#ff6b6b', col: '#ffffff' }], sfx: ['whoosh@0.2', 'crowd', 'chime@0.7'],
+        actors: [{ id: 'tr', m: 'train', at: [-30, 31], to: [6, 31], c: { a: [220, 50, 60] } }, { id: 'cw', m: 'crowd', at: [0, 16], o: { n: 6, spread: 10, seed: 43 } }] },
+    ] });
+
+  // ---- 28. The Serum Run (cat 15) ----
+  NEW.push({
+    id: 'serumrun', kind: 'tale', cat: '15', title: 'The Serum Run', set: 'everest', music: 'hope',
+    caption: 'In 1925, sled dog teams raced life-saving medicine across Alaska to the children of Nome. 🐕 (True story, told briefly.)',
+    tags: '#truestory #history #sleddogs #balto #togo #shorts',
+    footer: 'Based on the 1925 serum run to Nome, Alaska: about 20 mushers and 150 dogs relayed diphtheria antitoxin 674 miles in roughly 127 hours. Togo (Leonhard Seppala) ran the longest leg; Balto (Gunnar Kaasen) ran the last.',
+    beats: [
+      { vo: 'In January 1925, diphtheria threatened the children of Nome, Alaska.', time: 'dusk', cam: { mode: 'dolly', from: [-6, 2.2, 4], to: [-2, 2.2, 10], look: [0, 2, 26] }, tags: [{ t: [0.1, 0.95], text: 'NOME, ALASKA, 1925', size: 46 }], sfx: ['wind', 'bell@0.5'],
+        actors: [{ id: 'h1', m: 'house', at: [-10, 30], face: 0, s: 1.3, c: { a: 'cream', b: 'brick' } }, { id: 'h2', m: 'house', at: [10, 32], face: 0, s: 1.3 }, { id: 'gl', m: 'girl', at: [0, 18], face: 190, anim: 'sleep', ex: 'sad' }, { id: 'bo', m: 'boy', at: [3, 19], face: 180, anim: 'sleep', ex: 'sad' }, { id: 'wm', m: 'woman', at: [-3, 17], face: 170, anim: 'look', ex: 'worried' }] },
+      { vo: "The medicine was 674 miles away, and planes couldn't fly in the cold.", time: 'clear', cam: { mode: 'static', at: [4, 2.6, 6], look: [0, 2, 26] }, tags: [{ t: [0.1, 0.95], count: [0, 674], suffix: ' MILES', size: 76, bg: '#ffd23f' }], sfx: ['wind', 'alarm@0.4'],
+        actors: [{ id: 'fl', m: 'flyer', at: [0, 28], face: 160, s: 0.8 }, { id: 'xm', m: 'xmark', at: [0, 28], y: 6, s: 1.6 }, { id: 'pl', m: 'gentleman', at: [-5, 18], face: 170, anim: 'point', ex: 'worried' }, { id: 'jr', m: 'jar', at: [5, 18], s: 1.2, o: { honey: 0 } }] },
+      { vo: 'So twenty mushers and about one hundred fifty dogs relayed it across the ice.', time: 'clear', cam: { mode: 'static', at: [0, 3, 0], look: [0, 1.5, 26] }, tags: [{ t: [0.1, 0.95], count: [0, 20], suffix: ' MUSHERS', size: 70, bg: '#7cf2c0' }], sfx: ['steps', 'wind', 'cheer@0.8'],
+        actors: [{ id: 'sa', m: 'sled', at: [-20, 18], to: [20, 18] }, { id: 'da', m: 'dog', at: [-15, 18], to: [25, 18], anim: 'run', s: 1.3, c: HUSKY }, { id: 'db', m: 'dog', at: [-15, 19.6], to: [25, 19.6], anim: 'run', s: 1.3, c: HUSKY }, { id: 'ma', m: 'hiker', at: [-23, 18], to: [17, 18], anim: 'run', ex: 'determined', c: { shirt: 'brown' } }, { id: 'sb', m: 'sled', at: [-44, 26], to: [-4, 26] }, { id: 'dc', m: 'dog', at: [-39, 26], to: [1, 26], anim: 'run', s: 1.3, c: HUSKY }, { id: 'mb', m: 'hiker', at: [-47, 26], to: [-7, 26], anim: 'run', ex: 'determined', c: { shirt: 'green' } }] },
+      { vo: 'Togo ran the longest, hardest stretch, and Balto led the final leg into Nome.', time: 'dusk', cam: { mode: 'orbit', target: 'tg', r: 7, h: 2, a0: -30, a1: 30 }, tags: [{ t: [0.1, 0.95], text: 'TOGO + BALTO', size: 70, bg: '#ffb86b' }], sfx: ['wind', 'heart@0.5', 'chime@0.8'],
+        actors: [{ id: 'tg', m: 'dog', at: [-2.2, 18], face: 190, s: 1.6, c: { a: [150, 130, 112], b: [240, 232, 220] } }, { id: 'bl', m: 'dog', at: [2.2, 18], face: 170, s: 1.6, c: { a: [60, 56, 64], b: [236, 226, 210] } }, { id: 'h1', m: 'heart', at: [-2.2, 18], y: 3.6, s: 0.9 }, { id: 'h2', m: 'heart', at: [2.2, 18], y: 3.6, s: 0.9 }] },
+      { vo: 'The serum arrived in under six days, and the outbreak was brought under control.', time: 'dawn', fx: ['confetti'], cam: { mode: 'dolly', from: [-6, 2, 0], to: [-2, 2.2, 6], look: [0, 1.6, 24] }, tags: [{ t: [0.1, 0.95], text: 'SAVED!', size: 100, bg: '#7cf2c0' }], sfx: ['cheer@0.5', 'bell', 'chime@0.8'],
+        actors: [{ id: 'sl', m: 'sled', at: [0, 50], to: [0, 22] }, { id: 'd1', m: 'dog', at: [-0.9, 45], to: [-0.9, 17], anim: 'run', s: 1.3, c: { a: [60, 56, 64], b: [236, 226, 210] } }, { id: 'd2', m: 'dog', at: [0.9, 45], to: [0.9, 17], anim: 'run', s: 1.3, c: HUSKY }, { id: 'mu', m: 'hiker', at: [0, 52.4], to: [0, 24.4], anim: 'run', ex: 'laugh', c: { shirt: 'brown' } }, { id: 'cw', m: 'crowd', at: [-8, 14], anim: 'celebrate', o: { n: 5, spread: 6, seed: 44 } }, { id: 'hs', m: 'house', at: [8, 34], face: 0, s: 1.3 }] },
+    ] });
+
+  // ---- 29. Waggle dance (cat 15) ----
+  NEW.push({
+    id: 'waggle', kind: 'dyk', cat: '15', title: 'The Bee Dance Map', set: 'meadow', music: 'wonder',
+    caption: 'Did you know honeybees dance to tell each other where the flowers are? 🐝',
+    tags: '#didyouknow #bees #animalfacts #nature #science #shorts',
+    footer: 'Based on the waggle dance decoded by Karl von Frisch (Nobel Prize 1973): the angle of the waggle run shows direction relative to the sun; its duration shows distance.',
+    beats: [
+      { vo: 'When a honeybee finds flowers, she returns to the hive and dances.', time: 'day', cam: { mode: 'static', at: [-4, 2.4, 4], look: [2, 1.6, 26] }, tags: [{ t: [0.1, 0.95], text: 'FOUND FLOWERS!', size: 62, bg: '#ffd23f' }], sfx: ['buzz', 'birds'],
+        actors: [{ id: 'hv', m: 'hive', at: [-8, 22], face: 0, s: 1.4 }, { id: 'f1', m: 'flower', at: [10, 32], s: 2.4 }, { id: 'f2', m: 'flower', at: [12, 30], s: 2.2, c: { a: 'pink' } }, { id: 'f3', m: 'flower', at: [8, 34], s: 2.2, c: { a: 'yellow' } }, { id: 'b1', m: 'bee', at: [10, 31], to: [-7, 22], y: [1.6, 1.4], s: 1.6 }, { id: 'b2', m: 'bee', at: [11, 33], to: [-7, 23], y: [1.8, 1.4], s: 1.6, from: 0.2 }] },
+      { vo: "It's called the waggle dance, a figure eight with a wiggling straight run.", time: 'day', cam: { mode: 'static', at: [0, 2.4, 6], look: [0, 2.4, 20] }, tags: [{ t: [0.1, 0.95], text: 'THE WAGGLE DANCE', size: 60, bg: '#7cf2c0' }], sfx: ['buzz', 'magic@0.5'],
+        actors: [{ id: 'bd', m: 'beedance', at: [0, 20], y: 2.6, s: 1.4, face: 180, o: { ang: 20, len: 1.6 } }] },
+      { vo: 'The angle of that run shows the direction of the flowers, relative to the sun.', time: 'day', cam: { mode: 'static', at: [0, 2.4, 6], look: [0, 2.4, 20] }, tags: [{ t: [0.1, 0.95], text: 'ANGLE = DIRECTION', size: 54, bg: '#7cc4ff' }], sfx: ['buzz', 'chime@0.7'],
+        actors: [{ id: 'bd', m: 'beedance', at: [0, 20], y: 2.6, s: 1.4, face: 180, o: { ang: [0, 50], len: 1.6 } }] },
+      { vo: 'The longer she waggles, the farther away the flowers are.', time: 'day', cam: { mode: 'static', at: [0, 2.4, 6], look: [0, 2.4, 20] }, tags: [{ t: [0.1, 0.95], text: 'LONGER = FARTHER', size: 56, bg: '#ffb86b' }], sfx: ['buzz', 'chime@0.7'],
+        actors: [{ id: 'bd', m: 'beedance', at: [0, 20], y: 2.6, s: 1.4, face: 180, o: { ang: 20, len: [0.6, 2.2] } }] },
+      { vo: 'Karl von Frisch decoded this language and won a Nobel Prize in 1973.', set: 'lab', time: 'day', cam: { mode: 'static', at: [0, 4, 24], look: [0, 3, 38] }, tags: [{ t: [0.1, 0.95], text: 'NOBEL PRIZE, 1973', size: 62, bg: '#ffd23f' }], sfx: ['chime@0.4', 'buzz@0.2'],
+        actors: [{ id: 'bd', m: 'beedance', at: [0, 34], y: 5.2, s: 0.7, face: 180, o: { ang: 30, len: 1.6 } }, { id: 'fr', m: 'scientist', at: [0, 41], face: 190, anim: 'point', ex: 'smile' }, { id: 'sp', m: 'sky_sparkle', at: [0, 36], y: 3, s: 2, o: { n: 10 } }] },
+    ] });
+
+  // ---- 30. Roger Bannister (cat 17) ----
+  NEW.push({
+    id: 'bannister', kind: 'tale', cat: '17', title: 'The Four-Minute Mile', set: 'track', music: 'hope',
+    caption: 'On May 6, 1954, Roger Bannister ran a mile in under four minutes, something many thought was impossible. 🏃 (True story, told briefly.)',
+    tags: '#truestory #sports #running #rogerbannister #history #shorts',
+    footer: "Based on Roger Bannister's run of 3:59.4 at Iffley Road, Oxford, on 6 May 1954, paced by Chris Brasher and Chris Chataway. John Landy broke the time 46 days later.",
+    beats: [
+      { vo: 'For years, people believed no human could run a mile in under four minutes.', cam: { mode: 'orbit', target: 'bn', r: 7, h: 2, a0: -30, a1: 25 }, tags: [{ t: [0.1, 0.95], text: 'IMPOSSIBLE?', size: 84, bg: '#ff8a9a' }], sfx: ['crowd', 'wind'],
+        actors: [{ id: 'bn', m: 'runner', at: [0, 16], face: 190, anim: 'stand', ex: 'determined' }, { id: 'xm', m: 'xmark', at: [0, 16], y: 5, s: 1.6 }, { id: 'cw', m: 'crowd', at: [-8, 24], anim: 'look', o: { n: 4, spread: 6, seed: 51 } }] },
+      { vo: 'On May 6, 1954, medical student Roger Bannister tried it at Oxford.', time: 'storm', cam: { mode: 'dolly', from: [-6, 2, 4], to: [-2, 2, 9], look: [0, 1.4, 22] }, tags: [{ t: [0.1, 0.95], text: 'OXFORD, MAY 6, 1954', size: 46, bg: '#7cc4ff' }], sfx: ['wind', 'crowd', 'beep@0.8'],
+        actors: [{ id: 'bn', m: 'runner', at: [0, 20], face: 180, anim: 'stand', ex: 'determined' }, { id: 'br', m: 'runner', at: [-3, 20], face: 180, ex: 'smile', c: { shirt: 'blue' } }, { id: 'ch', m: 'runner', at: [3, 20], face: 180, ex: 'smile', c: { shirt: 'blue' } }, { id: 'c1', m: 'crowd', at: [-12, 26], anim: 'wave', o: { n: 5, spread: 6, seed: 52 } }, { id: 'c2', m: 'crowd', at: [12, 26], anim: 'wave', o: { n: 5, spread: 6, seed: 53 } }] },
+      { vo: 'Two friends, Chris Brasher and Chris Chataway, set the pace for him.', time: 'storm', cam: { mode: 'static', at: [0, 2.6, 2], look: [0, 1.6, 26] }, tags: [{ t: [0.1, 0.95], text: 'PACEMAKERS', size: 80, bg: '#7cf2c0' }], sfx: ['steps', 'wind', 'crowd@0.5'],
+        actors: [{ id: 'br', m: 'runner', at: [-1.5, 60], to: [-1.5, 22], anim: 'run', ex: 'determined', c: { shirt: 'blue' } }, { id: 'bn', m: 'runner', at: [0.5, 64], to: [0.5, 26], anim: 'run', ex: 'determined' }, { id: 'ch', m: 'runner', at: [-0.5, 68], to: [-0.5, 30], anim: 'run', ex: 'determined', c: { shirt: 'blue' } }, { id: 'c1', m: 'crowd', at: [-12, 26], anim: 'wave', o: { n: 5, spread: 6, seed: 54 } }, { id: 'c2', m: 'crowd', at: [12, 26], anim: 'wave', o: { n: 5, spread: 6, seed: 55 } }] },
+      { vo: 'He kicked hard on the last lap, finishing in three fifty-nine point four.', time: 'day', cam: { mode: 'static', at: [0, 2.2, 4], look: [0, 2, 26] }, tags: [{ t: [0.1, 0.95], text: '3:59.4', size: 110, bg: '#ffd23f' }], sfx: ['cheer@0.7', 'chime@0.85', 'steps'],
+        actors: [{ id: 'bn', m: 'runner', at: [0, 50], to: [0, 14], anim: 'run', ex: 'determined' }, { id: 'ch', m: 'runner', at: [0.2, 44], to: [1.5, 22], anim: 'run', ex: 'worried', c: { shirt: 'blue' } }, { id: 'fn', m: 'finish', at: [0, 24], face: 180, s: 0.8 }, { id: 'c1', m: 'crowd', at: [-10, 24], anim: 'celebrate', o: { n: 5, spread: 6, seed: 56 } }, { id: 'c2', m: 'crowd', at: [10, 24], anim: 'celebrate', o: { n: 5, spread: 6, seed: 57 } }] },
+      { vo: 'His record lasted only forty-six days, but the barrier was broken for good.', time: 'day', fx: ['confetti'], cam: { mode: 'orbit', target: 'bn', r: 7, h: 2.4, a0: -30, a1: 25 }, tags: [{ t: [0.1, 0.95], text: 'RECORD LASTED 46 DAYS', size: 44, bg: '#b9a0ff' }], sfx: ['cheer', 'chime@0.5'],
+        actors: [{ id: 'bn', m: 'runner', at: [0, 16], face: 190, anim: 'celebrate', ex: 'laugh' }, { id: 'br', m: 'runner', at: [-3.4, 17], face: 185, anim: 'celebrate', ex: 'laugh', c: { shirt: 'blue' } }, { id: 'ch', m: 'runner', at: [3.4, 17], face: 195, anim: 'celebrate', ex: 'laugh', c: { shirt: 'blue' } }, { id: 'hr', m: 'heart', at: [0, 16], y: 5.2, s: 1.4 }] },
+    ] });
+
+  // ---- 31. First Olympic marathon (cat 17) ----
+  NEW.push({
+    id: 'louis', kind: 'tale', cat: '17', title: 'The First Olympic Marathon', set: 'plaza', music: 'fun',
+    caption: 'At the first modern Olympics in 1896, a Greek water carrier won the very first marathon. 🏅 (True story, told briefly.)',
+    tags: '#truestory #sports #olympics #marathon #history #shorts',
+    footer: 'Based on the first Olympic marathon, Athens, 10 April 1896, won by Spyridon Louis in 2:58:50 (course about 40 km).',
+    beats: [
+      { vo: 'In 1896, Athens hosted the first modern Olympic Games.', time: 'day', fx: ['confetti'], cam: { mode: 'dolly', from: [-6, 2.4, 2], to: [-2, 2.4, 8], look: [0, 2, 24] }, tags: [{ t: [0.1, 0.95], text: 'ATHENS, 1896', size: 66 }], sfx: ['crowd', 'cheer@0.4', 'chime@0.7'],
+        actors: [{ id: 'f1', m: 'flag', at: [-8, 22], c: { a: 'white', b: 'blue' } }, { id: 'f2', m: 'flag', at: [8, 22], c: { a: 'white', b: 'blue' } }, { id: 'c1', m: 'crowd', at: [-4, 20], anim: 'celebrate', o: { n: 6, spread: 8, seed: 61 } }, { id: 'c2', m: 'crowd', at: [5, 22], anim: 'celebrate', o: { n: 6, spread: 8, seed: 62 } }] },
+      { vo: 'A new race, the marathon, ran forty kilometers from the town of Marathon.', set: 'countryroad', time: 'dawn', cam: { mode: 'static', at: [0, 2.4, 2], look: [0, 1.4, 22] }, tags: [{ t: [0.1, 0.95], count: [0, 40], suffix: ' KM TO ATHENS', size: 56, bg: '#ffd23f' }], sfx: ['birds', 'crowd', 'bell@0.8'],
+        actors: [{ id: 'r1', m: 'runner', at: [-6, 18], face: 0, ex: 'determined', c: { shirt: 'red' } }, { id: 'r2', m: 'runner', at: [-3.6, 18], face: 0, ex: 'determined', c: { shirt: 'green' } }, { id: 'r3', m: 'runner', at: [-1.2, 18], face: 0, ex: 'determined' }, { id: 'r4', m: 'runner', at: [1.2, 18], face: 0, ex: 'determined', c: { shirt: 'purple' } }, { id: 'r5', m: 'runner', at: [3.6, 18], face: 0, ex: 'determined', c: { shirt: 'orange' } }, { id: 'r6', m: 'runner', at: [6, 18], face: 0, ex: 'determined', c: { shirt: 'teal' } }, { id: 'c1', m: 'crowd', at: [-11, 24], anim: 'wave', o: { n: 5, spread: 6, seed: 63 } }, { id: 'c2', m: 'crowd', at: [11, 24], anim: 'wave', o: { n: 5, spread: 6, seed: 64 } }] },
+      { vo: 'Spyridon Louis, a Greek water carrier, was not expected to win.', set: 'countryroad', time: 'day', cam: { mode: 'orbit', target: 'lo', r: 6, h: 2, a0: -25, a1: 25 }, tags: [{ t: [0.1, 0.95], text: 'A WATER CARRIER', size: 62, bg: '#7cc4ff' }], sfx: ['birds', 'chime@0.6'],
+        actors: [{ id: 'lo', m: 'runner', at: [0, 18], face: 190, ex: 'smile', c: { shirt: 'white', pants: 'white', skin: 'skin2' } }, { id: 'b1', m: 'barrel', at: [4, 16], s: 1.2 }, { id: 'b2', m: 'barrel', at: [5.4, 18], s: 1.2 }, { id: 'ct', m: 'cart', at: [-6, 22], face: 100 }] },
+      { vo: 'Early leaders collapsed, and Louis entered the stadium seven minutes ahead.', set: 'countryroad', time: 'day', cam: { mode: 'static', at: [0, 2.2, 2], look: [0, 1.6, 26] }, tags: [{ t: [0.1, 0.95], text: 'LEADING!', size: 96, bg: '#7cf2c0' }], sfx: ['steps', 'cheer@0.6', 'heart@0.3'],
+        actors: [{ id: 'lo', m: 'runner', at: [0, 60], to: [0, 14], anim: 'run', ex: 'determined', c: { shirt: 'white', pants: 'white', skin: 'skin2' } }, { id: 'r2', m: 'runner', at: [-2, 30], face: 200, anim: 'crouch', ex: 'sad', c: { shirt: 'red' } }, { id: 'r3', m: 'runner', at: [3, 40], face: 160, anim: 'crouch', ex: 'sad', c: { shirt: 'green' } }, { id: 'c1', m: 'crowd', at: [-9, 24], anim: 'celebrate', o: { n: 5, spread: 6, seed: 65 } }, { id: 'c2', m: 'crowd', at: [9, 24], anim: 'celebrate', o: { n: 5, spread: 6, seed: 66 } }] },
+      { vo: 'He finished in two hours, fifty-eight minutes, and fifty seconds, and became a national hero.', set: 'plaza', time: 'dusk', fx: ['confetti'], cam: { mode: 'dolly', from: [-6, 2.2, 0], to: [-2, 2.2, 6], look: [0, 2, 24] }, tags: [{ t: [0.1, 0.95], text: '2:58:50', size: 100, bg: '#ffd23f' }], sfx: ['cheer', 'chime@0.6', 'bell@0.9'],
+        actors: [{ id: 'lo', m: 'runner', at: [0, 48], to: [0, 18], anim: 'run', end: 'celebrate', ex: 'laugh', c: { shirt: 'white', pants: 'white', skin: 'skin2' } }, { id: 'p1', m: 'gentleman', at: [-2.4, 50], to: [-2.4, 20], anim: 'run', c: { coat: 'crimson' } }, { id: 'p2', m: 'gentleman', at: [2.4, 50], to: [2.4, 20], anim: 'run', c: { coat: 'crimson' } }, { id: 'c1', m: 'crowd', at: [-9, 22], anim: 'celebrate', o: { n: 6, spread: 8, seed: 67 } }, { id: 'c2', m: 'crowd', at: [9, 22], anim: 'celebrate', o: { n: 6, spread: 8, seed: 68 } }] },
+    ] });
+
+  // ---- 32. Wangari Maathai (cat 22) ----
+  const WM = { skin: 'skin4', hair: 'hairBlack', dress: 'orange', hs: 'bob' };
+  NEW.push({
+    id: 'maathai', kind: 'tale', cat: '22', title: 'Wangari and the Trees', set: 'meadow', music: 'hope',
+    caption: 'Wangari Maathai planted seven trees and started a movement that planted millions. 🌳 (True story, told briefly.)',
+    tags: '#truestory #history #trees #wangarimaathai #inspiring #shorts',
+    footer: 'Based on Wangari Maathai and the Green Belt Movement, founded in Kenya in 1977. Tree totals vary by source (30-51+ million). She received the Nobel Peace Prize in 2004.',
+    beats: [
+      { vo: 'In 1977, Kenyan scientist Wangari Maathai planted seven trees to start a movement.', time: 'day', cam: { mode: 'dolly', from: [-5, 2, 4], to: [-1.5, 2, 10], look: [0, 1.4, 24] }, tags: [{ t: [0.1, 0.95], text: '7 TREES, 1977', size: 64, bg: '#7cf2c0' }], sfx: ['birds', 'chime@0.6'],
+        actors: [{ id: 'wm', m: 'woman', at: [0, 18], face: 190, anim: 'plant', ex: 'smile', c: WM }, { id: 's1', m: 'sprout', at: [-9, 22], s: 1.4, o: { g: [0.3, 1] }, vis: [0.1, 1] }, { id: 's2', m: 'sprout', at: [-6, 22], s: 1.4, o: { g: [0.3, 1] }, vis: [0.2, 1] }, { id: 's3', m: 'sprout', at: [-3, 22], s: 1.4, o: { g: [0.3, 1] }, vis: [0.3, 1] }, { id: 's4', m: 'sprout', at: [0, 22], s: 1.4, o: { g: [0.3, 1] }, vis: [0.4, 1] }, { id: 's5', m: 'sprout', at: [3, 22], s: 1.4, o: { g: [0.3, 1] }, vis: [0.5, 1] }, { id: 's6', m: 'sprout', at: [6, 22], s: 1.4, o: { g: [0.3, 1] }, vis: [0.6, 1] }, { id: 's7', m: 'sprout', at: [9, 22], s: 1.4, o: { g: [0.3, 1] }, vis: [0.7, 1] }] },
+      { vo: 'She saw forests disappearing, rivers drying, and women struggling for firewood and food.', set: 'wasteland', time: 'hazy', fx: ['dust'], cam: { mode: 'static', at: [3, 2.4, 6], look: [0, 1.4, 22] }, tags: [{ t: [0.1, 0.95], text: 'LAND IN TROUBLE', size: 56, bg: '#ffb86b' }], sfx: ['wind', 'drip@0.6'],
+        actors: [{ id: 'wm', m: 'woman', at: [0, 18], face: 190, anim: 'look', ex: 'sad', c: WM }, { id: 'w2', m: 'woman', at: [-5, 20], face: 170, anim: 'carry', ex: 'worried', c: { dress: 'purple', skin: 'skin4', hair: 'hairBlack' }, o: { hold: 'crate' } }, { id: 'w3', m: 'woman', at: [5, 22], face: 200, anim: 'carry', ex: 'worried', c: { dress: 'teal', skin: 'skin4', hair: 'hairBlack' }, o: { hold: 'crate' } }, { id: 'rk', m: 'rock', at: [-8, 26], s: 1.2 }] },
+      { vo: 'So she trained and paid women to plant trees, and it grew.', set: 'meadow', time: 'day', cam: { mode: 'orbit', target: [0, 1.2, 20], r: 10, h: 3, a0: -30, a1: 30 }, tags: [{ t: [0.1, 0.95], text: 'WOMEN PLANT TREES', size: 54, bg: '#7cf2c0' }], sfx: ['birds', 'cheer@0.8'],
+        actors: [{ id: 'w1', m: 'woman', at: [-8, 20], face: 190, anim: 'plant', ex: 'smile', c: { dress: 'purple', skin: 'skin4', hair: 'hairBlack' } }, { id: 'w2', m: 'woman', at: [-4, 20], face: 190, anim: 'plant', ex: 'smile', c: { dress: 'teal', skin: 'skin4', hair: 'hairBlack' } }, { id: 'w3', m: 'woman', at: [0, 20], face: 190, anim: 'plant', ex: 'laugh', c: WM }, { id: 'w4', m: 'woman', at: [4, 20], face: 190, anim: 'plant', ex: 'smile', c: { dress: 'red', skin: 'skin4', hair: 'hairBlack' } }, { id: 'w5', m: 'woman', at: [8, 20], face: 190, anim: 'plant', ex: 'smile', c: { dress: 'yellow', skin: 'skin4', hair: 'hairBlack' } }, { id: 's1', m: 'sprout', at: [-6, 23], s: 1.4, o: { g: [0.3, 1] } }, { id: 's2', m: 'sprout', at: [2, 23], s: 1.4, o: { g: [0.3, 1] } }, { id: 's3', m: 'sprout', at: [6, 23], s: 1.4, o: { g: [0.3, 1] } }] },
+      { vo: 'Today, tens of millions of trees have been planted across Kenya.', set: 'meadow', time: 'clear', cam: { mode: 'crane', from: [-6, 3, 2], to: [4, 8, 4], look: [0, 2, 26] }, tags: [{ t: [0.1, 0.95], count: [0, 51], suffix: ' MILLION TREES', size: 50, bg: '#7cf2c0' }], sfx: ['birds', 'chime@0.5', 'cheer@0.8'],
+        actors: [{ id: 't1', m: 'tree', at: [-10, 26], s: 1.4 }, { id: 't2', m: 'tree', at: [-4, 30], s: 1.6 }, { id: 't3', m: 'tree', at: [4, 28], s: 1.3 }, { id: 't4', m: 'tree', at: [10, 26], s: 1.5 }, { id: 't5', m: 'tree', at: [-7, 38], s: 1.6 }, { id: 't6', m: 'tree', at: [0, 40], s: 1.8 }, { id: 't7', m: 'tree', at: [7, 38], s: 1.5 }, { id: 'wm', m: 'woman', at: [0, 18], face: 190, anim: 'celebrate', ex: 'laugh', c: WM }, { id: 'bd', m: 'bird', at: [-6, 20], to: [8, 28], y: [6, 9] }] },
+      { vo: 'In 2004, she became the first African woman to win the Nobel Peace Prize.', set: 'meadow', time: 'clear', fx: ['confetti'], cam: { mode: 'orbit', target: 'wm', r: 7, h: 2.2, a0: -30, a1: 30 }, tags: [{ t: [0.1, 0.95], text: 'NOBEL PEACE PRIZE 2004', size: 42, bg: '#ffd23f' }], sfx: ['cheer', 'chime@0.5'],
+        actors: [{ id: 'wm', m: 'woman', at: [0, 18], face: 190, anim: 'celebrate', ex: 'laugh', c: WM }, { id: 'c1', m: 'crowd', at: [-7, 22], anim: 'celebrate', o: { n: 5, spread: 6, seed: 69 } }, { id: 'c2', m: 'crowd', at: [7, 22], anim: 'celebrate', o: { n: 5, spread: 6, seed: 70 } }, { id: 'hr', m: 'heart', at: [0, 18], y: 5.2, s: 1.4 }] },
+    ] });
+
+  // ---- 33. Mary Anning (cat 22) ----
+  const MA = { dress: 'brown', hair: 'hairBrown', hs: 'bun' };
+  NEW.push({
+    id: 'anning', kind: 'tale', cat: '22', title: 'Mary Anning, Fossil Hunter', set: 'beach', music: 'wonder',
+    caption: 'A poor girl from Lyme Regis found giant sea reptile fossils that changed science. 🦖 (True story, told briefly.)',
+    tags: '#truestory #history #fossils #maryanning #science #shorts',
+    footer: "Based on Mary Anning (1799-1847) of Lyme Regis: her brother Joseph found an ichthyosaur skull in 1811 and Mary excavated the rest; she found the first complete plesiosaur skeleton in 1823.",
+    beats: [
+      { vo: 'Mary Anning grew up poor in Lyme Regis, hunting fossils on the seashore.', time: 'day', cam: { mode: 'dolly', from: [-6, 2.4, 2], to: [-2, 2.4, 8], look: [0, 1.4, 22] }, tags: [{ t: [0.1, 0.95], text: 'LYME REGIS', size: 70 }], sfx: ['waves', 'gulls'],
+        actors: [{ id: 'ma', m: 'girl', at: [4, 16], to: [-2, 18], ex: 'smile', c: MA }, { id: 'jo', m: 'boy', at: [6, 18], to: [0, 19.6], ex: 'smile', c: { shirt: 'green' } }, { id: 'rk', m: 'rock', at: [-6, 24], s: 1.6 }, { id: 'r2', m: 'rock', at: [9, 26], s: 1.3 }] },
+      { vo: 'In 1811, when she was twelve, her brother found a strange skull.', time: 'day', cam: { mode: 'static', at: [4, 2.2, 6], look: [0, 1, 20] }, tags: [{ t: [0.1, 0.95], text: '1811: STRANGE SKULL', size: 50, bg: '#ffb86b' }], sfx: ['pop@0.5', 'waves'],
+        actors: [{ id: 'fs', m: 'fossil', at: [0, 20], face: 90, s: 1.4, o: { k: 0.25 } }, { id: 'jo', m: 'boy', at: [2.6, 18], face: 190, anim: 'point', ex: 'shock', c: { shirt: 'green' } }, { id: 'ma', m: 'girl', at: [-2.6, 18], face: 170, anim: 'look', ex: 'shock', c: MA }] },
+      { vo: 'Mary spent months digging out the rest, a huge sea reptile called an ichthyosaur.', time: 'day', cam: { mode: 'orbit', target: 'fs', r: 8, h: 3, a0: -30, a1: 30 }, tags: [{ t: [0.1, 0.95], text: 'MONTHS OF DIGGING', size: 50, bg: '#7cf2c0' }], sfx: ['clack', 'waves'],
+        actors: [{ id: 'fs', m: 'fossil', at: [0, 20], face: 90, s: 1.4, o: { k: [0.25, 1] } }, { id: 'ma', m: 'girl', at: [3, 17], face: 160, anim: 'work', ex: 'determined', c: MA }, { id: 'jo', m: 'boy', at: [-3, 22], face: 200, anim: 'work', ex: 'determined', c: { shirt: 'green' } }] },
+      { vo: 'In 1823, she found the first complete skeleton of a long-necked plesiosaur.', time: 'day', cam: { mode: 'dolly', from: [-7, 3, 2], to: [-2, 3.4, 10], look: [0, 1.4, 22] }, tags: [{ t: [0.1, 0.95], text: '1823: PLESIOSAUR', size: 54, bg: '#7cc4ff' }], sfx: ['chime@0.5', 'waves', 'gulls'],
+        actors: [{ id: 'fs', m: 'fossil', at: [0, 22], face: 90, s: 1.5, o: { plesio: 1, k: 1 } }, { id: 'ma', m: 'woman', at: [3.4, 17], face: 190, anim: 'celebrate', ex: 'laugh', c: { dress: 'brown', hair: 'hairBrown' } }] },
+      { vo: 'Scientists used her finds, though for years she rarely got the credit.', time: 'day', cam: { mode: 'static', at: [4, 2.4, 6], look: [0, 1.6, 22] }, tags: [{ t: [0.1, 0.95], text: 'UNDER-CREDITED', size: 62, bg: '#b9a0ff' }], sfx: ['chime@0.5', 'crowd@0.2'],
+        actors: [{ id: 'fs', m: 'fossil', at: [0, 22], face: 90, s: 1.2, o: { k: 1 } }, { id: 's1', m: 'gentleman', at: [-3, 20], face: 160, anim: 'point', ex: 'smile', o: { hold: 'book' } }, { id: 's2', m: 'gentleman', at: [-6, 23], face: 150, anim: 'look', ex: 'smile', c: { coat: 'brown' } }, { id: 'ma', m: 'woman', at: [8, 18], face: 200, anim: 'look', ex: 'sad', c: { dress: 'brown', hair: 'hairBrown' } }] },
+    ] });
+
+  // ---- 34. War of the Worlds broadcast (cat 24) ----
+  NEW.push({
+    id: 'warworlds', kind: 'tale', cat: '24', title: 'War of the Worlds Radio', set: 'studio', music: 'tense',
+    caption: 'The 1938 Martian radio broadcast. How much panic was real? 📻 (True story, told briefly.)',
+    tags: '#truestory #history #radio #orsonwelles #weirdhistory #shorts',
+    footer: 'Based on the 30 October 1938 CBS broadcast of "The War of the Worlds." Newspapers reported mass panic, but historians say the reaction and audience were much smaller than the legend.',
+    beats: [
+      { vo: 'On Halloween eve 1938, Orson Welles aired a radio play about Martians invading.', time: 'night', cam: { mode: 'dolly', from: [-6, 3, 10], to: [-2, 3, 20], look: [0, 2.4, 40] }, tags: [{ t: [0.1, 0.95], text: 'OCT 30, 1938', size: 66 }], sfx: ['alarm@0.5', 'magic@0.4', 'chime@0.8'],
+        actors: [{ id: 'ow', m: 'gentleman', at: [0, 40], face: 190, anim: 'point', ex: 'determined', c: { hat: null } }, { id: 'rd', m: 'radio', at: [-8, 36], face: 180, s: 1.4 }, { id: 'mt', m: 'martian', at: [8, 38], face: 190, s: 1.5, vis: [0.4, 1] }] },
+      { vo: 'It sounded like real news bulletins, and some listeners missed the opening announcement.', set: 'livingroom', time: 'night', cam: { mode: 'static', at: [0, 3.4, 8], look: [0, 2.2, 34] }, tags: [{ t: [0.1, 0.95], text: 'SOUNDS LIKE REAL NEWS', size: 44, bg: '#ff8a9a' }], sfx: ['alarm@0.2', 'beep@0.5'],
+        actors: [{ id: 'sf', m: 'sofa', at: [0, 42], face: 180, s: 1.2 }, { id: 'rd', m: 'radio', at: [10, 36], face: 180, s: 1.6 }, { id: 'mn', m: 'man', at: [-2, 36], face: 190, anim: 'look', ex: 'worried' }, { id: 'wm', m: 'woman', at: [2.4, 36], face: 175, anim: 'look', ex: 'worried' }] },
+      { vo: 'Newspapers soon reported mass panic, with people fleeing their homes.', set: 'street', time: 'night', cam: { mode: 'static', at: [0, 3, 4], look: [0, 2, 28] }, tags: [{ t: [0.1, 0.95], text: 'MASS PANIC?', size: 90, bg: '#ff6b6b', col: '#ffffff' }], sfx: ['crowd', 'alarm@0.3', 'steps'],
+        actors: [{ id: 'c1', m: 'crowd', at: [-10, 26], to: [10, 26], anim: 'run', o: { n: 7, spread: 8, seed: 81 } }, { id: 'c2', m: 'crowd', at: [10, 20], to: [-10, 20], anim: 'run', o: { n: 5, spread: 8, seed: 82 } }, { id: 'hs', m: 'house', at: [12, 36], face: 0, s: 1.4 }] },
+      { vo: 'But historians say the panic was exaggerated, and the audience was fairly small.', set: 'street', time: 'dusk', cam: { mode: 'dolly', from: [-5, 2.4, 6], to: [-1, 2.4, 10], look: [0, 1.8, 26] }, tags: [{ t: [0.1, 0.95], text: 'PANIC: EXAGGERATED', size: 46, bg: '#ffb86b' }], sfx: ['chime@0.4', 'birds@0.6'],
+        actors: [{ id: 'c1', m: 'crowd', at: [-4, 22], anim: 'stand', o: { n: 3, spread: 5, seed: 83 } }, { id: 'wm', m: 'woman', at: [4, 18], face: 190, anim: 'wave', ex: 'smile' }, { id: 'mn', m: 'man', at: [-8, 18], face: 170, anim: 'wave', ex: 'laugh' }, { id: 'xm', m: 'xmark', at: [0, 22], y: 6, s: 1.6 }] },
+      { vo: 'Newspapers, rivals of radio, may have helped spread the legend.', set: 'street', time: 'day', cam: { mode: 'orbit', target: 'nw', r: 7, h: 2.2, a0: -30, a1: 30 }, tags: [{ t: [0.1, 0.95], text: 'THE LEGEND GREW', size: 54, bg: '#b9a0ff' }], sfx: ['crowd', 'chime@0.5'],
+        actors: [{ id: 'nw', m: 'gentleman', at: [0, 16], face: 190, anim: 'point', ex: 'smile', c: { coat: 'brown', hat: null }, o: { hold: 'plans' } }, { id: 'c1', m: 'crowd', at: [-6, 22], anim: 'look', o: { n: 4, spread: 6, seed: 84 } }, { id: 'c2', m: 'crowd', at: [7, 22], anim: 'look', o: { n: 4, spread: 6, seed: 85 } }] },
+    ] });
+
+  // ---- 35. Year Without a Summer (cat 24) ----
+  NEW.push({
+    id: 'tambora', kind: 'tale', cat: '24', title: 'The Year Without a Summer', set: 'wasteland', music: 'tense',
+    caption: 'A volcano in 1815 cancelled summer in 1816 and helped inspire Frankenstein. 🌋 (True story, told briefly.)',
+    tags: '#truestory #history #frankenstein #volcano #weirdhistory #shorts',
+    footer: 'Based on the 1815 eruption of Mount Tambora, the cold "Year Without a Summer" of 1816, and Mary Shelley beginning Frankenstein at Lake Geneva that summer.',
+    beats: [
+      { vo: 'In 1815, the volcano Mount Tambora in Indonesia erupted with record-breaking force.', time: 'storm', fx: ['sparks'], cam: { mode: 'static', at: [0, 3, 2], look: [0, 14, 60] }, tags: [{ t: [0.1, 0.95], text: 'TAMBORA, 1815', size: 64, bg: '#ff6b6b', col: '#ffffff' }], sfx: ['boom@0.2', 'rumble', 'thunder@0.6'], flashes: [0.2],
+        actors: [{ id: 'mt', m: 'mountain', at: [0, 70], o: { r: 50, h: 40 }, c: { a: [96, 76, 74] } }, { id: 'p1', m: 'puff', at: [0, 62], y: 40, s: 12, c: { a: [60, 56, 60] } }, { id: 'p2', m: 'puff', at: [-8, 62], y: 46, s: 10, c: { a: [70, 64, 70] } }, { id: 'p3', m: 'puff', at: [8, 64], y: 44, s: 9, c: { a: [64, 60, 66] } }, { id: 'p4', m: 'puff', at: [0, 62], y: 38, s: 5, c: { a: [255, 90, 40] }, o: { glow: 1 } }] },
+      { vo: 'Ash and gas filled the sky, and in 1816, summer hardly arrived.', set: 'meadow', time: 'storm', fx: ['fog'], cam: { mode: 'static', at: [0, 2.4, 6], look: [0, 6, 30] }, tags: [{ t: [0.1, 0.95], text: '1816: NO SUMMER', size: 62, bg: '#7cc4ff' }], sfx: ['wind', 'rumble@0.5'],
+        actors: [{ id: 'p1', m: 'peasant', at: [-3, 18], face: 190, anim: 'look', ex: 'worried' }, { id: 'p2', m: 'woman', at: [3, 19], face: 180, anim: 'look', ex: 'worried', c: { dress: 'brown' } }, { id: 'sc', m: 'stormcloud', at: [0, 40], y: 20, s: 3 }] },
+      { vo: 'Crops failed across Europe and North America, and snow fell in summer.', set: 'meadow', time: 'storm', fx: ['fog'], cam: { mode: 'dolly', from: [-5, 2.4, 4], to: [-1, 2.4, 10], look: [0, 1.2, 24] }, tags: [{ t: [0.1, 0.95], text: 'CROPS FAILED', size: 70, bg: '#ffb86b' }], sfx: ['wind', 'drip@0.6'],
+        actors: [{ id: 'wh', m: 'wheat', at: [0, 24], s: 1.8, o: { nx: 9, nz: 5 } }, { id: 'f1', m: 'peasant', at: [-4, 18], face: 190, anim: 'look', ex: 'sad' }, { id: 'f2', m: 'woman', at: [4, 19], face: 180, anim: 'look', ex: 'sad', c: { dress: 'brown' } }, { id: 'xm', m: 'xmark', at: [0, 24], y: 4, s: 1.6 }] },
+      { vo: 'Stuck inside near Lake Geneva, a group told ghost stories for fun.', set: 'livingroom', time: 'night', fx: ['rain'], cam: { mode: 'orbit', target: [0, 2, 36], r: 10, h: 3, a0: -30, a1: 30 }, tags: [{ t: [0.1, 0.95], text: 'GHOST STORY CONTEST', size: 46, bg: '#b9a0ff' }], sfx: ['thunder@0.3', 'rain', 'fire'],
+        actors: [{ id: 'by', m: 'gentleman', at: [-5, 36], face: 160, anim: 'sit', ex: 'smile', c: { coat: 'dark' } }, { id: 'sh', m: 'gentleman', at: [5, 36], face: 200, anim: 'sit', ex: 'smile', c: { coat: 'navy' } }, { id: 'ms', m: 'lady', at: [0, 40], face: 190, anim: 'sit', ex: 'smile' }, { id: 'pd', m: 'gentleman', at: [0, 32], face: 20, anim: 'sit', ex: 'worried', c: { coat: 'brown' } }, { id: 't1', m: 'torch', at: [-8, 30] }, { id: 't2', m: 'torch', at: [8, 30] }] },
+      { vo: 'Eighteen-year-old Mary Shelley began writing Frankenstein that summer.', set: 'livingroom', time: 'night', fx: ['rain'], cam: { mode: 'dolly', from: [-4, 3, 10], to: [-1, 2.6, 18], look: [0, 2, 36] }, tags: [{ t: [0.1, 0.95], text: 'FRANKENSTEIN, 1816', size: 50, bg: '#7cf2c0' }], sfx: ['thunder@0.2', 'rain', 'chime@0.8'], flashes: [0.5],
+        actors: [{ id: 'tb', m: 'table', at: [0, 36], face: 180 }, { id: 'ms', m: 'lady', at: [0, 40], face: 180, anim: 'type', ex: 'determined' }, { id: 'tc', m: 'torch', at: [-3, 36], y: 1.65, s: 0.6 }, { id: 'sp', m: 'sky_sparkle', at: [0, 36], y: 3, s: 2, o: { n: 10 } }] },
+    ] });
+
+  // ---- 36. Bears (cat 26) ----
+  NEW.push({
+    id: 'bearsafety', kind: 'survival', cat: '26', title: 'Bear Encounter Tips', set: 'forest', music: 'tense',
+    caption: 'Meet a bear on the trail? Stay calm, back away, and know when to use bear spray. Save this! 🐻',
+    tags: '#survival #safety #bear #hiking #howto #shorts',
+    footer: 'General safety info based on US National Park Service guidance: stay calm, do not run, back away slowly, avoid eye contact, never come between a mother and cubs, carry bear spray and store food securely. Local rules vary.',
+    beats: [
+      { vo: 'Meet a bear on the trail? Stay calm, and never run.', time: 'day', cam: { mode: 'dolly', from: [-6, 2.2, 4], to: [-2, 2.2, 9], look: [0, 1.6, 24] }, tags: [{ t: [0.1, 0.95], text: 'STAY CALM', size: 80, bg: '#7cf2c0' }], sfx: ['birds', 'heart@0.4'],
+        actors: [{ id: 'hk', m: 'hiker', at: [-2, 16], face: 190, anim: 'stand', ex: 'shock' }, { id: 'br', m: 'bear', at: [3, 28], face: 200, s: 1.6, c: { a: [120, 76, 44] } }] },
+      { vo: 'Running can trigger a chase. Back away slowly, speaking calmly.', time: 'day', cam: { mode: 'static', at: [-4, 2.4, 6], look: [0, 1.6, 24] }, tags: [{ t: [0.1, 0.95], text: 'BACK AWAY SLOWLY', size: 52, bg: '#ffd23f' }], sfx: ['steps', 'birds@0.6'],
+        actors: [{ id: 'hk', m: 'hiker', at: [0, 20], to: [-2, 12], face: 190, anim: 'walk', ex: 'worried' }, { id: 'br', m: 'bear', at: [2, 30], face: 200, s: 1.6, anim: 'stand', c: { a: [120, 76, 44] } }] },
+      { vo: 'Avoid direct eye contact, and never come between a mother and her cubs.', time: 'day', cam: { mode: 'orbit', target: 'hk', r: 8, h: 2.4, a0: -20, a1: 30 }, tags: [{ t: [0.05, 0.5], text: 'NO EYE CONTACT', size: 62, bg: '#ffb86b' }, { t: [0.5, 0.95], text: 'WATCH FOR CUBS', size: 66, bg: '#ff8a9a' }], sfx: ['birds', 'heart@0.5'],
+        actors: [{ id: 'hk', m: 'hiker', at: [-2, 16], face: 160, anim: 'stand', ex: 'worried' }, { id: 'br', m: 'bear', at: [4, 28], face: 200, s: 1.6, c: { a: [120, 76, 44] } }, { id: 'c1', m: 'bear', at: [8, 26], face: 190, s: 0.7, c: { a: [140, 92, 54] } }, { id: 'c2', m: 'bear', at: [9.5, 28], face: 200, s: 0.6, c: { a: [100, 64, 38] } }] },
+      { vo: "If a bear charges, stand your ground, and use bear spray when it's close.", time: 'day', cam: { mode: 'static', at: [3, 2.4, 6], look: [0, 1.6, 30] }, tags: [{ t: [0.1, 0.95], text: 'BEAR SPRAY AT 30 FEET', size: 44, bg: '#ff6b6b', col: '#ffffff' }], sfx: ['rumble@0.2', 'pop@0.6', 'whoosh@0.6'],
+        actors: [{ id: 'br', m: 'bear', at: [0, 44], to: [0, 27], anim: 'run', s: 1.6, c: { a: [120, 76, 44] } }, { id: 'hk', m: 'hiker', at: [0, 16], face: 190, anim: 'point', ex: 'determined', o: { hold: 'can' } }, { id: 'pf', m: 'puff', at: [0, 20], y: 1.6, s: 1.2, c: { a: [255, 140, 60] }, o: { glow: 1 }, vis: [0.55, 1] }] },
+      { vo: 'Carry bear spray, store food properly, and keep a safe distance from any bear.', set: 'camp', time: 'day', cam: { mode: 'static', at: [3, 2.2, 8], look: [0, 1.6, 26] }, tags: [{ t: [0.1, 0.95], text: 'LOCK UP YOUR FOOD', size: 54, bg: '#7cc4ff' }], sfx: ['birds', 'chime@0.5'],
+        actors: [{ id: 'hk', m: 'hiker', at: [-2, 20], face: 170, anim: 'carry', ex: 'smile', o: { hold: 'crate' } }, { id: 'bl', m: 'barrel', at: [4, 22], s: 1.3, c: { a: 'dark' } }, { id: 'ck', m: 'check', at: [4, 22], y: 4.5, s: 1.4 }] },
+    ] });
+
+  // ---- 37. Gutenberg (cat 27) ----
+  NEW.push({
+    id: 'gutenberg', kind: 'dyk', cat: '27', title: "Gutenberg's Printing Press", set: 'workshop', music: 'wonder',
+    caption: 'How a goldsmith in Mainz made books faster, cheaper, and changed history. 📚',
+    tags: '#didyouknow #history #printingpress #gutenberg #books #shorts',
+    footer: 'Based on Johannes Gutenberg introducing movable-type printing to Europe (Mainz, 1450s) and the 42-line Bible of about 1455 (roughly 180 copies). Movable type had existed earlier in East Asia.',
+    beats: [
+      { vo: 'Before the 1450s, European books were copied by hand, one letter at a time.', time: 'day', cam: { mode: 'dolly', from: [-5, 3, 16], to: [-1, 3, 24], look: [0, 2.4, 40] }, tags: [{ t: [0.1, 0.95], text: 'COPIED BY HAND', size: 60, bg: '#ffb86b' }], sfx: ['clack', 'hum'],
+        actors: [{ id: 'tb', m: 'table', at: [0, 38], face: 180 }, { id: 'sc', m: 'elder', at: [0, 43], face: 180, anim: 'work', ex: 'determined' }, { id: 'bs', m: 'bookstack', at: [-3, 38], y: 1.65, s: 0.8, o: { n: 3 } }] },
+      { vo: 'A single Bible could take a scribe more than a year.', time: 'day', cam: { mode: 'orbit', target: 'sc', r: 7, h: 2.6, a0: -30, a1: 30 }, tags: [{ t: [0.1, 0.95], text: 'OVER A YEAR', size: 80, bg: '#ff8a9a' }], sfx: ['clack', 'hum'],
+        actors: [{ id: 'tb', m: 'table', at: [0, 38], face: 180 }, { id: 'sc', m: 'elder', at: [0, 43], face: 180, anim: 'work', ex: 'determined' }, { id: 'tc', m: 'torch', at: [-3, 38], y: 1.65, s: 0.6 }, { id: 'bs', m: 'bookstack', at: [3, 38], y: 1.65, s: 0.8, o: { n: [1, 9] } }] },
+      { vo: 'In Mainz, Johannes Gutenberg cast tiny metal letters that could be rearranged and reused.', time: 'day', cam: { mode: 'static', at: [4, 3, 22], look: [0, 2.4, 40] }, tags: [{ t: [0.1, 0.95], text: 'MOVABLE METAL TYPE', size: 50, bg: '#7cf2c0' }], sfx: ['clack', 'chime@0.7'],
+        actors: [{ id: 'gu', m: 'gentleman', at: [-3, 40], face: 190, anim: 'work', ex: 'determined', c: { hat: null, coat: 'brown' } }, { id: 'tb', m: 'table', at: [-3, 36], face: 180 }, { id: 'pr', m: 'press', at: [5, 40], face: 180, s: 1.1 }, { id: 'l1', m: 'cube', at: [-4.2, 36], y: 1.65, s: 0.4, c: { a: 'grey' } }, { id: 'l2', m: 'cube', at: [-3.4, 36], y: 1.65, s: 0.4, c: { a: 'silver' } }, { id: 'l3', m: 'cube', at: [-2.6, 36], y: 1.65, s: 0.4, c: { a: 'grey' } }] },
+      { vo: 'Around 1455, he printed about one hundred eighty copies of a famous Bible.', time: 'day', cam: { mode: 'dolly', from: [-6, 3, 18], to: [-1, 3.4, 26], look: [0, 2, 40] }, tags: [{ t: [0.1, 0.95], count: [0, 180], suffix: ' COPIES', size: 76, bg: '#ffd23f' }], sfx: ['clack', 'cheer@0.8'],
+        actors: [{ id: 'pr', m: 'press', at: [0, 48], face: 180 }, { id: 'b1', m: 'bookstack', at: [-9, 38], o: { n: [1, 8] } }, { id: 'b2', m: 'bookstack', at: [-5, 38], o: { n: [1, 8] } }, { id: 'b3', m: 'bookstack', at: [-1, 38], o: { n: [1, 8] } }, { id: 'b4', m: 'bookstack', at: [3, 38], o: { n: [1, 8] } }, { id: 'b5', m: 'bookstack', at: [7, 38], o: { n: [1, 8] } }, { id: 'gu', m: 'gentleman', at: [-6, 32], face: 190, anim: 'celebrate', ex: 'laugh', c: { hat: null, coat: 'brown' } }] },
+      { vo: 'Printing spread across Europe, and books became cheaper, and ideas traveled faster.', set: 'plaza', time: 'day', cam: { mode: 'dolly', from: [-6, 2.4, 2], to: [-2, 2.4, 8], look: [0, 2, 24] }, tags: [{ t: [0.1, 0.95], text: 'IDEAS SPREAD', size: 66, bg: '#7cc4ff' }], sfx: ['crowd', 'chime@0.5', 'birds'],
+        actors: [{ id: 's1', m: 'stall', at: [-12, 24], face: 0, s: 1.2 }, { id: 's2', m: 'stall', at: [12, 24], face: 0, s: 1.2, c: { a: 'blue' } }, { id: 'c1', m: 'crowd', at: [-4, 20], anim: 'look', o: { n: 5, spread: 6, seed: 91 } }, { id: 'c2', m: 'crowd', at: [5, 22], anim: 'look', o: { n: 5, spread: 6, seed: 92 } }, { id: 'gl', m: 'girl', at: [0, 16], face: 190, anim: 'point', ex: 'smile', o: { hold: 'book' } }, { id: 'sp', m: 'sky_sparkle', at: [0, 18], y: 2, s: 2, o: { n: 10 } }] },
+    ] });
+
+  // ---- 38. The first website (cat 28) ----
+  NEW.push({
+    id: 'www', kind: 'tale', cat: '28', title: 'The First Website', set: 'lab', music: 'wonder',
+    caption: 'How a scientist at CERN invented the World Wide Web. 🌐 (True story, told briefly.)',
+    tags: '#truestory #technology #internet #timbernerslee #history #shorts',
+    footer: 'Based on Tim Berners-Lee proposing the World Wide Web at CERN in March 1989, building the first server and browser on a NeXT computer, the first website going public in 1991, and CERN making the web royalty-free in 1993.',
+    beats: [
+      { vo: 'In 1989, Tim Berners-Lee, working at CERN, proposed a way to link documents.', time: 'day', cam: { mode: 'dolly', from: [-5, 3.6, 16], to: [-1, 3.4, 22], look: [0, 2.6, 38] }, tags: [{ t: [0.1, 0.95], text: 'CERN, 1989', size: 70 }], sfx: ['hum', 'chime@0.6'],
+        actors: [{ id: 'tb', m: 'scientist', at: [0, 40], face: 190, anim: 'point', ex: 'determined', c: { hair: 'hairBrown' }, o: { hold: 'plans' } }, { id: 'c1', m: 'computer', at: [-4, 34], y: 2.7, s: 1.4, face: 180 }, { id: 'c2', m: 'computer', at: [4, 34], y: 2.7, s: 1.4, face: 180 }] },
+      { vo: 'Scientists stored information on different computers, and it was hard to find.', time: 'day', cam: { mode: 'static', at: [0, 4, 24], look: [0, 2.8, 36] }, tags: [{ t: [0.1, 0.95], text: 'HARD TO FIND', size: 70, bg: '#ff8a9a' }], sfx: ['beep@0.3', 'drip@0.6'],
+        actors: [{ id: 'c1', m: 'computer', at: [-7, 34], y: 2.7, s: 1.3, face: 180 }, { id: 'c2', m: 'computer', at: [-2.5, 34], y: 2.7, s: 1.3, face: 180 }, { id: 'c3', m: 'computer', at: [2.5, 34], y: 2.7, s: 1.3, face: 180 }, { id: 'c4', m: 'computer', at: [7, 34], y: 2.7, s: 1.3, face: 180 }, { id: 'xm', m: 'xmark', at: [0, 34], y: 6.4, s: 1.4 }, { id: 'a', m: 'scientist', at: [-4, 40], face: 190, anim: 'look', ex: 'worried' }, { id: 'b', m: 'scientist', at: [4, 40], face: 170, anim: 'look', ex: 'worried', c: { hair: 'hairBrown' } }] },
+      { vo: 'He built the first web server and browser on a NeXT computer.', time: 'day', cam: { mode: 'orbit', target: [0, 3.2, 34], r: 9, h: 3, a0: -25, a1: 25 }, tags: [{ t: [0.1, 0.95], text: 'FIRST WEB SERVER', size: 54, bg: '#7cf2c0' }], sfx: ['magic@0.3', 'beep@0.6', 'hum'],
+        actors: [{ id: 'nx', m: 'computer', at: [0, 34], y: 2.7, s: 2, face: 180, o: { next: 1 } }, { id: 'tb', m: 'scientist', at: [0, 41], face: 180, anim: 'type', ex: 'smile', c: { hair: 'hairBrown' } }, { id: 'sp', m: 'sky_sparkle', at: [0, 34], y: 4, s: 1.6, o: { n: 10 } }] },
+      { vo: 'The first website explained the project itself, and went public in 1991.', time: 'day', cam: { mode: 'dolly', from: [-3, 4, 24], to: [0, 3.4, 28], look: [0, 3.4, 34] }, tags: [{ t: [0.1, 0.95], text: 'LIVE IN 1991', size: 80, bg: '#ffd23f' }], sfx: ['chime@0.4', 'magic@0.2'],
+        actors: [{ id: 'cp', m: 'computer', at: [0, 34], y: 2.7, s: 2.4, face: 180 }, { id: 'ck', m: 'check', at: [0, 34], y: 6.8, s: 1.6 }, { id: 'sp', m: 'sky_sparkle', at: [0, 34], y: 4, s: 2, o: { n: 12 } }] },
+      { vo: 'In 1993, CERN made the web free for everyone, and it exploded worldwide.', time: 'day', fx: ['confetti'], cam: { mode: 'orbit', target: [0, 2, 36], r: 10, h: 3, a0: -30, a1: 30 }, tags: [{ t: [0.1, 0.95], text: 'FREE FOR EVERYONE', size: 50, bg: '#7cf2c0' }], sfx: ['cheer', 'chime@0.5'],
+        actors: [{ id: 'pl', m: 'planet', at: [0, 46], y: 9, o: { r: 5 } }, { id: 'c1', m: 'computer', at: [-6, 34], y: 2.7, s: 1.3, face: 180 }, { id: 'c2', m: 'computer', at: [6, 34], y: 2.7, s: 1.3, face: 180 }, { id: 'a', m: 'scientist', at: [-3, 40], face: 190, anim: 'celebrate', ex: 'laugh' }, { id: 'b', m: 'scientist', at: [3, 40], face: 170, anim: 'celebrate', ex: 'laugh', c: { hair: 'hairBrown' } }] },
+    ] });
+
+  // ---- 39. Bruno's Honey Day (cat 1, fiction) ----
+  NEW.push({
+    id: 'brunohoney', kind: 'fiction', cat: '1', title: "Bruno's Honey Day", set: 'forest', music: 'fun',
+    caption: 'A hungry bear, a beehive, and a very sweet surprise. 🐻🍯 (This is a made-up story.)',
+    tags: '#shortstory #fiction #animatedstory #bear #cozy #shorts',
+    footer: 'A fictional story, written for entertainment.',
+    beats: [
+      { vo: 'Bruno the bear woke up hungry on a sunny morning.', time: 'dawn', cam: { mode: 'dolly', from: [-6, 2.2, 4], to: [-2, 2.2, 9], look: [0, 1.4, 22] }, tags: [{ t: [0.1, 0.95], text: 'A SUNNY MORNING', size: 52 }], sfx: ['birds', 'chime@0.5'],
+        actors: [{ id: 'br', m: 'bear', at: [0, 20], face: 190, s: 1.5, anim: 'stand', c: { a: [130, 80, 44] } }, { id: 'tr', m: 'tree', at: [-8, 26], s: 1.2 }] },
+      { vo: 'He smelled something sweet and followed it through the trees to a hive.', time: 'day', cam: { mode: 'track', target: 'br', off: [5, 2.4, -8] }, tags: [{ t: [0.1, 0.95], text: 'SOMETHING SWEET', size: 60, bg: '#ffd23f' }], sfx: ['steps', 'buzz@0.6'],
+        actors: [{ id: 'br', m: 'bear', at: [-3, 14], to: [3, 34], s: 1.5, anim: 'walk', c: { a: [130, 80, 44] } }, { id: 'hv', m: 'hive', at: [4, 38], face: 0, s: 1.6 }] },
+      { vo: 'The bees buzzed angrily, and Bruno ran away with an empty paw.', time: 'day', cam: { mode: 'static', at: [3, 2.6, 6], look: [0, 1.8, 28] }, tags: [{ t: [0.1, 0.95], text: 'OUCH! BEES!', size: 70, bg: '#ff6b6b', col: '#ffffff' }], sfx: ['buzz', 'thud@0.5'],
+        actors: [{ id: 'hv', m: 'hive', at: [0, 34], face: 0, s: 1.6 }, { id: 'sw', m: 'swarm', at: [0, 28], y: 2.6, o: { n: 10, r: 2 } }, { id: 'br', m: 'bear', at: [0, 24], to: [-2, 10], s: 1.5, anim: 'run', c: { a: [130, 80, 44] } }] },
+      { vo: 'Then a little girl offered him a jar of honey, and shared it.', set: 'meadow', time: 'day', cam: { mode: 'orbit', target: 'br', r: 7, h: 2, a0: -25, a1: 25 }, tags: [{ t: [0.1, 0.95], text: "LET'S SHARE", size: 78, bg: '#7cf2c0' }], sfx: ['chime@0.4', 'birds'],
+        actors: [{ id: 'br', m: 'bear', at: [-1.8, 18], face: 190, s: 1.5, c: { a: [130, 80, 44] } }, { id: 'gl', m: 'girl', at: [1.8, 18], face: 170, anim: 'carry', ex: 'smile', o: { hold: 'jar' } }, { id: 'hr', m: 'heart', at: [0, 18], y: 4.2, s: 1.2 }] },
+      { vo: 'Bruno was happy, and next morning he left her a bouquet of flowers.', set: 'meadow', time: 'dawn', cam: { mode: 'static', at: [-4, 2, 6], look: [2, 1.2, 22] }, tags: [{ t: [0.1, 0.95], text: 'A THANK-YOU GIFT', size: 52, bg: '#ffb0c0' }], sfx: ['birds', 'chime@0.6'],
+        actors: [{ id: 'hs', m: 'house', at: [6, 30], face: 0, s: 1.2 }, { id: 'f1', m: 'flower', at: [3, 22], s: 2, c: { a: 'pink' } }, { id: 'f2', m: 'flower', at: [4, 23], s: 2, c: { a: 'yellow' } }, { id: 'f3', m: 'flower', at: [5, 22], s: 2, c: { a: 'red' } }, { id: 'br', m: 'bear', at: [-4, 16], to: [1, 21], s: 1.5, c: { a: [130, 80, 44] } }, { id: 'gl', m: 'girl', at: [6, 24], face: 170, anim: 'wave', ex: 'laugh', vis: [0.5, 1] }, { id: 'hr', m: 'heart', at: [6, 24], y: 4.2, s: 1.0, vis: [0.6, 1] }] },
+    ] });
+
+  // ---- 40. Beep and the Little Bird (cat 1, fiction) ----
+  NEW.push({
+    id: 'beepbird', kind: 'fiction', cat: '1', title: 'Beep and the Little Bird', set: 'meadow', music: 'hope',
+    caption: 'A kind old robot and a baby bird that needed help. 🤖🐦 (This is a made-up story.)',
+    tags: '#shortstory #fiction #animatedstory #robot #cozy #shorts',
+    footer: 'A fictional story, written for entertainment.',
+    beats: [
+      { vo: 'Beep was an old robot who tidied the quiet park every morning.', time: 'dawn', cam: { mode: 'dolly', from: [-5, 2, 4], to: [-1.5, 2, 9], look: 'rb' }, tags: [{ t: [0.1, 0.95], text: 'BEEP, THE ROBOT', size: 56 }], sfx: ['hum@0.1', 'birds'],
+        actors: [{ id: 'rb', m: 'robot', at: [0, 18], face: 190, anim: 'work', ex: 'smile' }, { id: 'bn', m: 'bench', at: [5, 20], face: 180 }, { id: 'lp', m: 'lamp', at: [-6, 22] }] },
+      { vo: 'One day, he found a baby bird that had fallen from its nest.', time: 'day', cam: { mode: 'static', at: [3, 1.8, 6], look: [0, 1, 20] }, tags: [{ t: [0.1, 0.95], text: 'A TINY BIRD', size: 70, bg: '#ffd23f' }], sfx: ['chime@0.5', 'pop@0.2'],
+        actors: [{ id: 'rb', m: 'robot', at: [0, 18], face: 190, anim: 'look', ex: 'shock' }, { id: 'bd', m: 'bird', at: [0.8, 18.8], y: 0, s: 1.4, face: 180, o: { perch: 1 } }, { id: 'tr', m: 'tree', at: [4, 30], s: 1.6 }] },
+      { vo: 'Beep carefully lifted it up as high as he could reach.', time: 'day', cam: { mode: 'dolly', from: [-4, 2, 8], to: [-1, 2.4, 12], look: [2, 3, 28] }, tags: [{ t: [0.1, 0.95], text: 'AS HIGH AS HE CAN', size: 50, bg: '#7cc4ff' }], sfx: ['beep@0.4', 'birds'],
+        actors: [{ id: 'tr', m: 'tree', at: [4, 30], s: 1.6 }, { id: 'rb', m: 'robot', at: [3.6, 26], face: 180, anim: 'wave', ex: 'determined' }, { id: 'bd', m: 'bird', at: [3.6, 26], y: 3.6, s: 1.2, face: 180, o: { perch: 1 } }, { id: 'nt', m: 'cube', at: [4, 29.6], y: 8.5, s: 1.8, c: { a: 'brown' } }] },
+      { vo: "It wasn't enough, so he stacked crates until the nest was in reach.", time: 'day', cam: { mode: 'static', at: [0, 3, 4], look: [3, 5, 28] }, tags: [{ t: [0.1, 0.95], text: 'STACKING CRATES', size: 56, bg: '#ffb86b' }], sfx: ['clack@0.2', 'clack@0.5', 'clack@0.8'],
+        actors: [{ id: 'tr', m: 'tree', at: [4, 30], s: 1.6 }, { id: 'c1', m: 'crate', at: [3.6, 26], s: 1.6, vis: [0.1, 1] }, { id: 'c2', m: 'crate', at: [3.6, 26], y: 1.6, s: 1.4, vis: [0.35, 1] }, { id: 'c3', m: 'crate', at: [3.6, 26], y: 3.0, s: 1.2, vis: [0.6, 1] }, { id: 'rb', m: 'robot', at: [3.6, 26], y: [0, 4.2], face: 180, anim: 'wave', ex: 'determined' }, { id: 'bd', m: 'bird', at: [3.6, 26.4], y: [3.8, 8], s: 1.2, face: 180, o: { perch: 1 } }, { id: 'nt', m: 'cube', at: [4, 29.6], y: 8.5, s: 1.8, c: { a: 'brown' } }] },
+      { vo: 'The bird chirped happily, and every morning after, it sang just for Beep.', time: 'dusk', fx: ['rainbow'], cam: { mode: 'orbit', target: 'rb', r: 7, h: 2.2, a0: -30, a1: 30 }, tags: [{ t: [0.1, 0.95], text: 'A SONG FOR BEEP', size: 60, bg: '#7cf2c0' }], sfx: ['birds', 'chime@0.5'],
+        actors: [{ id: 'tr', m: 'tree', at: [4, 30], s: 1.6 }, { id: 'rb', m: 'robot', at: [0, 18], face: 190, anim: 'celebrate', ex: 'laugh' }, { id: 'bd', m: 'bird', at: [3.6, 28], y: 8.5, s: 1.4, face: 180, o: { perch: 1 } }, { id: 'sp', m: 'sky_sparkle', at: [3.6, 28], y: 8, s: 1.4, o: { n: 8 } }, { id: 'hr', m: 'heart', at: [0, 18], y: 4.2, s: 1.2 }] },
+    ] });
+
+  NEW.forEach((s) => STORIES.push(s));
+})();
