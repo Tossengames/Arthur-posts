@@ -62,6 +62,15 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "beepbird",
+      "kind": "fiction",
+      "date": "2026-11-08",
+      "yt_id": "lGibefKTZzc",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
