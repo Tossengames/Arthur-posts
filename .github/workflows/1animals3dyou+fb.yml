@@ -26,7 +26,7 @@ on:
         default: "public"
         options: [public, unlisted, private]
   schedule:
-    - cron: "0 17 * * *"   # checks every day at 17:00 UTC, but only posts when MIN_DAYS_BETWEEN_POSTS has passed
+  #  - cron: "0 17 * * *"   # checks every day at 17:00 UTC, but only posts when MIN_DAYS_BETWEEN_POSTS has passed
 
 env:
   MIN_DAYS_BETWEEN_POSTS: "3"   # 1 = every day, 2 = every other day, 3 = every 3 days
