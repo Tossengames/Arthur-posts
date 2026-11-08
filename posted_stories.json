@@ -8,6 +8,15 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "gardener",
+      "kind": "fiction",
+      "date": "2026-11-08",
+      "yt_id": "6YMmuZ4PGpk",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
