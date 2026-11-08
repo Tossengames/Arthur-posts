@@ -44,6 +44,15 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "wrightflight",
+      "kind": "tale",
+      "date": "2026-11-08",
+      "yt_id": "_nFqxbTc-hg",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
