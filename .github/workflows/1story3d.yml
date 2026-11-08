@@ -172,14 +172,22 @@ jobs:
 
           # ── YOUTUBE SETTINGS ────────────────────────────────────
           YT_DEFAULT_PRIVACY    = "public"     # public, unlisted or private (manual runs can override)
-          YT_CATEGORY_ID        = "22"         # 22 = People & Blogs (story shorts)
           YT_TITLE_SUFFIX       = " #Shorts"
           YT_TITLE_FROM_CAPTION = True         # use the first sentence of the caption as the title when it is short enough
           YT_EXTRA_TAGS         = ["stories", "true stories", "did you know", "story shorts", "interesting facts", "storytime"]
           YT_FOOTER             = "New story short every day. Subscribe so you don't miss one."
           YT_COMMENT            = "Did you learn something new? Tell us below \U0001F447"
           YT_PLAYLIST_KEY       = "story_shorts"   # optional: add {"story_shorts": "PLAYLIST_ID"} to the YT_PLAYLISTS secret
-          THUMB_TIME            = 1.2               # seconds into the video used as the thumbnail
+          THUMB_TIME            = 1.2               # seconds into the video used as the thumbnail (the first label is on screen by then)
+
+          # One category per content kind, so each story type lands in the right YouTube shelf
+          YT_CATEGORY_BY_KIND = {
+              "tale":     "24",   # Entertainment  – true stories / storytime
+              "fiction":  "24",   # Entertainment  – made-up stories
+              "dyk":      "27",   # Education      – did-you-know facts
+              "survival": "27",   # Education      – "what to do if..."
+          }
+          YT_CATEGORY_DEFAULT = "24"   # fallback if a kind isn't listed
 
           CTA_POOL = []   # no call to comment: the videos end on the story
 
@@ -353,12 +361,14 @@ jobs:
             )
             youtube = build("youtube", "v3", credentials=creds)
             title, desc, tags, comment = yt_build_text(info)
+            category_id = YT_CATEGORY_BY_KIND.get(info["kind"], YT_CATEGORY_DEFAULT)
             print(f"  YouTube title: {title}")
+            print(f"  YouTube category: {category_id} (kind={info['kind']})")
 
             request = youtube.videos().insert(
               part="snippet,status",
               body={
-                "snippet": {"title": title, "description": desc, "tags": tags, "categoryId": YT_CATEGORY_ID,
+                "snippet": {"title": title, "description": desc, "tags": tags, "categoryId": category_id,
                             "defaultLanguage": "en", "defaultAudioLanguage": "en"},
                 "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False},
               },
