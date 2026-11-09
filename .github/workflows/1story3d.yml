@@ -1,10 +1,10 @@
-name: 🎬 Post Story Short to YouTube
+name: 🎬 Post Story Short to Facebook + YouTube
 
 # ─────────────────────────────────────────────────────────────
 #  EASY SETTINGS (change these here, no need to touch the code below)
 # ─────────────────────────────────────────────────────────────
 env:
-  BGMUSIC_DIR: bgmusic2y        # folder in the repo with your music files for YouTube (mp3, wav, m4a...). Empty folder or missing = built-in soft score is used
+  BGMUSIC_DIR: bgmusic2y        # folder in the repo with your music files (mp3, wav, m4a...). Empty folder or missing = built-in soft score is used
   BGMUSIC_VOLUME: "0.18"        # music loudness under the voice (0.05 quiet ... 0.4 loud)
   KOKORO_VOICE: af_heart        # best default voice. Others: af_bella, af_nicole, am_michael, bf_emma, bm_george
   EDGE_VOICE: en-US-AriaNeural  # fallback voice. Others: en-US-AndrewNeural, en-US-GuyNeural, en-GB-SoniaNeural
@@ -36,7 +36,10 @@ on:
         default: "public"
         options: [public, unlisted, private]
   schedule:
-    - cron: "0 17 * * *"   # once a day at 17:00 UTC
+    # Two daily runs, both aimed at US peak windows.
+    # Times are UTC; the comments show the US Eastern equivalent.
+    - cron: "17 19 * * *"   # 19:17 UTC = 3:17 PM EDT / 2:17 PM EST  (US afternoon break)
+    - cron: "17 0 * * *"    # 00:17 UTC = 8:17 PM EDT / 7:17 PM EST  (US evening scroll)
 
 permissions:
   contents: write
@@ -138,7 +141,7 @@ jobs:
             echo "Voice model already cached."
           fi
 
-      - name: Render and Post to YouTube
+      - name: Render and Post (Facebook + YouTube)
         run: |
           python3 << 'PYEOF'
           import os, sys, json, math, time, random, subprocess, base64, re, glob, tempfile, asyncio, datetime
@@ -149,16 +152,16 @@ jobs:
 
           FPS              = 30
           MAX_LEN          = float(os.environ.get("MAX_LEN", "29.5") or 29.5)
-          TARGET_MB        = 40                        # aim for this file size
-          LIMIT_MB         = 48                        # hard limit: re-encode smaller if above this
+          TARGET_MB        = 40
+          LIMIT_MB         = 48
           AUDIO_BPS        = 128000
-          RATES            = ["+0%", "+8%", "+15%", "+22%"]   # voice speed tried in order until the video fits
+          RATES            = ["+0%", "+8%", "+15%", "+22%"]
           MUSIC_EXTENSIONS = ["mp3", "wav", "m4a", "mp4", "aac", "ogg", "flac", "wma", "opus"]
           BGMUSIC_DIR      = (os.environ.get("BGMUSIC_DIR", "") or "").strip()
           BGMUSIC_VOLUME   = float(os.environ.get("BGMUSIC_VOLUME", "0.18") or 0.18)
           PIPER_BIN        = str(Path.home() / ".cache/piper/piper")
           PIPER_VOICE      = str(Path.home() / ".cache/piper/en_US-jenny_dioco-medium.onnx")
-          TTS_ENGINE       = (os.environ.get("TTS_ENGINE", "") or "auto").strip().lower()   # auto | kokoro | edge | piper
+          TTS_ENGINE       = (os.environ.get("TTS_ENGINE", "") or "auto").strip().lower()
           VOICE_PICK       = os.environ.get("TTS_VOICE", "").strip()
           EDGE_VOICE       = VOICE_PICK if (TTS_ENGINE == "edge" and VOICE_PICK) else (os.environ.get("EDGE_VOICE", "") or "en-US-AriaNeural")
           KOKORO_VOICE     = VOICE_PICK if (TTS_ENGINE == "kokoro" and VOICE_PICK) else (os.environ.get("KOKORO_VOICE", "") or "af_heart")
@@ -170,26 +173,28 @@ jobs:
           POSTED_FILE      = Path("posted_stories.json")
           OUT_DIR          = Path("out"); OUT_DIR.mkdir(exist_ok=True)
 
+          # ── FACEBOOK ────────────────────────────────────────────
+          FB_API_VERSION = "v18.0"
+
           # ── YOUTUBE SETTINGS ────────────────────────────────────
-          YT_DEFAULT_PRIVACY    = "public"     # public, unlisted or private (manual runs can override)
+          YT_DEFAULT_PRIVACY    = "public"
           YT_TITLE_SUFFIX       = " #Shorts"
-          YT_TITLE_FROM_CAPTION = True         # use the first sentence of the caption as the title when it is short enough
+          YT_TITLE_FROM_CAPTION = True
           YT_EXTRA_TAGS         = ["stories", "true stories", "did you know", "story shorts", "interesting facts", "storytime"]
           YT_FOOTER             = "New story short every day. Subscribe so you don't miss one."
           YT_COMMENT            = "Did you learn something new? Tell us below \U0001F447"
-          YT_PLAYLIST_KEY       = "story_shorts"   # optional: add {"story_shorts": "PLAYLIST_ID"} to the YT_PLAYLISTS secret
-          THUMB_TIME            = 1.2               # seconds into the video used as the thumbnail (the first label is on screen by then)
+          YT_PLAYLIST_KEY       = "story_shorts"
+          THUMB_TIME            = 1.2
 
-          # One category per content kind, so each story type lands in the right YouTube shelf
           YT_CATEGORY_BY_KIND = {
-              "tale":     "24",   # Entertainment  – true stories / storytime
-              "fiction":  "24",   # Entertainment  – made-up stories
-              "dyk":      "27",   # Education      – did-you-know facts
-              "survival": "27",   # Education      – "what to do if..."
+              "tale":     "24",   # Entertainment
+              "fiction":  "24",   # Entertainment
+              "dyk":      "27",   # Education
+              "survival": "27",   # Education
           }
-          YT_CATEGORY_DEFAULT = "24"   # fallback if a kind isn't listed
+          YT_CATEGORY_DEFAULT = "24"
 
-          CTA_POOL = []   # no call to comment: the videos end on the story
+          CTA_POOL = []
 
           # ── POSTED MEMORY ───────────────────────────────────────
           def load_hist():
@@ -201,28 +206,56 @@ jobs:
           def save_hist(hist):
             POSTED_FILE.write_text(json.dumps({"posted": hist}, indent=2) + "\n")
 
-          # content types picked at random from the pool. tale = true stories, dyk = did-you-know facts,
-          # survival = "what to do if...", fiction = short made-up stories
           KIND_WEIGHTS = {"tale": 3, "dyk": 3, "survival": 2.5, "fiction": 1.5}
 
           def pick_topic(ids, kinds, hist):
             last_kind = hist[-1].get("kind") if hist else None
             avail = sorted(set(kinds.values()))
-            cands = [k for k in avail if k != last_kind] or avail      # never the same type twice in a row
+            cands = [k for k in avail if k != last_kind] or avail
             want = random.choices(cands, [KIND_WEIGHTS.get(k, 1) for k in cands])[0]
             pool = [i for i in ids if kinds.get(i) == want] or ids
             used = []
-            for rec in reversed(hist):                # go through the whole pool before anything repeats
+            for rec in reversed(hist):
               if rec.get("id") not in pool: continue
               if rec.get("id") in used: break
               used.append(rec.get("id"))
             if len(set(used)) >= len(pool): used = []
             remaining = [i for i in pool if i not in used] or pool
             last_id = hist[-1].get("id") if hist else None
-            remaining = [i for i in remaining if i != last_id] or remaining      # never the video that was just posted
+            remaining = [i for i in remaining if i != last_id] or remaining
             return random.choice(remaining)
 
-          # ── VOICE (Kokoro first, then Edge, then Piper) ───────────
+          # ── FACEBOOK CAPTIONS (SRT) ─────────────────────────────
+          def srt_time(t):
+            t = max(0.0, t); h = int(t // 3600); m = int(t % 3600 // 60); sec = t % 60
+            return f"{h:02d}:{m:02d}:{int(sec):02d},{int(round((sec - int(sec)) * 1000)):03d}"
+
+          def build_srt(lines, starts, durs):
+            cues, n = [], 1
+            for line, st, du in zip(lines, starts, durs):
+              if not line or du <= 0: continue
+              parts = [p.strip() for p in re.split(r'(?<=[.!?])\s+', line) if p.strip()]
+              total_chars = sum(len(p) for p in parts) or 1
+              t = st
+              for p in parts:
+                d = du * len(p) / total_chars
+                cues.append(f"{n}\n{srt_time(t)} --> {srt_time(t + d - 0.05)}\n{p}\n"); n += 1; t += d
+            return "\n".join(cues)
+
+          def upload_captions(video_id, token, info, starts, durs):
+            lines = info["vo"]
+            if not any(lines): return
+            srt = build_srt(lines, starts, durs)
+            (OUT_DIR / "reel.en_US.srt").write_text(srt, encoding="utf-8")
+            try:
+              r = requests.post(f"https://graph-video.facebook.com/{FB_API_VERSION}/{video_id}/captions",
+                                data={"access_token": token, "default_locale": "en_US"},
+                                files={"captions_file": ("reel.en_US.srt", srt.encode("utf-8"), "text/plain")})
+              print(f"Facebook captions: {r.status_code} {r.text[:120]}")
+            except Exception as e:
+              print(f"Facebook captions failed (not fatal): {e}")
+
+          # ── VOICE ──────────────────────────────────────────────
           def clean_for_tts(text):
             text = text.replace('\u2014', ', ').replace('\u2013', ', ')
             text = text.replace('*', '').replace('#', '').replace('_', '')
@@ -287,7 +320,7 @@ jobs:
           def synthesise(text, out_wav):
             text = clean_for_tts(text)
             if not text: return False
-            for eng in ORDER.get(TTS_ENGINE, ORDER["auto"]):     # a single chosen engine has NO fallback, so you hear exactly that voice
+            for eng in ORDER.get(TTS_ENGINE, ORDER["auto"]):
               print(f"  Speaking with {eng} ({EDGE_RATE}): '{text[:60]}{'...' if len(text) > 60 else ''}'")
               for _ in range(2 if eng == "edge" else 1):
                 if ENGINES[eng](text, out_wav):
@@ -316,7 +349,6 @@ jobs:
           def size_mb(path):
             return os.path.getsize(path) / 1048576
 
-          # ── MUSIC (optional: your licensed tracks in the folder set at the top of this file: BGMUSIC_DIR) ──
           def pick_music(base="."):
             found = []
             if BGMUSIC_DIR:
@@ -332,7 +364,25 @@ jobs:
             d = duration_of(path)
             return random.uniform(0, max(0, d - 12)) if d > 15 else 0
 
-          # ── YOUTUBE UPLOADER ────────────────────────────────────
+          def post_facebook(video_path, info, token, page_id):
+            description = f"{info['caption']}\n\n{info['tags']}\n\n{info['footer']}"
+            thumb = OUT_DIR / "thumb.jpg"
+            with open(video_path, "rb") as f:
+              files = {"source": ("reel.mp4", f, "video/mp4")}
+              thumb_f = open(thumb, "rb") if thumb.exists() else None
+              if thumb_f: files["thumb"] = ("thumb.jpg", thumb_f, "image/jpeg")
+              try:
+                response = requests.post(
+                  f"https://graph-video.facebook.com/{FB_API_VERSION}/{page_id}/videos",
+                  data={"description": description, "access_token": token},
+                  files=files, timeout=900)
+              finally:
+                if thumb_f: thumb_f.close()
+            print(f"  Facebook response: {response.status_code}")
+            if response.status_code != 200:
+              raise RuntimeError(f"Facebook post failed: {response.text}")
+            return response.json().get("id")
+
           def yt_build_text(info):
             hook = re.sub(r"[<>]", "", info["title"]).strip()
             if YT_TITLE_FROM_CAPTION:
@@ -381,14 +431,13 @@ jobs:
             vid = response.get("id", "")
             print(f"  Uploaded: https://youtube.com/shorts/{vid}")
 
-            # nice-to-haves: a failure in any of these never fails the upload
             thumb = OUT_DIR / "thumb.jpg"
             if thumb.exists():
               try:
                 youtube.thumbnails().set(videoId=vid, media_body=MediaFileUpload(str(thumb), mimetype="image/jpeg")).execute()
                 print("  Thumbnail set")
               except Exception as ex:
-                print(f"::warning::YouTube thumbnail failed (channel may need verifying): {ex}")
+                print(f"::warning::YouTube thumbnail failed: {ex}")
             for attempt in range(4):
               try:
                 time.sleep(20)
@@ -413,22 +462,46 @@ jobs:
               print(f"::warning::YouTube playlist add failed: {ex}")
             return vid
 
-          # ── DECIDE WHETHER TO RUN ─────────────────────────────
-          today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+          # ── DECIDE WHETHER TO RUN (2 slots per day) ──────────
+          # Two cron jobs per day. Each run should only post once per slot,
+          # not once per calendar day anymore. We detect the current slot
+          # (based on the UTC hour) and skip if that slot was already posted today.
+          now = datetime.datetime.utcnow()
+          today = now.strftime("%Y-%m-%d")
           event = os.environ.get("GITHUB_EVENT_NAME", "")
           dry   = os.environ.get("DRY_RUN", "false").lower() == "true"
           hist  = load_hist()
-          if event == "schedule" and any(r.get("date") == today for r in hist):
-            print(f"Already posted today ({today}). Nothing to do.")
+
+          # Slot A = 19:17 UTC (US afternoon). Slot B = 00:17 UTC (US evening).
+          # Anything else (manual dispatch, weird hours) => slot "manual" (no dedupe).
+          slot = "A" if 18 <= now.hour < 24 else ("B" if 0 <= now.hour < 6 else "manual")
+
+          def slot_used_today(slot_code):
+            for r in hist:
+              if r.get("date") != today: continue
+              if r.get("slot") == slot_code: return True
+              # Backwards compat: older records have no slot but have a date.
+              # If we see a "no slot" record for today and slot_code == "B",
+              # treat it as the previous single-post day (skip to avoid double posts).
+              if "slot" not in r and slot_code == "B": return True
+            return False
+
+          if event == "schedule" and slot != "manual" and slot_used_today(slot):
+            print(f"Slot {slot} already posted today ({today}). Nothing to do.")
             sys.exit(0)
 
+          fb_token   = os.environ.get("FB_PAGE_TOKEN")
+          fb_page_id = os.environ.get("FB_PAGE_ID")
           yt_privacy = (os.environ.get("YT_PRIVACY") or YT_DEFAULT_PRIVACY).strip().lower()
           if yt_privacy not in ("public", "unlisted", "private"): yt_privacy = "public"
 
+          fb_enabled = bool(fb_token and fb_page_id)
           yt_enabled = all(os.environ.get(k) for k in ("YT_REFRESH_TOKEN", "YT_CLIENT_ID", "YT_CLIENT_SECRET"))
-          print(f"YouTube configured: {yt_enabled} (privacy: {yt_privacy})")
-          if not dry and not yt_enabled:
-            raise RuntimeError("YouTube secrets missing: set YT_REFRESH_TOKEN, YT_CLIENT_ID, YT_CLIENT_SECRET (and optionally YT_ACCESS_TOKEN)")
+          print(f"Facebook configured: {fb_enabled} | YouTube configured: {yt_enabled} (privacy: {yt_privacy}) | slot: {slot}")
+          if not dry and not fb_enabled and not yt_enabled:
+            raise RuntimeError("No platform configured: set FB_PAGE_TOKEN + FB_PAGE_ID and/or YT_REFRESH_TOKEN + YT_CLIENT_ID + YT_CLIENT_SECRET")
+          if not dry and not fb_enabled: print("::warning::Facebook secrets missing - skipping Facebook")
+          if not dry and not yt_enabled: print("::warning::YouTube secrets missing - skipping YouTube")
 
           # ── OPEN THE PAGE, PICK THE STORY ─────────────────────
           opts = Options()
@@ -454,7 +527,7 @@ jobs:
           info = driver.execute_script("return window.loadTopic(arguments[0]);", topic_id)
           print(f"Topic: {info['id']} ({info['kind']}) | {info['title']} | voice engine setting: {TTS_ENGINE}")
 
-          # ── VOICE: one line per beat; speed up automatically if the reel would pass MAX_LEN ──
+          # ── VOICE + RENDER ────────────────────────────────────
           vo = info["vo"]
           cta_text = None
           voice_wav = None
@@ -492,7 +565,6 @@ jobs:
               voice_wav = os.path.join(OUT_DIR, "voice.wav")
               if not concat_wavs(parts, voice_wav): voice_wav = None
 
-            # ── THUMBNAIL: a real frame from the video ──
             try:
               t_thumb = max(0.0, min(THUMB_TIME, total - 0.5))
               (OUT_DIR / "thumb.jpg").write_bytes(base64.b64decode(driver.execute_script("return window.frameJPEG(arguments[0]);", t_thumb)))
@@ -500,10 +572,8 @@ jobs:
             except Exception as e:
               print(f"::warning::Thumbnail capture failed: {e}")
 
-            # ── MUSIC FIRST (so the page can skip its own soft score when your track is used) ──
             music = pick_music()
 
-            # ── SOUND EFFECTS (+ built-in score only if no music file) ──
             print("Rendering sound effects...")
             b64a = driver.execute_async_script("""
               var done = arguments[0];
@@ -516,7 +586,6 @@ jobs:
               print("SFX render failed - using silence")
               subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", f"{total:.3f}", "-f", "s16le", sfx_raw], capture_output=True)
 
-            # ── ENCODE: 720x1280 frames -> 1080x1920 reel at a fixed bitrate so the file stays small ──
             vbr = int(max(900000, min(6000000, (TARGET_MB * 8 * 1048576) / total - AUDIO_BPS)))
             print(f"Video bitrate target: {vbr/1000:.0f} kbps")
             cmd = ["ffmpeg", "-y", "-f", "image2pipe", "-framerate", str(FPS), "-c:v", "mjpeg", "-i", "-",
@@ -557,7 +626,6 @@ jobs:
               raise RuntimeError("Encoding failed")
             print(f"Reel: {size_mb(final_mp4):.1f} MB")
 
-            # ── SAFETY NET: if it is still too big, squeeze it until it fits ──
             tries = 0
             while size_mb(final_mp4) > LIMIT_MB and tries < 5:
               vbr = int(vbr * 0.7); tries += 1
@@ -579,16 +647,43 @@ jobs:
             print("Dry run: not posting.")
             sys.exit(0)
 
-          # ── POST TO YOUTUBE ─────────────────────────────────
-          print("Posting to YouTube...")
-          yt_id = post_youtube(final_mp4, info, yt_privacy)
-          print(f"YouTube posted! ID: {yt_id}")
+          # ── POST TO BOTH (independent) ────────────────────────
+          fb_id = yt_id = None
+          errors = []
 
-          hist.append({"id": info["id"], "kind": info["kind"], "date": today, "yt_id": yt_id, "tts": ENGINES_USED})
-          save_hist(hist)
-          print("Remembered topic in posted_stories.json. Done!")
+          if fb_enabled:
+            print("Posting to Facebook...")
+            try:
+              fb_id = post_facebook(final_mp4, info, fb_token, fb_page_id)
+              print(f"  Facebook posted! ID: {fb_id}")
+              upload_captions(fb_id, fb_token, info, starts, durs)
+            except Exception as e:
+              errors.append(f"Facebook: {e}")
+              print(f"::error::Facebook failed: {e}")
+
+          if yt_enabled:
+            print("Posting to YouTube...")
+            try:
+              yt_id = post_youtube(final_mp4, info, yt_privacy)
+              print(f"  YouTube posted! ID: {yt_id}")
+            except Exception as e:
+              errors.append(f"YouTube: {e}")
+              print(f"::error::YouTube failed: {e}")
+
+          if fb_id or yt_id:
+            hist.append({"id": info["id"], "kind": info["kind"], "date": today,
+                         "slot": slot, "fb_id": fb_id, "yt_id": yt_id, "tts": ENGINES_USED})
+            save_hist(hist)
+            print(f"Remembered topic in posted_stories.json (slot {slot}).")
+
+          if errors:
+            print("Finished with errors: " + " | ".join(errors))
+            sys.exit(1)
+          print("Done!")
           PYEOF
         env:
+          FB_PAGE_TOKEN:    ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID:       ${{ secrets.FB_PAGE_ID }}
           YT_ACCESS_TOKEN:  ${{ secrets.YT_ACCESS_TOKEN }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           YT_CLIENT_ID:     ${{ secrets.YT_CLIENT_ID }}
@@ -609,7 +704,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "Nothing new to remember."
           else
-            git commit -m "Remember posted story topic"
+            git commit -m "Remember posted story topic [slot]"
             git pull --rebase origin "${GITHUB_REF_NAME}" || true
             git push
           fi
