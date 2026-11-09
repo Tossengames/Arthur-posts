@@ -107,6 +107,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "subway",
+      "kind": "tale",
+      "date": "2026-11-09",
+      "slot": "A",
+      "fb_id": "1856652455471828",
+      "yt_id": "PIrVjlhJoBI",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
