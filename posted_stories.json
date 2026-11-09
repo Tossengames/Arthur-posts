@@ -71,6 +71,15 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "lightning",
+      "kind": "survival",
+      "date": "2026-11-09",
+      "yt_id": "kHZqkwvGj2E",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
