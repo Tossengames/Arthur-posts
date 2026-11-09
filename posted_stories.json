@@ -98,6 +98,15 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "paperboat",
+      "kind": "fiction",
+      "date": "2026-11-09",
+      "yt_id": "RFhkMopv8dE",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
