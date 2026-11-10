@@ -118,6 +118,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "wombat",
+      "kind": "dyk",
+      "date": "2026-11-10",
+      "slot": "B",
+      "fb_id": "2971114803244841",
+      "yt_id": "H4cqxOf2fq0",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
