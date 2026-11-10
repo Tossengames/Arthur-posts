@@ -140,6 +140,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "woodweb",
+      "kind": "dyk",
+      "date": "2026-11-10",
+      "slot": "A",
+      "fb_id": "4687387671582123",
+      "yt_id": "v_sMDA0vy-A",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
