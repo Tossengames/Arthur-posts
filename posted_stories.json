@@ -129,6 +129,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "fleming",
+      "kind": "tale",
+      "date": "2026-11-10",
+      "slot": "manual",
+      "fb_id": "2104101763551585",
+      "yt_id": "kuoTWFG78dM",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
