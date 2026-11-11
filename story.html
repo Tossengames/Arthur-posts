@@ -188,7 +188,7 @@ const HP = {
   robot: { robot: 1, skin: 'silver', shirt: 'grey', pants: 'dark', shoes: 'black', hs: 'bald', k: 0.95 },
 };
 function mkHuman(cf, ex, bl) {
-  const U = 0.1, skin = colr(cf.skin), hair = colr(cf.hair), shirt = colr(cf.shirt), pants = colr(cf.pants), shoe = colr(cf.shoes), K = [26, 20, 34], WH = [252, 252, 255], MO = [196, 56, 70];
+  const U = 0.1, skin = colr(cf.skin), hair = colr(cf.hair), shirt = colr(cf.shirt), pants = colr(cf.pants), shoe = colr(cf.shoes), K = [26, 20, 40], WH = [252, 252, 255], MO = [196, 56, 70];
   const coat = cf.coat ? colr(cf.coat) : null, dress = cf.dress ? colr(cf.dress) : null, body = coat || dress || shirt, sleeve = coat || (dress ? (cf.sleeves ? dress : skin) : shirt), P = {}, rb = !!cf.robot;
   const legc = dress ? (cf.boots ? shoe : skin) : pants;
   const mkLeg = (ox, sl) => { const g = new Grid(2, 5, 3); g.fill(0, 1, 0, 1, 4, 1, legc); if (cf.shorts) g.fill(0, 1, 0, 1, 2, 1, skin); if (rb) { g.fill(0, 1, 0, 1, 4, 1, [86, 92, 112]); g.fill(0, 3, 0, 1, 3, 1, [60, 64, 80]); } g.fill(0, 0, 0, 1, 0, 2, shoe); if (cf.boots) g.fill(0, 0, 0, 1, 1, 1, shoe); return buildPart(g, U, [ox, 0, -0.1], sl, 0.04); };
@@ -533,27 +533,48 @@ function drawCatalog(ctx, page, T) {
     ctx.restore(); ctx.fillStyle = '#fff'; ctx.font = '700 20px Poppins, Arial'; ctx.textAlign = 'center'; ctx.fillText(nm, cx + cw / 2, cy0 + ch - 14); ctx.fillStyle = '#ffb08a'; ctx.font = '600 14px Poppins, Arial'; ctx.fillText(info.cat || '', cx + cw / 2, cy0 + ch - 36);
   }
 }
-window.catalogPages = () => Math.ceil(catalogNames().length / CAT_PER); window.validateStory = (typeof validateStory === 'function') ? validateStory : undefined;
+window.catalogPages = () => Math.ceil(catalogNames().length / CAT_PER);
 window.KIT = { MODELS: Object.keys(MODELS), SETS: Object.keys(SETS), TIMES: Object.keys(TIMES), FX: FXS, ANIMS: ALLANIM, CAMS, COLORS: Object.keys(PAL), SFX: SFX_NAMES, MUSIC: Object.keys(MUS), EXPRESSIONS: EXS };
 
+// =====================================================================
+//  DEFAULT validateStory STUB (removed from inline init loop).
+//  A real implementation may live in one of the content_story*.js files.
+//  This stub keeps the init IIFE safe even if that file is missing.
+// =====================================================================
+if (typeof window.validateStory !== 'function') {
+  window.validateStory = function (s) {
+    const errs = [];
+    if (!s || typeof s !== 'object') return ['story is not an object'];
+    if (!s.id) errs.push('missing id');
+    if (!s.title) errs.push('missing title');
+    if (!Array.isArray(s.beats) || !s.beats.length) errs.push('no beats');
+    else s.beats.forEach((b, i) => { if (!b || typeof b.vo !== 'string' || !b.vo.trim()) errs.push('beat ' + i + ' missing vo'); });
+    return errs;
+  };
+}
 </script>
-<script src="content_story.js"></script>
-<script src="content_story2.js"></script>
-<script src="content_story3.js"></script>
-<script src="content_story4.js"></script>
-<script src="content_story5.js"></script>
-<script src="content_story6.js"></script>
-<script src="content_story7.js"></script>
-<script src="content_story8.js"></script>
-<script src="content_story9.js"></script>
-<script src="content_story10.js"></script>
-<script src="engine_plus.js"></script>
+
+<!-- Content scripts: guarded so the page still boots and shows a clear message if any are missing -->
+<script src="content_story.js"  onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story.js')"></script>
+<script src="content_story2.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story2.js')"></script>
+<script src="content_story3.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story3.js')"></script>
+<script src="content_story4.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story4.js')"></script>
+<script src="content_story5.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story5.js')"></script>
+<script src="content_story6.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story6.js')"></script>
+<script src="content_story7.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story7.js')"></script>
+<script src="content_story8.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story8.js')"></script>
+<script src="content_story9.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story9.js')"></script>
+<script src="content_story10.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story10.js')"></script>
+<script src="engine_plus.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('engine_plus.js')"></script>
 <script>
 'use strict';
-window.TOPIC_IDS = STORIES.map((s) => s.id); window.TOPIC_KINDS = Object.fromEntries(STORIES.map((s) => [s.id, s.kind]));
+// The above content scripts are expected to define: STORIES, explainer(), optionally validateStory().
+// engine_plus.js may define helpers.  Everything below is the UI + audio + init.
+window.TOPIC_IDS = (typeof STORIES !== 'undefined' && Array.isArray(STORIES)) ? STORIES.map((s) => s.id) : [];
+window.TOPIC_KINDS = (typeof STORIES !== 'undefined' && Array.isArray(STORIES)) ? Object.fromEntries(STORIES.map((s) => [s.id, s.kind])) : {};
 window.loadTopic = loadTopic; window.setVoiceDurations = setVoiceDurations;
 // =====================================================================
-//  SOUND: only a whoosh on every cut plus the per-beat effects. No music, no pings/tones (see BAN_SFX in engine_plus.js)
+//  SOUND: whoosh on every cut plus per-beat effects. No music, no pings/tones.
 // =====================================================================
 function noteHz(n) { const m = /^([A-G])([#b]?)(\d)$/.exec(n), S = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }; return 440 * Math.pow(2, (S[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (m[3] - 4) * 12 - 9) / 12); }
 function buildAudio(ctx, vo, score) {
@@ -598,10 +619,7 @@ function buildAudio(ctx, vo, score) {
     fire: (t, d) => noise(t, d || 3, { f: [600, 1500], q: 0.3, g: 0.05, swell: true }),
   };
   const LONG = ['wind', 'waves', 'crowd', 'rain', 'drum', 'buzz', 'hum', 'fire'], R0 = MUS[STORY.music || 'hope'].map(noteHz);
-  if (false) { /* music score switched off */
-    R0.forEach((f, k) => { const o = ctx.createOscillator(); o.type = k ? 'triangle' : 'sine'; o.frequency.value = f; const g = ctx.createGain(), gn = [0.05, 0.03, 0.02][k] * (vo ? 0.7 : 1); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(gn, 1.5); g.gain.setValueAtTime(gn, Math.max(1.5, T - 1.5)); g.gain.linearRampToValueAtTime(0, T); o.connect(g); out(g, 0, 0.25); o.start(0); o.stop(T + 0.1); });
-    const q = rng(id); for (let t = 0.6; t < T - 1; t += 1.1) if (q() < 0.7) tone(t, R0[Math.floor(q() * 3)] * (q() < 0.5 ? 2 : 4), 1.8, { type: 'triangle', g: (vo ? 0.025 : 0.045), vb: 0.5, pan: q() - 0.5 });
-  }
+  if (false) { /* music score switched off */ }
   STORY.beats.forEach((b, i) => {
     const e0 = TL.E[i], R = TL.R[i]; if (i > 0) FX.whoosh(e0 - 0.05);
     (b.sfx || []).forEach((sp) => { const [n, fr] = sp.split('@'), lg = LONG.indexOf(n) >= 0, t = e0 + (lg ? 0.05 : (fr ? +fr : 0.3) * R); if (FX[n] && !(window.BAN_SFX || []).includes(n)) FX[n](t, lg ? R : undefined); });
@@ -614,30 +632,60 @@ window.renderAudioBase64 = async function (vo, noScore) {
   const bytes = new Uint8Array(o.buffer); let s = ''; for (let k = 0; k < bytes.length; k += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000)); return btoa(s);
 };
 // =====================================================================
-//  PAGE: preview player + hooks used by the render script
+//  PAGE: preview player + hooks
 // =====================================================================
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 window.frameJPEG = function (t) { explainer(ctx, t); return cv.toDataURL('image/jpeg', 0.92).split(',')[1]; };
-(function ui() {
-  const $ = (id) => document.getElementById(id); let T = 0, playing = false, tPrev = 0, snd = true, loop = true, catMode = false, AC2 = null, SRC = null, BUF = null, BUFKEY = '';
-  const fmt = (s) => Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
-  function draw() { if (catMode) { drawCatalog(ctx, +$('catpage').value || 0, T); return; } explainer(ctx, T); $('seek').max = TL.total; $('seek').value = T; $('time').textContent = fmt(T) + ' / ' + fmt(TL.total); }
-  function audioStop() { try { if (SRC) SRC.stop(); } catch (e) {} SRC = null; }
-  async function audioStart(off) { audioStop(); if (!snd || catMode) return; const key = STORY.id + TL.total; if (BUFKEY !== key) { const oc = new OfflineAudioContext(2, Math.ceil(TL.total * 44100), 44100); buildAudio(oc, false, true); BUF = await oc.startRendering(); BUFKEY = key; } if (!playing) return; AC2 = AC2 || new (window.AudioContext || window.webkitAudioContext)(); SRC = AC2.createBufferSource(); SRC.buffer = BUF; SRC.connect(AC2.destination); SRC.start(0, Math.min(off, TL.total - 0.05)); }
-  function frame(now) { if (!playing) return; T += (now - tPrev) / 1000; tPrev = now; if (!catMode && T >= TL.total) { if (loop) { T = 0; audioStart(0); } else { playing = false; $('play').textContent = 'Play'; T = TL.total - 0.01; audioStop(); } } draw(); requestAnimationFrame(frame); }
-  function play() { playing = true; $('play').textContent = 'Pause'; tPrev = performance.now(); audioStart(T); requestAnimationFrame(frame); }
-  function pause() { playing = false; $('play').textContent = 'Play'; audioStop(); }
-  $('play').onclick = () => (playing ? pause() : play()); $('seek').oninput = () => { T = parseFloat($('seek').value); draw(); if (playing) audioStart(T); };
-  $('snd').onclick = () => { snd = !snd; $('snd').setAttribute('aria-pressed', snd); if (!snd) audioStop(); else if (playing) audioStart(T); };
-  $('loop').onclick = () => { loop = !loop; $('loop').setAttribute('aria-pressed', loop); };
-  $('topic').onchange = () => { pause(); loadTopic($('topic').value); T = 0; draw(); };
-  $('cat').onclick = () => { catMode = !catMode; $('cat').setAttribute('aria-pressed', catMode); $('catpage').style.display = catMode ? '' : 'none'; if (catMode && !playing) play(); if (!catMode) T = 0; draw(); };
-  $('catpage').onchange = draw;
-  STORIES.forEach((s) => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.title; $('topic').appendChild(o); });
-  (async () => { try { await document.fonts.load('800 40px Poppins', 'Hello'); await document.fonts.ready; } catch (e) { /* render anyway */ }
-    for (const s of STORIES) { const er = validateStory(s); if (er.length) console.warn('STORY PROBLEMS', s.id, er); }
+
+// Fixed init: guards every dependency and ALWAYS sets window._ready in finally.
+(async function init() {
+  const $ = (id) => document.getElementById(id);
+  try {
+    try { await document.fonts.load('800 40px Poppins', 'Hello'); await document.fonts.ready; } catch (e) { /* render anyway */ }
+
+    // Check content scripts
+    if (typeof STORIES === 'undefined' || !Array.isArray(STORIES) || !STORIES.length) {
+      const miss = (window.__scriptErr || []).join(', ') || 'unknown';
+      throw new Error('STORIES is empty or undefined. Missing/failed scripts: ' + miss);
+    }
+    if (typeof explainer !== 'function') {
+      throw new Error('explainer() is not defined (engine_plus.js may be missing).');
+    }
+
+    // Validate (now safely guarded — window.validateStory is always a function due to stub above)
+    for (const s of STORIES) {
+      const er = window.validateStory(s);
+      if (er && er.length) console.warn('STORY PROBLEMS', s.id, er);
+    }
+
+    // ---- UI ---------------------------------------------------------
+    let T = 0, playing = false, tPrev = 0, snd = true, loop = true, catMode = false, AC2 = null, SRC = null, BUF = null, BUFKEY = '';
+    const fmt = (s) => Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
+    function draw() { if (catMode) { drawCatalog(ctx, +$('catpage').value || 0, T); return; } explainer(ctx, T); $('seek').max = TL.total; $('seek').value = T; $('time').textContent = fmt(T) + ' / ' + fmt(TL.total); }
+    function audioStop() { try { if (SRC) SRC.stop(); } catch (e) {} SRC = null; }
+    async function audioStart(off) { audioStop(); if (!snd || catMode) return; const key = STORY.id + TL.total; if (BUFKEY !== key) { const oc = new OfflineAudioContext(2, Math.ceil(TL.total * 44100), 44100); buildAudio(oc, false, true); BUF = await oc.startRendering(); BUFKEY = key; } if (!playing) return; AC2 = AC2 || new (window.AudioContext || window.webkitAudioContext)(); SRC = AC2.createBufferSource(); SRC.buffer = BUF; SRC.connect(AC2.destination); SRC.start(0, Math.min(off, TL.total - 0.05)); }
+    function frame(now) { if (!playing) return; T += (now - tPrev) / 1000; tPrev = now; if (!catMode && T >= TL.total) { if (loop) { T = 0; audioStart(0); } else { playing = false; $('play').textContent = 'Play'; T = TL.total - 0.01; audioStop(); } } draw(); requestAnimationFrame(frame); }
+    function play() { playing = true; $('play').textContent = 'Pause'; tPrev = performance.now(); audioStart(T); requestAnimationFrame(frame); }
+    function pause() { playing = false; $('play').textContent = 'Play'; audioStop(); }
+    $('play').onclick = () => (playing ? pause() : play()); $('seek').oninput = () => { T = parseFloat($('seek').value); draw(); if (playing) audioStart(T); };
+    $('snd').onclick = () => { snd = !snd; $('snd').setAttribute('aria-pressed', snd); if (!snd) audioStop(); else if (playing) audioStart(T); };
+    $('loop').onclick = () => { loop = !loop; $('loop').setAttribute('aria-pressed', loop); };
+    $('topic').onchange = () => { pause(); loadTopic($('topic').value); T = 0; draw(); };
+    $('cat').onclick = () => { catMode = !catMode; $('cat').setAttribute('aria-pressed', catMode); $('catpage').style.display = catMode ? '' : 'none'; if (catMode && !playing) play(); if (!catMode) T = 0; draw(); };
+    $('catpage').onchange = draw;
+    STORIES.forEach((s) => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.title; $('topic').appendChild(o); });
     for (let i = 0; i < window.catalogPages(); i++) { const o = document.createElement('option'); o.value = i; o.textContent = 'Catalog ' + (i + 1); $('catpage').appendChild(o); }
-    loadTopic(STORIES[0].id); draw(); $('loading').style.display = 'none'; window._ready = true; })();
+    loadTopic(STORIES[0].id); draw();
+    $('loading').style.display = 'none';
+    window._ready = true;
+  } catch (e) {
+    console.error('init failed:', e);
+    const el = document.getElementById('loading');
+    if (el) el.textContent = 'Error: ' + (e && e.message ? e.message : String(e));
+    // Always signal readiness so the harness can fail fast with a real error message
+    window._ready = true;
+    window._initError = (e && e.message) ? e.message : String(e);
+  }
 })();
 
 </script>
