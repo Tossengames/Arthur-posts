@@ -35,6 +35,11 @@
 </div>
 <script>
 'use strict';
+// =====================================================================
+//  VOXEL STORY SHORTS: cube-built 3D models, cel-shaded look, vibrant colours, English narration + live subtitles.
+//  720x1280. Every frame is a pure function of T (no Math.random). The page API matches the render workflow.
+//  Convention: a model's FRONT faces +z. face = degrees (0 = away from the camera, 180 = toward it).
+// =====================================================================
 const W = 720, HH = 1280, TAU = Math.PI * 2, F = 980, D2R = Math.PI / 180;
 const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v)), wn = (p, a, b) => cl((p - a) / (b - a)), lerp = (a, b, t) => a + (b - a) * t;
 const ez = (x) => { x = cl(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }, eo = (x) => 1 - Math.pow(1 - cl(x), 3);
@@ -47,15 +52,21 @@ const lerp3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2],
 const sh = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
 const satc = (c, k) => { const m = (c[0] + c[1] + c[2]) / 3; return [m + (c[0] - m) * k, m + (c[1] - m) * k, m + (c[2] - m) * k]; };
 const FA = 'Poppins, "Arial Black", Arial, sans-serif';
+
+// ---------- colours (all vivid; stories refer to them by name) ----------
 const PAL = { white: [246, 246, 250], black: [30, 28, 40], dark: [56, 52, 70], grey: [132, 136, 150], silver: [200, 206, 220], red: [236, 58, 54], crimson: [196, 30, 62], blue: [52, 112, 236], navy: [38, 54, 118], sky: [120, 204, 255], cyan: [40, 204, 236], teal: [30, 174, 176], green: [60, 192, 80], lime: [152, 222, 60], forest: [30, 134, 84], yellow: [255, 214, 50], gold: [255, 184, 40], orange: [255, 140, 40], brown: [132, 84, 50], tan: [224, 186, 132], cream: [252, 240, 212], pink: [255, 122, 172], magenta: [222, 60, 164], purple: [142, 92, 224], violet: [100, 72, 204], wood: [170, 114, 62], brick: [198, 86, 62], stone: [152, 150, 164], sand: [242, 214, 142], snow: [246, 248, 255], rust: [178, 94, 50], khaki: [196, 176, 112], olive: [98, 122, 62], skin1: [255, 216, 186], skin2: [240, 180, 140], skin3: [190, 128, 92], skin4: [130, 86, 62], hairBlack: [40, 28, 34], hairBrown: [112, 66, 40], hairBlond: [246, 202, 92], hairRed: [206, 82, 42], honey: [255, 176, 30], molasses: [92, 48, 24], murk: [98, 112, 52] };
 const colr = (c) => (Array.isArray(c) ? c : PAL[c] || [255, 0, 255]);
 const cc = (o, k, d) => colr((o && o.c && o.c[k]) || d);
+
+// ---------- vectors, camera ----------
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], scl = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
 function makeCam(pos, yaw, pitch) { const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch); return { pos, view(p) { const dx = p[0] - pos[0], dy = p[1] - pos[1], dz = p[2] - pos[2]; const x1 = dx * cy - dz * sy, z1 = dx * sy + dz * cy; return [x1, dy * cp + z1 * sp, -dy * sp + z1 * cp]; } }; }
 function clipNear(P, zn) { const o = []; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], ia = a[2] >= zn, ib = b[2] >= zn; if (ia) o.push(a); if (ia !== ib) { const t = (zn - a[2]) / (b[2] - a[2]); o.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, zn]); } } return o; }
 function lookCam(pos, tg) { const dx = tg[0] - pos[0], dy = tg[1] - pos[1], dz = tg[2] - pos[2]; return makeCam(pos, Math.atan2(dx, dz), Math.atan2(-dy, Math.hypot(dx, dz))); }
+
+// ---------- 3x4 matrices: [r00 r01 r02 r10 r11 r12 r20 r21 r22 tx ty tz]; mm(A,B) applies B first, then A ----------
 const mm = (A, B) => { const r = new Array(12); for (let i = 0; i < 3; i++) { for (let j = 0; j < 3; j++) r[i * 3 + j] = A[i * 3] * B[j] + A[i * 3 + 1] * B[3 + j] + A[i * 3 + 2] * B[6 + j]; r[9 + i] = A[i * 3] * B[9] + A[i * 3 + 1] * B[10] + A[i * 3 + 2] * B[11] + A[9 + i]; } return r; };
 const ap = (M, p) => [M[0] * p[0] + M[1] * p[1] + M[2] * p[2] + M[9], M[3] * p[0] + M[4] * p[1] + M[5] * p[2] + M[10], M[6] * p[0] + M[7] * p[1] + M[8] * p[2] + M[11]];
 const an = (M, n) => [M[0] * n[0] + M[1] * n[1] + M[2] * n[2], M[3] * n[0] + M[4] * n[1] + M[5] * n[2], M[6] * n[0] + M[7] * n[1] + M[8] * n[2]];
@@ -65,6 +76,8 @@ const mRy = (a) => { const c = Math.cos(a), s = Math.sin(a); return [c, 0, s, 0,
 const mRz = (a) => { const c = Math.cos(a), s = Math.sin(a); return [c, -s, 0, s, c, 0, 0, 0, 1, 0, 0, 0]; };
 const piv = (R, p) => mm(mT(p[0], p[1], p[2]), mm(R, mT(-p[0], -p[1], -p[2])));
 const nrm3 = (n) => { const l = Math.hypot(n[0], n[1], n[2]) || 1; return [n[0] / l, n[1] / l, n[2] / l]; };
+
+// ---------- the face store: every model is turned into flat coloured polygons ----------
 let FACES = [], CAMP = [0, 0, -10], STATIC = false;
 const FL = (v, n, c, o) => { const f = { v, n, c, e: null, em: 0, sn: null, L: 2, a: 1, b: 0, ts: 0 }; if (o) for (const k in o) f[k] = o[k]; FACES.push(f); };
 function drawPart(part, M, o) {
@@ -75,6 +88,7 @@ function drawPart(part, M, o) {
     FACES.push({ v, n, c: o.tint ? mixc(f.c, o.tint, o.tk == null ? 0.5 : o.tk) : f.c, e: f.e, em: f.em, sn: null, L: 2, a: 1, b: 0, ts: 0 });
   }
 }
+// textures: a cell's colour is varied by pattern, so flat cubes read as brick, planks, grass, stone...
 function texCol(c, tex, i, j, k, salt) {
   const r = hf(i, j, k, salt);
   switch (tex) {
@@ -91,6 +105,7 @@ function texCol(c, tex, i, j, k, salt) {
     default: return sh(c, 0.965 + 0.07 * r);
   }
 }
+// a cuboid made of flat cube-faces. o: tex, cell, em, skip ('+y -x ...'), ne (no outline), L
 function bb(M, cx, cy, cz, sx, sy, sz, col, o) {
   o = o || {}; col = colr(col); const cell = o.cell || 0, skip = o.skip || '', salt = o.salt || 1, dim = [sx, sy, sz], c0 = [cx - sx / 2, cy - sy / 2, cz - sz / 2], T0 = o.tex || '';
   for (let k = 0; k < 3; k++) for (let s = -1; s <= 1; s += 2) {
@@ -104,6 +119,7 @@ function bb(M, cx, cy, cz, sx, sy, sz, col, o) {
     }
   }
 }
+// a faceted cylinder / cone / tank (n-sided prism); rows give horizontal bands for textures
 function cy(M, cx, y0, cz, r, h, n, col, o) {
   o = o || {}; col = colr(col); const r2 = o.r2 == null ? r : o.r2, rows = o.rows || 1, salt = o.salt || 1, slope = h ? (r - r2) / h : 0;
   const rr = (jj) => lerp(r, r2, jj / rows), ang = (i) => (i / n) * TAU, nrmI = [];
@@ -119,6 +135,8 @@ function cy(M, cx, y0, cz, r, h, n, col, o) {
 function shadow(x, y, z, r) { const v = []; for (let i = 0; i < 10; i++) { const t = (i / 10) * TAU; v.push([x + Math.cos(t) * r, y + 0.04, z + Math.sin(t) * r * 0.8]); } FACES.push({ v, n: [0, 1, 0], c: [12, 10, 36], e: null, em: 1, sn: null, L: 1, a: 0.3, b: 0, ts: 0 }); }
 function ground(x0, x1, z0, z1, cell, cf, seed, y) { y = y || 0; for (let z = z0, j = 0; z < z1; z += cell, j++) for (let x = x0, i = 0; x < x1; x += cell, i++) { const c = cf(x + cell / 2, z + cell / 2), k = 1 + (hf(i, j, 3, seed || 1) - 0.5) * 0.15; FACES.push({ v: [[x, y, z], [x + cell, y, z], [x + cell, y, z + cell], [x, y, z + cell]], n: [0, 1, 0], c: sh(c, k), e: null, em: 0, sn: null, L: 0, a: 1, b: 0, ts: 0 }); } }
 function flatQuad(x0, x1, z0, z1, y, col, em, L) { FACES.push({ v: [[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]], n: [0, 1, 0], c: colr(col), e: null, em: em ? 1 : 0, sn: null, L: L == null ? 1 : L, a: 1, b: 0, ts: 0 }); }
+
+// ---------- rendering: cull, shade (3 cel levels), fog, sort, fill, outline ----------
 function renderScene(ctx, cam, env, view) {
   const SUN = norm(env.sun || [0.5, 0.78, -0.5]), AMB = env.amb == null ? 0.6 : env.amb, SK = env.sk == null ? 0.52 : env.sk, TN = env.sunCol.map((v) => 0.55 + v / 570), BR = env.bright || 1, cp = cam.pos, out = [], FN = env.fogNear || 40, FF = env.fogFar || 260;
   for (let i = 0; i < FACES.length; i++) {
@@ -149,6 +167,7 @@ function renderScene(ctx, cam, env, view) {
   }
   ctx.globalAlpha = 1;
 }
+// ---------- sky: stepped colour bands (cel look), square sun/moon, pixel clouds, stars ----------
 function skyDraw(ctx, env, T) {
   const br = env.bright || 1, hz = HH * 0.5, nb = 10, H2 = hz + 150, rgb = (c) => `rgb(${cl(c[0] * br, 0, 255) | 0},${cl(c[1] * br, 0, 255) | 0},${cl(c[2] * br, 0, 255) | 0})`;
   for (let i = 0; i < nb; i++) { ctx.fillStyle = rgb(mixc(env.top, env.bot, i / (nb - 1))); ctx.fillRect(0, (i * H2) / nb, W, H2 / nb + 1); }
@@ -159,6 +178,9 @@ function skyDraw(ctx, env, T) {
   const nc = env.clouds == null ? 4 : env.clouds, cc2 = env.cloudc || [255, 255, 255];
   for (let i = 0; i < nc; i++) { const w = 170 + q() * 120, h = 38 + q() * 22, y = 120 + q() * 280, x = (((q() * (W + 500) + T * (5 + q() * 9)) % (W + 500)) + (W + 500)) % (W + 500) - 250; ctx.fillStyle = rgb(cc2); ctx.fillRect(x, y, w, h); ctx.fillRect(x + w * 0.18, y - h * 0.55, w * 0.42, h * 0.6); ctx.fillRect(x + w * 0.5, y - h * 0.3, w * 0.3, h * 0.4); ctx.fillStyle = rgb(mixc(cc2, env.bot, 0.35)); ctx.fillRect(x, y + h * 0.72, w, h * 0.28); }
 }
+// =====================================================================
+//  VOXEL PARTS: a part is a small 3D grid of coloured cubes. Only the outer faces are kept, with outline flags.
+// =====================================================================
 function Grid(w, h, d) { this.w = w; this.h = h; this.d = d; this.v = new Array(w * h * d).fill(null); }
 Grid.prototype.set = function (x, y, z, c) { if (x < 0 || y < 0 || z < 0 || x >= this.w || y >= this.h || z >= this.d) return; this.v[x + this.w * (y + this.h * z)] = c; };
 Grid.prototype.get = function (x, y, z) { if (x < 0 || y < 0 || z < 0 || x >= this.w || y >= this.h || z >= this.d) return null; return this.v[x + this.w * (y + this.h * z)]; };
@@ -176,6 +198,7 @@ function buildPart(g, u, off, salt, jit) {
   }
   return { f: out };
 }
+// ---------- people: chibi proportions (big head), one skeleton, many outfits ----------
 const HBASE = { skin: 'skin2', hair: 'hairBrown', hs: 'short', shirt: 'blue', pants: 'navy', shoes: 'dark' };
 const HP = {
   man: {}, woman: { dress: 'pink', hs: 'long', skin: 'skin1', blush: 1, shirt: 'pink' }, boy: { shirt: 'orange', hair: 'hairBlack', hs: 'spiky', k: 0.72, blush: 1, shorts: 1, short: 1 }, girl: { dress: 'yellow', hair: 'hairRed', hs: 'bun', k: 0.7, skin: 'skin1', blush: 1 },
@@ -188,7 +211,7 @@ const HP = {
   robot: { robot: 1, skin: 'silver', shirt: 'grey', pants: 'dark', shoes: 'black', hs: 'bald', k: 0.95 },
 };
 function mkHuman(cf, ex, bl) {
-  const U = 0.1, skin = colr(cf.skin), hair = colr(cf.hair), shirt = colr(cf.shirt), pants = colr(cf.pants), shoe = colr(cf.shoes), K = [26, 20, 40], WH = [252, 252, 255], MO = [196, 56, 70];
+  const U = 0.1, skin = colr(cf.skin), hair = colr(cf.hair), shirt = colr(cf.shirt), pants = colr(cf.pants), shoe = colr(cf.shoes), K = [26, 20, 34], WH = [252, 252, 255], MO = [196, 56, 70];
   const coat = cf.coat ? colr(cf.coat) : null, dress = cf.dress ? colr(cf.dress) : null, body = coat || dress || shirt, sleeve = coat || (dress ? (cf.sleeves ? dress : skin) : shirt), P = {}, rb = !!cf.robot;
   const legc = dress ? (cf.boots ? shoe : skin) : pants;
   const mkLeg = (ox, sl) => { const g = new Grid(2, 5, 3); g.fill(0, 1, 0, 1, 4, 1, legc); if (cf.shorts) g.fill(0, 1, 0, 1, 2, 1, skin); if (rb) { g.fill(0, 1, 0, 1, 4, 1, [86, 92, 112]); g.fill(0, 3, 0, 1, 3, 1, [60, 64, 80]); } g.fill(0, 0, 0, 1, 0, 2, shoe); if (cf.boots) g.fill(0, 0, 0, 1, 1, 1, shoe); return buildPart(g, U, [ox, 0, -0.1], sl, 0.04); };
@@ -208,6 +231,7 @@ function mkHuman(cf, ex, bl) {
   if (cf.pack) { const g = new Grid(4, 5, 2); g.fill(0, 0, 0, 3, 4, 1, colr(cf.pack)); g.fill(0, 3, 0, 3, 3, 1, sh(colr(cf.pack), 0.75)); P.pack = buildPart(g, U, [-0.2, 0.6, -0.4], 5, 0.05); }
   const mkArm = (ox, sl) => { const g = new Grid(2, 6, 2), hand = cf.gloves ? colr(cf.gloves) : skin; g.fill(0, 0, 0, 1, 5, 1, sleeve); g.fill(0, 0, 0, 1, cf.short ? 2 : 0, 1, hand); if (rb) { g.fill(0, 0, 0, 1, 5, 1, [176, 184, 204]); g.fill(0, 0, 0, 1, 0, 1, [70, 76, 96]); g.fill(0, 2, 0, 1, 2, 1, [96, 104, 126]); } return buildPart(g, U, [ox, 0.5, -0.1], sl, 0.04); };
   P.armL = mkArm(-0.5, 6); P.armR = mkArm(0.3, 7);
+  // head 10x11x11 grid: head voxels x0..7 y0..7 z0..7, with room around for hats/hair
   const hg = new Grid(10, 11, 11), hs = (x, y, z, c) => hg.set(x + 1, y, z + 1, c); hg.fill(1, 0, 1, 8, 7, 8, rb ? [190, 198, 216] : skin);
   if (!rb) { [3, 4].forEach((z) => { hs(-1, 3, z, skin); hs(8, 3, z, skin); }); if (cf.blush) { hs(0, 2, 7, mixc(skin, [255, 90, 120], 0.55)); hs(7, 2, 7, mixc(skin, [255, 90, 120], 0.55)); } }
   else { hs(-1, 3, 3, [90, 98, 120]); hs(-1, 3, 4, [90, 98, 120]); hs(8, 3, 3, [90, 98, 120]); hs(8, 3, 4, [90, 98, 120]); hg.fill(2, 2, 8, 7, 6, 8, [24, 28, 46]); hs(3, 8, 3, [120, 128, 150]); hs(3, 9, 3, [120, 128, 150]); hs(3, 10, 3, [255, 70, 70, 1]); }
@@ -302,6 +326,7 @@ function drawHuman(name, x, y, z, face, s, o, T, st) {
   const MR = mm(Mu, piv(mm(mRz(po.raz || 0), mRx(-(po.ra || 0))), [0.4, 1.1, 0])); drawPart(P.armR, MR);
   if (o.hold) holdItem(o.hold, po.carry ? mm(Mu, mT(0, 0.85, 0.5)) : mm(MR, mT(0.0, 0.0, 0.14)), T);
 }
+// ---------- animals: voxel quadrupeds from one builder ----------
 const AN = {
   wombat: { u: 0.13, b: [8, 6, 10], lh: 3, lw: 3, h: [6, 5, 5], sn: [4, 3, 2], ear: 'round', tl: [2, 2, 1], cols: { a: [160, 126, 98], b: [204, 172, 140], d: [46, 36, 38], n: [60, 44, 50] } },
   bear: { u: 0.14, b: [8, 7, 11], lh: 5, lw: 3, h: [7, 6, 5], sn: [3, 3, 3], ear: 'round', tl: [2, 2, 2], cols: { a: [156, 94, 50], b: [220, 170, 112], d: [42, 28, 26], n: [30, 22, 24] } },
@@ -339,6 +364,7 @@ function drawAnimal(name, x, y, z, face, s, o, T, st) {
   drawPart(P.tail, mm(Mb, piv(mRy(Math.sin(T * (mv2 ? 9 : 3.2) + sd) * 0.4), P.tpiv)));
   if (o.hold) holdItem(o.hold, mm(Mb, mm(mT(0, P.legH + P.b1 * 0.55, P.b2 / 2 + 0.45), mS(1.9))), T);
 }
+// ---------- small flyers ----------
 function drawBee(x, y, z, face, s, o, T, st) {
   const M = mm(mT(x, y + Math.sin(T * 6 + (st.seed || 0)) * 0.05 * s, z), mm(mRy(face * D2R), mS(s))), fl = Math.sin(T * 60 + (st.seed || 0) * 3) * 0.7;
   bb(M, 0, 0, 0.1, 0.2, 0.2, 0.2, 'yellow', { ne: 1 }); bb(M, 0, 0, -0.1, 0.18, 0.18, 0.2, 'yellow', { ne: 1 }); bb(M, 0, 0, -0.1, 0.19, 0.19, 0.06, 'black', { ne: 1 }); bb(M, 0, 0, 0.0, 0.19, 0.19, 0.05, 'black', { ne: 1 }); bb(M, 0, 0, 0.27, 0.14, 0.14, 0.14, 'black', { ne: 1 }); bb(M, 0, 0, -0.24, 0.05, 0.05, 0.08, 'black', { ne: 1 });
@@ -353,6 +379,9 @@ function drawButterfly(x, y, z, face, s, o, T, st) {
   const M = mm(mT(x, y + Math.sin(T * 3 + (st.seed || 0)) * 0.15 * s, z), mm(mRy(face * D2R), mS(s))), fl = 0.2 + Math.abs(Math.sin(T * 9 + (st.seed || 0) * 2)) * 1.0, c1 = cc(o, 'a', 'orange'), c2 = cc(o, 'b', 'yellow');
   bb(M, 0, 0, 0, 0.06, 0.06, 0.3, 'dark', { ne: 1 }); [-1, 1].forEach((d) => { const R = mm(M, piv(mRz(d * fl), [d * 0.03, 0, 0])); bb(R, d * 0.22, 0.02, 0.07, 0.34, 0.02, 0.26, c1, { ne: 1 }); bb(R, d * 0.18, 0.02, -0.14, 0.24, 0.02, 0.18, c2, { ne: 1 }); });
 }
+// =====================================================================
+//  THE KIT: every model has a NAME. Stories only use these names (see the catalog page).
+// =====================================================================
 const MODELS = {}, MINFO = {};
 const baseM = (x, y, z, face, s, o) => mm(mT(x, y, z), mm(mRy((face || 0) * D2R), mm(mRx(-((o && o.pitch) || 0) * D2R), mm(mRz(((o && o.roll) || 0) * D2R), mS(s)))));
 function defP(name, info, fn) { MINFO[name] = info; MODELS[name] = (x, y, z, face, s, o, T, st) => { o = o || {}; s = s == null ? 1 : s; if (info.sh !== 0) shadow(x, y, z, (info.r || 1.2) * s); fn(baseM(x, y, z, face, s, o), o, T || 0, st || {}, s); }; }
@@ -361,90 +390,11 @@ Object.keys(AN).forEach((n) => { MINFO[n] = { h: (AN[n].lh + AN[n].b[1] + (AN[n]
 MINFO.bee = { h: 0.5, cat: 'animals' }; MODELS.bee = (x, y, z, f, s, o, T, st) => drawBee(x, y, z, f, s == null ? 1 : s, o || {}, T || 0, st || {});
 MINFO.bird = { h: 0.6, cat: 'animals' }; MODELS.bird = (x, y, z, f, s, o, T, st) => drawBird(x, y, z, f, s == null ? 1 : s, o || {}, T || 0, st || {});
 MINFO.butterfly = { h: 0.5, cat: 'animals' }; MODELS.butterfly = (x, y, z, f, s, o, T, st) => drawButterfly(x, y, z, f, s == null ? 1 : s, o || {}, T || 0, st || {});
+// crowds, swarms
 const CROWD = ['man', 'woman', 'boy', 'elder', 'girl', 'peasant', 'worker', 'lady'], CLO = ['red', 'blue', 'green', 'orange', 'purple', 'teal', 'yellow', 'pink'];
 MINFO.crowd = { h: 2, r: 3, cat: 'people', sh: 0 }; MODELS.crowd = (x, y, z, f, s, o, T, st) => { o = o || {}; const n = o.n || 6, sp = o.spread || 6, q = rng(hashS('crowd' + n + (o.seed || 0))); for (let i = 0; i < n; i++) { const dx = (q() - 0.5) * sp * s, dz = (q() - 0.5) * sp * 0.7 * s, nm = (o.kinds && o.kinds[i % o.kinds.length]) || CROWD[(i + (o.seed || 0)) % CROWD.length], c1 = CLO[(i * 3 + (o.seed || 0)) % 8], c2 = CLO[(i * 5 + 2) % 8]; MODELS[nm](x + dx, y, z + dz, f + (q() - 0.5) * 40, s, { c: Object.assign(HP[nm] && HP[nm].dress ? { dress: c1 } : { shirt: c1 }, o.c || {}), hold: null }, T, Object.assign({}, st, { seed: i * 1.7 + (o.seed || 0) })); } };
 MINFO.swarm = { h: 3, r: 1, cat: 'animals', sh: 0 }; MODELS.swarm = (x, y, z, f, s, o, T) => { const n = (o && o.n) || 8, R = ((o && o.r) || 1.4) * (s || 1); for (let i = 0; i < n; i++) { const a = T * (1.4 + (i % 3) * 0.4) + i * 2.1; drawBee(x + Math.cos(a) * R * (0.6 + 0.4 * ((i * 7) % 3) / 2), y + Math.sin(T * 2 + i) * 0.4 * R, z + Math.sin(a) * R, -a / D2R + 90, 1, {}, T, { seed: i }); } };
-const SFX_NAMES = ['whoosh', 'thud', 'heart', 'chime', 'bell', 'wind', 'waves', 'rumble', 'steps', 'crowd', 'gulls', 'birds', 'splash', 'alarm', 'cheer', 'clack', 'boom', 'thunder', 'rain', 'squelch', 'drum', 'buzz', 'drip', 'magic', 'beep', 'crash', 'hum', 'pop', 'fire'];
-const MUS = { sad: ['A2', 'E3', 'C4'], hope: ['C3', 'G3', 'E4'], tense: ['D3', 'A3', 'F4'], wonder: ['F3', 'C4', 'A4'], fun: ['G3', 'D4', 'B4'], cold: ['E3', 'B3', 'G4'] };
-const TIMES = {
-  day: { top: [60, 150, 255], bot: [190, 232, 255], fog: [200, 232, 250], sunCol: [255, 244, 220], orb: 1, orbc: [255, 236, 140], clouds: 4, bright: 1.05 },
-  dawn: { top: [100, 100, 230], bot: [255, 196, 140], fog: [250, 200, 160], sunCol: [255, 214, 160], orb: 1, orbc: [255, 200, 120], orby: 120, clouds: 3, bright: 1.0 },
-  dusk: { top: [70, 50, 160], bot: [255, 150, 110], fog: [240, 160, 140], sunCol: [255, 196, 150], orb: 1, orbc: [255, 140, 90], orby: 90, clouds: 3, bright: 0.96, cloudc: [255, 210, 200] },
-  night: { top: [10, 14, 50], bot: [50, 66, 130], fog: [34, 46, 96], sunCol: [150, 170, 240], stars: 1, orb: 1, orbc: [236, 240, 255], orbx: 0.28, orbs: 90, clouds: 2, bright: 0.72, amb: 0.66, cloudc: [120, 130, 180] },
-  storm: { top: [66, 72, 96], bot: [150, 160, 180], fog: [140, 150, 168], sunCol: [200, 208, 226], clouds: 8, cloudc: [96, 102, 122], bright: 0.84 },
-  smog: { top: [120, 150, 70], bot: [200, 210, 120], fog: [176, 190, 100], sunCol: [255, 240, 170], clouds: 5, cloudc: [170, 180, 110], bright: 0.96, fogNear: 25, fogFar: 150 },
-  tomb: { top: [26, 18, 20], bot: [60, 40, 34], fog: [34, 24, 22], sunCol: [255, 190, 120], amb: 0.5, sk: 0.7, bright: 1.05, clouds: 0, fogNear: 20, fogFar: 90 },
-  clear: { top: [40, 140, 255], bot: [200, 240, 255], fog: [210, 240, 252], sunCol: [255, 248, 230], orb: 1, orbc: [255, 240, 150], clouds: 3, bright: 1.08 },
-  hazy: { top: [196, 120, 80], bot: [255, 206, 140], fog: [236, 190, 140], sunCol: [255, 210, 150], orb: 1, orbc: [255, 190, 100], orby: 150, clouds: 3, cloudc: [230, 190, 150], bright: 0.98 },
-};
-const SETS = {};
-const put = (n, x, y, z, f, s, o) => MODELS[n](x, y, z, f == null ? 180 : f, s || 1, o || {}, 0, { anim: 'stand' });
-const scat = (n, seed, x0, x1, z0, z1, fn, avoid) => { const q = rng(seed); for (let i = 0; i < n; i++) { const x = x0 + q() * (x1 - x0), z = z0 + q() * (z1 - z0); if (avoid && avoid(x, z)) continue; fn(x, z, q); } };
-const mount = (x, z, w, h, c) => put('mountain', x, 0, z, 0, 1, { r: w, h, c: { a: c || 'stone' } });
-const farM = (z, hs, c) => { for (let i = 0; i < 6; i++) mount(-120 + i * 48, z, 40 + (i % 3) * 12, hs[i % hs.length], c); };
-const tufts = (n, seed, x0, x1, z0, z1, col, avoid) => scat(n, seed, x0, x1, z0, z1, (x, z, q) => bb(MI, x, 0.12, z, 0.3 + q() * 0.2, 0.24 + q() * 0.2, 0.3, mixc(col, [255, 255, 255], q() * 0.2), { ne: 1 }), avoid);
-const waterDyn = (x0, x1, z0, z1, y, cell, T, c1, c2, amp) => { for (let z = z0; z < z1; z += cell) for (let x = x0; x < x1; x += cell) { const w = Math.sin(x * 0.4 + z * 0.3 + T * 1.8), k = 0.5 + 0.5 * Math.sin(x * 0.17 + z * 0.23 + T * 0.9), col = mixc(c1, c2, k * 0.8 + (w > 0.8 ? 0.25 : 0)), yy = y + w * (amp == null ? 0.08 : amp); FACES.push({ v: [[x, yy, z], [x + cell, yy, z], [x + cell, yy, z + cell], [x, yy, z + cell]], n: [0, 1, 0], c: col, e: null, em: 0, sn: null, L: 0, a: 1, b: 0, ts: 0 }); } };
-function bld(x, z, w, d, h, col, side) { bb(MI, x, h / 2, z, w, h, d, col, { tex: 'brick', cell: 1.1, salt: Math.round(x + z) }); bb(MI, x, h + 0.3, z, w + 0.6, 0.6, d + 0.6, 'dark', { ne: 1 }); const fx = x + side * (w / 2 + 0.06); for (let y = 3; y < h - 1.5; y += 3.4) for (let k = -d / 2 + 2; k < d / 2 - 1; k += 3.2) bb(MI, fx, y, z + k, 0.12, 1.5, 1.5, hf(y | 0, k | 0, 1, 2) > 0.3 ? [255, 226, 130] : [140, 190, 230], { em: 1, ne: 1 }); bb(MI, x + side * (w / 2 + 0.3), 1.4, z, 0.6, 0.4, d - 0.5, 'red', { tex: 'stripe', cell: 0.5, ne: 1 }); }
-
-const FXS = ['rain', 'dust', 'confetti', 'sparks', 'rainbow', 'fog'];
-const CAMS = ['static', 'dolly', 'orbit', 'track', 'crane'];
-function aim(t, A) { if (typeof t === 'string') { const a = A[t]; return a ? [a.x, a.y + a.h * 0.55, a.z] : [0, 1, 10]; } return t || [0, 1, 10]; }
-function camFor(b, p, A) {
-  const c = b.cam || { mode: 'orbit', target: b.actors && b.actors[0] ? b.actors[0].id : [0, 1, 10], r: 8, h: 2.5 }, e = ez(p);
-  if (c.mode === 'static') return { pos: c.at, tg: aim(c.look, A) };
-  if (c.mode === 'dolly' || c.mode === 'crane') return { pos: lerp3(c.from, c.to, e), tg: c.look2 ? lerp3(aim(c.look, A), aim(c.look2, A), e) : aim(c.look, A) };
-  if (c.mode === 'track') { const t = aim(c.target, A); return { pos: [t[0] + c.off[0], t[1] + c.off[1], t[2] + c.off[2]], tg: c.look ? aim(c.look, A) : t }; }
-  const t = aim(c.target, A), a = lerp(c.a0 == null ? -30 : c.a0, c.a1 == null ? 30 : c.a1, p) * D2R, r = c.r || 8; return { pos: [t[0] + Math.sin(a) * r, t[1] + (c.h == null ? 1.5 : c.h), t[2] - Math.cos(a) * r], tg: t };
-}
-function actorState(a, p, T, idx) {
-  const f = a.from == null ? 0 : a.from, u = a.until == null ? 1 : a.until, at = a.at || [0, 0], to = a.to || at, raw = wn(p, f, u), k = a.loop ? (raw * a.loop) % 1 : ez(raw);
-  const x = lerp(at[0], to[0], k), z = lerp(at[1], to[1], k), travels = to[0] !== at[0] || to[1] !== at[1], moving = travels && raw > 0.001 && raw < 0.999;
-  const yy = Array.isArray(a.y) ? lerp(a.y[0], a.y[1], k) : a.y || 0, s = Array.isArray(a.s) ? lerp(a.s[0], a.s[1], ez(raw)) : a.s == null ? 1 : a.s, vis = a.vis || [0, 1];
-
-  let face = Array.isArray(a.face) ? lerp(a.face[0], a.face[1], ez(raw)) : typeof a.face === 'number' ? a.face : travels ? (Math.atan2(to[0] - at[0], to[1] - at[1]) * 180) / Math.PI : 180;
-  let anim = a.anim || (moving ? 'walk' : 'stand'); if (raw >= 0.999 && a.end) anim = a.end; if (a.seq) for (const [pp, nm] of a.seq) if (p >= pp) anim = nm;
-  let ex = a.ex || 'neutral'; if (a.exs) for (const [pp, nm] of a.exs) if (p >= pp) ex = nm;
-  const info = MINFO[a.m] || {}; return { x, y: yy, z, s, face, moving, anim, ex, seed: idx * 1.7, show: p >= vis[0] && p <= vis[1], h: (info.h || 2) * s };
-}
-const ALLANIM = ['stand', 'walk', 'run', 'sit', 'wave', 'wave2', 'point', 'celebrate', 'carry', 'carrywalk', 'work', 'plant', 'type', 'push', 'look', 'pinch', 'dance', 'crouch', 'scared', 'swim', 'panic', 'float', 'throw', 'sleep', 'eat', 'up', 'run2'], EXS = ['neutral', 'smile', 'laugh', 'sad', 'worried', 'shock', 'determined', 'angry'], KINDS = ['tale', 'dyk', 'survival', 'fiction'];
-function tag(c, x, y, text, o) {
-  o = o || {}; const size = o.size || 44, k = o.k == null ? 1 : o.k; if (k <= 0) return;
-  c.save(); c.font = `800 ${size}px ${FA}`; const w = c.measureText(text).width + size * 1.2, h = size * 1.7, ch = h * 0.3, fit = Math.min(1, (W - 40) / w); c.translate(x, y); c.scale(k * fit, k * fit);
-  const pts = [[-w / 2 + ch, -h / 2], [w / 2, -h / 2], [w / 2, h / 2 - ch], [w / 2 - ch, h / 2], [-w / 2, h / 2], [-w / 2, -h / 2 + ch]], path = (dx) => { c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(p[0] + dx, p[1] + dx) : c.moveTo(p[0] + dx, p[1] + dx))); c.closePath(); };
-  c.fillStyle = 'rgba(20,10,50,.45)'; path(6); c.fill(); c.fillStyle = o.bg || '#fff6a8'; path(0); c.fill();
-  c.fillStyle = 'rgba(255,255,255,.4)'; c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); c.lineTo(pts[1][0], pts[1][1]); c.lineTo(w / 2 - h * 0.6, 0); c.lineTo(-w / 2, 0); c.lineTo(pts[5][0], pts[5][1]); c.closePath(); c.fill();
-  c.fillStyle = o.col || '#2a1f4f'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, 0, 3); c.restore();
-}
-function subtitleChunks(text) {
-  const words = text.split(/\s+/).filter(Boolean), chunks = []; let cur = [];
-  words.forEach((w) => { cur.push(w); if (cur.length >= 4 || /[.,?!:;]$/.test(w)) { chunks.push(cur); cur = []; } }); if (cur.length) chunks.push(cur); return chunks;
-}
-function drawSubtitle(c, T, hi) {
-  const B = STORY.beats; let idx = -1;
-  for (let i = 0; i < B.length; i++) { const s = TL.starts[i], dur = VD ? VD[i] : Math.max(1, TL.R[i] - 0.4); if (T >= s - 0.02 && T <= s + dur + 0.25) { idx = i; break; } }
-  if (idx < 0) return;
-  const s = TL.starts[idx], dur = VD ? VD[idx] : Math.max(1, TL.R[idx] - 0.4), chunks = subtitleChunks(B[idx].vo), tot = chunks.reduce((a, ch) => a + ch.join(' ').length, 0) || 1; let t0 = s, ci = chunks.length - 1, wi = 0, cs = s, cd = dur;
-  for (let k = 0; k < chunks.length; k++) { const d = (dur * chunks[k].join(' ').length) / tot; if (T < t0 + d || k === chunks.length - 1) { ci = k; cs = t0; cd = d; break; } t0 += d; }
-  const ch = chunks[ci].map((w) => w.toUpperCase()), chars = ch.reduce((a, w) => a + w.length, 0) || 1; let acc = 0;
-  for (let k = 0; k < ch.length; k++) { if (T >= cs + (cd * acc) / chars) wi = k; acc += ch[k].length; }
-  let size = 60; c.save(); c.textBaseline = 'alphabetic'; c.textAlign = 'left'; c.direction = 'ltr';
-  const measure = () => { c.font = `900 ${size}px ${FA}`; return ch.map((w) => c.measureText(w).width); };
-  let ws = measure(), gap = size * 0.28, total = ws.reduce((a, b) => a + b, 0) + gap * (ch.length - 1);
-  if (total > W - 60) { size = Math.floor((size * (W - 60)) / total); ws = measure(); gap = size * 0.28; total = ws.reduce((a, b) => a + b, 0) + gap * (ch.length - 1); }
-  const y = 1010, pop = 1 + 0.08 * Math.max(0, 1 - (T - cs) / 0.15); let x = W / 2 - total / 2;
-  c.translate(W / 2, y - size * 0.3); c.scale(pop, pop); c.translate(-W / 2, -(y - size * 0.3));
-  c.fillStyle = 'rgba(14,8,36,.5)'; const bw = total + 50, bh = size * 1.55, bx = W / 2 - bw / 2, by = y - size * 1.1; c.beginPath(); c.moveTo(bx + 16, by); c.lineTo(bx + bw, by); c.lineTo(bx + bw, by + bh - 16); c.lineTo(bx + bw - 16, by + bh); c.lineTo(bx, by + bh); c.lineTo(bx, by + 16); c.closePath(); c.fill();
-  ch.forEach((w, k) => { c.lineJoin = 'round'; c.lineWidth = size * 0.16; c.strokeStyle = '#140a30'; c.strokeText(w, x, y); c.fillStyle = k === wi ? hi : '#ffffff'; c.fillText(w, x, y); x += ws[k] + gap; });
-  c.restore();
-}
-const VOICE_OFF = 0.1, VOICE_TAIL = 0.28, END_HOLD = 1.1, CUT = 0.14;
-let STORY = null, TL = null, VD = null, VAR = null; const SETC = {};
-const wordsIn = (t) => t.split(/\s+/).filter(Boolean).length;
-const BADGE = { tale: ['TRUE STORY', '#ff7060', '#fff'], dyk: ['DID YOU KNOW?', '#ffd23f', '#2a1f4f'], survival: ['SURVIVAL TIP', '#3ff2b4', '#12304a'], fiction: ['SHORT STORY', '#b58cff', '#fff'] };
-function buildTL(v) { const n = STORY.beats.length, E = [], R = [], starts = []; let t = 0; for (let i = 0; i < n; i++) { const d = Math.max(3.4, wordsIn(STORY.beats[i].vo) / 2.6 + 0.6), r = v && v[i] > 0 ? Math.max(1.6, VOICE_OFF + v[i] + VOICE_TAIL) : d; E.push(t); R.push(r); starts.push(t + VOICE_OFF); t += r; } return { E, R, starts, total: t + END_HOLD }; }
-function loadTopic(id) { STORY = STORIES.find((x) => x.id === id) || STORIES[0]; VD = null; TL = buildTL(null); const r = rng(hashS(STORY.id + new Date().toISOString().slice(0, 10))); VAR = { hi: ['#ffd23f', '#3ff2b4', '#ff8a3d'][Math.floor(r() * 3)] }; return { id: STORY.id, title: STORY.title, vo: STORY.beats.map((b) => b.vo), caption: STORY.caption, tags: STORY.tags, footer: STORY.footer, kind: STORY.kind, lang: 'en', tr: [] }; }
-function setVoiceDurations(v) { VD = v; TL = buildTL(v); return { starts: TL.starts, total: TL.total }; }
-
+const nat = { tree: 6, cat: 'nature' };
 defP('tree', { h: 6, r: 1.8, cat: 'nature' }, (M, o) => { const lc = cc(o, 'a', [58, 186, 88]), tc = cc(o, 'b', 'wood'); bb(M, 0, 1.1, 0, 0.7, 2.2, 0.7, tc, { tex: 'plank', cell: 0.35 }); bb(M, 0, 3.1, 0, 3.4, 2.2, 3.4, lc, { tex: 'grass', cell: 0.85, salt: 1 }); bb(M, 0, 4.6, 0, 2.4, 1.4, 2.4, sh(lc, 1.12), { tex: 'grass', cell: 0.8, salt: 2 }); bb(M, 1.3, 2.9, 0.6, 1.6, 1.4, 1.6, sh(lc, 0.92), { tex: 'grass', cell: 0.8, salt: 3 }); bb(M, -1.2, 3.5, -0.5, 1.5, 1.3, 1.5, sh(lc, 1.05), { tex: 'grass', cell: 0.75, salt: 4 }); });
 defP('gum', { h: 7, r: 1.6, cat: 'nature' }, (M, o) => { bb(M, 0, 1.6, 0, 0.6, 3.2, 0.6, [226, 220, 204], { tex: 'plank', cell: 0.4 }); bb(M, 0.5, 3.8, 0, 2.6, 1, 2.2, [110, 160, 110], { tex: 'grass', cell: 0.8 }); bb(M, -0.6, 4.7, 0.3, 2.4, 1, 2.2, [130, 176, 120], { tex: 'grass', cell: 0.8, salt: 2 }); bb(M, 0.3, 5.5, -0.2, 1.6, 0.8, 1.6, [96, 150, 100], { tex: 'grass', cell: 0.8, salt: 3 }); });
 defP('pine', { h: 8, r: 1.8, cat: 'nature' }, (M, o) => { bb(M, 0, 0.6, 0, 0.6, 1.2, 0.6, 'wood', { cell: 0.4 }); const sn = o.snow ? 0.6 : 0; for (let i = 0; i < 4; i++) bb(M, 0, 1.5 + i * 1.0, 0, 3.4 - i * 0.8, 1.0, 3.4 - i * 0.8, mixc([34, 150, 96], [246, 250, 255], sn * (0.4 + i * 0.2)), { tex: 'grass', cell: 0.85, salt: i }); });
@@ -503,7 +453,31 @@ defP('hay', { h: 1.4, r: 1.2, cat: 'props' }, (M) => { bb(M, 0, 0.6, 0, 1.6, 1.2
 defP('mountain', { h: 26, r: 24, cat: 'nature', sh: 0 }, (M, o) => { const h = o.h || 24, w = o.r || 30, n = 6, c = cc(o, 'a', 'stone'); for (let i = 0; i < n; i++) bb(M, 0, (i + 0.5) * h / n, 0, w * (1 - i / n * 0.9), h / n, w * (1 - i / n * 0.9) * 0.8, i >= n - 1 ? 'snow' : mixc(c, [255, 255, 255], i === n - 2 ? 0.45 : 0), { tex: 'stone', cell: w / 4, salt: i, ne: i > 3 }); });
 defP('dune', { h: 4, r: 8, cat: 'nature', sh: 0 }, (M, o) => { const w = o.w || 16; for (let i = 0; i < 4; i++) bb(M, 0, (i + 0.5) * 0.9, 0, w * (1 - i * 0.22), 0.9, w * 0.7 * (1 - i * 0.2), 'sand', { tex: 'sand', cell: 2, salt: i, ne: 1 }); });
 defP('palm', { h: 7, r: 1.2, cat: 'nature' }, (M, o, T) => { const sw = Math.sin(T * 1.2) * 0.04; bb(mm(M, mRz(0.05 + sw)), 0, 3, 0, 0.5, 6, 0.5, [170, 126, 80], { tex: 'stripe', cell: 0.5 }); for (let k = 0; k < 6; k++) { const a = (k / 6) * TAU; bb(mm(M, mm(mT(0, 6.1, 0), mm(mRy(a), mRz(-0.35 + sw)))), 1.2, 0, 0, 2.6, 0.12, 0.7, k & 1 ? [50, 180, 90] : [40, 160, 80], { ne: 1 }); } });
-SETS.meadow = { time: 'day', build() { ground(-110, 110, -60, 170, 5, (x, z) => ((Math.floor(x / 10) + Math.floor(z / 10)) & 1 ? [88, 206, 96] : [74, 192, 88]), 5); farM(190, [26, 36, 22], [100, 140, 220]); tufts(120, 3, -60, 60, 2, 100, [40, 160, 70]); scat(26, 7, -75, 75, 10, 130, (x, z, q) => put('tree', x, 0, z, q() * 360, 0.9 + q() * 0.5), (x, z) => Math.abs(x) < 10 && z < 45); scat(30, 8, -50, 50, 4, 90, (x, z, q) => put('flower', x, 0, z, 0, 1.5, { c: { a: ['red', 'yellow', 'pink', 'white'][Math.floor(q() * 4)] } })); } };
+// ---------- world pieces drawn with the camera in mind ----------
+const SFX_NAMES = ['whoosh', 'thud', 'heart', 'chime', 'bell', 'wind', 'waves', 'rumble', 'steps', 'crowd', 'gulls', 'birds', 'splash', 'alarm', 'cheer', 'clack', 'boom', 'thunder', 'rain', 'squelch', 'drum', 'buzz', 'drip', 'magic', 'beep', 'crash', 'hum', 'pop', 'fire'];
+const MUS = { sad: ['A2', 'E3', 'C4'], hope: ['C3', 'G3', 'E4'], tense: ['D3', 'A3', 'F4'], wonder: ['F3', 'C4', 'A4'], fun: ['G3', 'D4', 'B4'], cold: ['E3', 'B3', 'G4'] };
+// ---------- times of day ----------
+const TIMES = {
+  day: { top: [60, 150, 255], bot: [190, 232, 255], fog: [200, 232, 250], sunCol: [255, 244, 220], orb: 1, orbc: [255, 236, 140], clouds: 4, bright: 1.05 },
+  dawn: { top: [100, 100, 230], bot: [255, 196, 140], fog: [250, 200, 160], sunCol: [255, 214, 160], orb: 1, orbc: [255, 200, 120], orby: 120, clouds: 3, bright: 1.0 },
+  dusk: { top: [70, 50, 160], bot: [255, 150, 110], fog: [240, 160, 140], sunCol: [255, 196, 150], orb: 1, orbc: [255, 140, 90], orby: 90, clouds: 3, bright: 0.96, cloudc: [255, 210, 200] },
+  night: { top: [10, 14, 50], bot: [50, 66, 130], fog: [34, 46, 96], sunCol: [150, 170, 240], stars: 1, orb: 1, orbc: [236, 240, 255], orbx: 0.28, orbs: 90, clouds: 2, bright: 0.72, amb: 0.66, cloudc: [120, 130, 180] },
+  storm: { top: [66, 72, 96], bot: [150, 160, 180], fog: [140, 150, 168], sunCol: [200, 208, 226], clouds: 8, cloudc: [96, 102, 122], bright: 0.84 },
+  smog: { top: [120, 150, 70], bot: [200, 210, 120], fog: [176, 190, 100], sunCol: [255, 240, 170], clouds: 5, cloudc: [170, 180, 110], bright: 0.96, fogNear: 25, fogFar: 150 },
+  tomb: { top: [26, 18, 20], bot: [60, 40, 34], fog: [34, 24, 22], sunCol: [255, 190, 120], amb: 0.5, sk: 0.7, bright: 1.05, clouds: 0, fogNear: 20, fogFar: 90 },
+  clear: { top: [40, 140, 255], bot: [200, 240, 255], fog: [210, 240, 252], sunCol: [255, 248, 230], orb: 1, orbc: [255, 240, 150], clouds: 3, bright: 1.08 },
+  hazy: { top: [196, 120, 80], bot: [255, 206, 140], fog: [236, 190, 140], sunCol: [255, 210, 150], orb: 1, orbc: [255, 190, 100], orby: 150, clouds: 3, cloudc: [230, 190, 150], bright: 0.98 },
+};
+// ---------- sets: a ground, scenery and a default time of day ----------
+const SETS = {};
+const put = (n, x, y, z, f, s, o) => MODELS[n](x, y, z, f == null ? 180 : f, s || 1, o || {}, 0, { anim: 'stand' });
+const scat = (n, seed, x0, x1, z0, z1, fn, avoid) => { const q = rng(seed); for (let i = 0; i < n; i++) { const x = x0 + q() * (x1 - x0), z = z0 + q() * (z1 - z0); if (avoid && avoid(x, z)) continue; fn(x, z, q); } };
+const mount = (x, z, w, h, c) => put('mountain', x, 0, z, 0, 1, { r: w, h, c: { a: c || 'stone' } });
+const farM = (z, hs, c) => { for (let i = 0; i < 6; i++) mount(-120 + i * 48, z, 40 + (i % 3) * 12, hs[i % hs.length], c); };
+const tufts = (n, seed, x0, x1, z0, z1, col, avoid) => scat(n, seed, x0, x1, z0, z1, (x, z, q) => bb(MI, x, 0.12, z, 0.3 + q() * 0.2, 0.24 + q() * 0.2, 0.3, mixc(col, [255, 255, 255], q() * 0.2), { ne: 1 }), avoid);
+const waterDyn = (x0, x1, z0, z1, y, cell, T, c1, c2, amp) => { for (let z = z0; z < z1; z += cell) for (let x = x0; x < x1; x += cell) { const w = Math.sin(x * 0.4 + z * 0.3 + T * 1.8), k = 0.5 + 0.5 * Math.sin(x * 0.17 + z * 0.23 + T * 0.9), col = mixc(c1, c2, k * 0.8 + (w > 0.8 ? 0.25 : 0)), yy = y + w * (amp == null ? 0.08 : amp); FACES.push({ v: [[x, yy, z], [x + cell, yy, z], [x + cell, yy, z + cell], [x, yy, z + cell]], n: [0, 1, 0], c: col, e: null, em: 0, sn: null, L: 0, a: 1, b: 0, ts: 0 }); } };
+function bld(x, z, w, d, h, col, side) { bb(MI, x, h / 2, z, w, h, d, col, { tex: 'brick', cell: 1.1, salt: Math.round(x + z) }); bb(MI, x, h + 0.3, z, w + 0.6, 0.6, d + 0.6, 'dark', { ne: 1 }); const fx = x + side * (w / 2 + 0.06); for (let y = 3; y < h - 1.5; y += 3.4) for (let k = -d / 2 + 2; k < d / 2 - 1; k += 3.2) bb(MI, fx, y, z + k, 0.12, 1.5, 1.5, hf(y | 0, k | 0, 1, 2) > 0.3 ? [255, 226, 130] : [140, 190, 230], { em: 1, ne: 1 }); bb(MI, x + side * (w / 2 + 0.3), 1.4, z, 0.6, 0.4, d - 0.5, 'red', { tex: 'stripe', cell: 0.5, ne: 1 }); }
+SETS.meadow = { time: 'day', build() { ground(-110, 110, -60, 170, 5, (x, z) => ((Math.floor(x / 10) + Math.floor(z / 10)) & 1 ? [88, 206, 96] : [74, 192, 88]), 5); farM(190, [26, 36, 22], [100, 140, 220]); tufts(120, 3, -60, 60, 2, 100, [40, 160, 70]); scat(26, 7, -75, 75, 10, 130, (x, z, q) => put('tree', x, 0, z, q * 360, 0.9 + q() * 0.5), (x, z) => Math.abs(x) < 10 && z < 45); scat(30, 8, -50, 50, 4, 90, (x, z, q) => put('flower', x, 0, z, 0, 1.5, { c: { a: ['red', 'yellow', 'pink', 'white'][Math.floor(q() * 4)] } })); } };
 SETS.outback = { time: 'hazy', build() { ground(-110, 110, -60, 170, 5, (x, z) => ((Math.floor(x / 10) + Math.floor(z / 10)) & 1 ? [214, 112, 62] : [200, 98, 56]), 6); farM(190, [14, 22], [196, 98, 72]); tufts(140, 4, -60, 60, 2, 100, [190, 190, 80]); scat(14, 9, -70, 70, 14, 120, (x, z, q) => put('gum', x, 0, z, q() * 360, 0.9 + q() * 0.5), (x, z) => Math.abs(x) < 9 && z < 40); scat(10, 11, -40, 40, 4, 80, (x, z, q) => put('rock', x, 0, z, q() * 360, 0.8 + q(), { c: { a: [210, 110, 80] } }), (x, z) => Math.abs(x) < 6); } };
 SETS.camp = { time: 'day', build() { ground(-110, 110, -60, 170, 5, (x, z) => (Math.abs(x) < 12 && z < 40 ? [196, 160, 100] : (Math.floor(x / 10) + Math.floor(z / 10)) & 1 ? [112, 188, 90] : [98, 174, 82]), 8); farM(190, [24, 34], [110, 140, 200]); tufts(80, 5, -60, 60, 2, 100, [50, 150, 70], (x, z) => Math.abs(x) < 12 && z < 40); [[-18, 30, 20], [-26, 44, 340], [20, 34, 160], [28, 48, 200]].forEach(([x, z, f]) => put('tent', x, 0, z, f, 1.4)); put('truck', 22, 0, 18, 200, 1.1); scat(18, 12, -80, 80, 30, 130, (x, z, q) => put('pine', x, 0, z, 0, 0.9 + q() * 0.7), (x, z) => Math.abs(x) < 14 && z < 60); [[-8, 36], [8, 40]].forEach(([x, z]) => put('crate', x, 0, z, 20, 1.2)); } };
 SETS.street = { time: 'day', build() { ground(-70, 70, -50, 150, 5, (x, z) => (Math.abs(x) < 7 ? [128, 124, 140] : Math.abs(x) < 10 ? [196, 190, 200] : [112, 170, 100]), 27); scat(30, 5, -6, 6, -40, 140, (x, z, q) => bb(MI, x, 0.05, z, 0.8 + q(), 0.1, 0.8 + q(), [98, 96, 112], { ne: 1 })); const r = rng(5), pal = [[196, 84, 62], [214, 130, 80], [170, 90, 100], [220, 160, 90]]; for (let z = 4; z < 120; z += 17) [-1, 1].forEach((d) => bld(d * (17 + r() * 3), z + r() * 4, 12 + r() * 4, 14, 11 + r() * 12, pal[Math.floor(r() * 4)], -d)); for (let z = 40; z < 100; z += 16) [-1, 1].forEach((d) => put('lamp', d * 9, 0, z, 0, 1)); bld(0, 130, 24, 12, 22, [190, 90, 70], 0); } };
@@ -519,6 +493,121 @@ SETS.beach = { time: 'day', build() { ground(-110, 110, -60, 30, 5, (x, z) => ((
   dyn(b, T) { waterDyn(-110, 110, 38, 200, -0.45, 5, T, [30, 150, 226], [70, 200, 240], 0.12); for (let k = 0; k < 16; k++) bb(MI, -80 + k * 10 + Math.sin(T * 1.5 + k) * 1.5, -0.3, 36 + Math.sin(T * 1.2 + k * 2) * 0.6, 4, 0.2, 0.8, 'white', { ne: 1, em: 1 }); if (b.rip) { for (let z = 38; z < 120; z += 5) for (let x = -5; x < 5; x += 5) FACES.push({ v: [[x, -0.38, z], [x + 5, -0.38, z], [x + 5, -0.38, z + 5], [x, -0.38, z + 5]], n: [0, 1, 0], c: [22, 100, 160 + (z % 10) * 3], e: null, em: 0, sn: null, L: 0, a: 1, b: -0.5, ts: 0 }); for (let k = 0; k < 12; k++) bb(MI, -4 + (k % 4) * 2.6, -0.3, 40 + ((T * 7 + k * 8) % 80), 1.4, 0.2, 0.6, [230, 250, 255], { ne: 1, em: 1 }); } } };
 SETS.cutaway = { time: 'day', build() { bb(MI, 0, -0.35, 30, 160, 0.7, 50, [74, 190, 90], { tex: 'grass', cell: 4, skip: '-y' }); bb(MI, 0, -0.9, 5.2, 160, 0.9, 0.5, [140, 96, 60], { tex: 'mud', cell: 2 }); const bands = [[-1.5, [140, 96, 60]], [-4.5, [124, 84, 52]], [-7.5, [108, 72, 46]], [-10.5, [94, 64, 42]], [-15, [80, 56, 38]], [-24, [70, 48, 34]], [-38, [60, 42, 30]]]; bands.forEach(([y, c], i) => FACES.push({ v: [[-160, y - (i > 3 ? 6 : 1.5), 55], [160, y - (i > 3 ? 6 : 1.5), 55], [160, y + (i > 3 ? 6 : 1.5), 55], [-160, y + (i > 3 ? 6 : 1.5), 55]], n: [0, 0, -1], c: c, e: null, em: 0, sn: null, L: 2, a: 1, b: 40, ts: 0 })); for (let x = -40; x < 40; x += 3) for (let i = 0; i < 4; i++) if (hf(x, i, 1, 4) > 0.55) bb(MI, x, -1.5 - i * 3 + hf(x, i, 2, 4), 54.7, 1.2, 1.1, 0.2, sh(bands[i][1], 0.8), { ne: 1, b: 39 }); farM(150, [22, 30], [110, 170, 190]); put('tree', -22, 0, 14, 0, 1.4); put('tree', 22, 0, 16, 0, 1.3); put('tree', -36, 0, 22, 0, 1.2); put('tree', 36, 0, 24, 0, 1.2); put('tree', 0, 0, 20, 0, 2.3); [-8, -4, 5, 9].forEach((x, i) => put('tree', x, 0, 12 + (i % 2) * 2, 0, 0.5)); [[-26, 3], [28, 4], [-12, 5], [14, 5]].forEach(([x, z]) => put('mushroom', x, 0, z + 6, 0, 1.6, { glow: 0 })); const roots = [[0, 20, 7], [-22, 14, 4], [22, 16, 4], [-36, 22, 3], [36, 24, 3]]; roots.forEach(([x, z, w], i) => { for (let k = 0; k < 5; k++) bb(MI, x + (k - 2) * w * 0.35, -1 - k * 0.5, z + 2, 0.5, 2 + (k % 2) * 1.5, 0.5, [150, 100, 60], { ne: 1 }); bb(MI, x, -2.4, z + 2, w, 0.4, 0.5, [150, 100, 60], { ne: 1 }); }); },
   dyn(b, T) { const g = b.glow || 0; if (g <= 0) return; const N = [[0, 20], [-22, 14], [22, 16], [-36, 22], [36, 24], [-8, 14], [5, 14]], E = [[0, 1], [0, 2], [1, 3], [2, 4], [0, 5], [0, 6]]; E.forEach(([a, c], i) => { const A = N[a], B = N[c], steps = 14; for (let k = 0; k <= steps; k++) { const u = k / steps, x = lerp(A[0], B[0], u), y = -2.6 - Math.sin(u * Math.PI) * 1.6, z = lerp(A[1], B[1], u) + 2; bb(MI, x, y, z, 0.28, 0.28, 0.28, [255, 240, 150], { em: 1, ne: 1 }); } const pu = (T * (0.4 + i * 0.06) + i * 0.3) % 1; bb(MI, lerp(A[0], B[0], pu), -2.6 - Math.sin(pu * Math.PI) * 1.6, lerp(A[1], B[1], pu) + 2, 0.8, 0.8, 0.8, [255, 255, 255], { em: 1, ne: 1 }); }); } };
+const FXS = ['rain', 'dust', 'confetti', 'sparks', 'rainbow', 'fog'];
+function drawFx(c, names, T) {
+  names.forEach((n) => {
+    const q = rng(hashS(n));
+    if (n === 'rain') { c.strokeStyle = 'rgba(210,225,245,.65)'; c.lineWidth = 3; c.beginPath(); for (let i = 0; i < 120; i++) { const x = q() * (W + 200) - 100, y = (q() * HH + T * 1600 * (0.8 + q() * 0.5)) % HH; c.moveTo(x, y); c.lineTo(x - 14, y + 50); } c.stroke(); }
+    if (n === 'dust') { for (let i = 0; i < 50; i++) { c.fillStyle = `rgba(240,225,190,${0.18 + q() * 0.25})`; const s = 4 + q() * 8; c.fillRect((q() * W + T * (12 + q() * 30)) % W, (q() * HH + Math.sin(T + i) * 18 + HH) % HH, s, s); } }
+    if (n === 'sparks') { for (let i = 0; i < 40; i++) { const t = (T * (0.6 + q() * 0.8) + q() * 3) % 1; c.fillStyle = `rgba(255,${150 + (q() * 90) | 0},60,${1 - t})`; c.fillRect(W * (0.2 + q() * 0.6) + Math.sin(i + T * 3) * 20, HH * 0.8 - t * 700 * (0.5 + q()), 6, 6); } }
+    if (n === 'confetti') { for (let i = 0; i < 70; i++) { const t = (T * (0.3 + q() * 0.4) + q()) % 1; c.save(); c.translate(q() * W + Math.sin(T * 3 + i) * 30, -30 + t * (HH + 60)); c.rotate(T * 4 + i); c.fillStyle = ['#ff7060', '#ffd23f', '#7cf2c0', '#7aa8ff', '#ff9bd0'][i % 5]; c.fillRect(-8, -4, 16, 8); c.restore(); } }
+    if (n === 'rainbow') { const cs = ['#ff4040', '#ff9a30', '#ffe040', '#50d060', '#40a0ff', '#8060ff']; cs.forEach((col, i) => { c.strokeStyle = col; c.globalAlpha = 0.7; c.lineWidth = 22; c.beginPath(); c.arc(W * 0.35, HH * 0.62, 470 - i * 22, Math.PI * 1.05, Math.PI * 1.95); c.stroke(); }); c.globalAlpha = 1; }
+    if (n === 'fog') { c.fillStyle = 'rgba(190,210,120,.14)'; for (let i = 0; i < 8; i++) c.fillRect(((i * 190 + T * 20) % (W + 300)) - 150, 300 + i * 90, 320, 110); }
+  });
+}
+// ---------- cameras, actors ----------
+const CAMS = ['static', 'dolly', 'orbit', 'track', 'crane'];
+function aim(t, A) { if (typeof t === 'string') { const a = A[t]; return a ? [a.x, a.y + a.h * 0.55, a.z] : [0, 1, 10]; } return t || [0, 1, 10]; }
+function camFor(b, p, A) {
+  const c = b.cam || { mode: 'orbit', target: b.actors && b.actors[0] ? b.actors[0].id : [0, 1, 10], r: 8, h: 2.5 }, e = ez(p);
+  if (c.mode === 'static') return { pos: c.at, tg: aim(c.look, A) };
+  if (c.mode === 'dolly' || c.mode === 'crane') return { pos: lerp3(c.from, c.to, e), tg: c.look2 ? lerp3(aim(c.look, A), aim(c.look2, A), e) : aim(c.look, A) };
+  if (c.mode === 'track') { const t = aim(c.target, A); return { pos: [t[0] + c.off[0], t[1] + c.off[1], t[2] + c.off[2]], tg: c.look ? aim(c.look, A) : t }; }
+  const t = aim(c.target, A), a = lerp(c.a0 == null ? -30 : c.a0, c.a1 == null ? 30 : c.a1, p) * D2R, r = c.r || 8; return { pos: [t[0] + Math.sin(a) * r, t[1] + (c.h == null ? 1.5 : c.h), t[2] - Math.cos(a) * r], tg: t };
+}
+function actorState(a, p, T, idx) {
+  const f = a.from == null ? 0 : a.from, u = a.until == null ? 1 : a.until, at = a.at || [0, 0], to = a.to || at, raw = wn(p, f, u), k = a.loop ? (raw * a.loop) % 1 : ez(raw);
+  const x = lerp(at[0], to[0], k), z = lerp(at[1], to[1], k), travels = to[0] !== at[0] || to[1] !== at[1], moving = travels && raw > 0.001 && raw < 0.999;
+  const yy = Array.isArray(a.y) ? lerp(a.y[0], a.y[1], k) : a.y || 0, s = Array.isArray(a.s) ? lerp(a.s[0], a.s[1], ez(raw)) : a.s == null ? 1 : a.s, vis = a.vis || [0, 1];
+  let face = Array.isArray(a.face) ? lerp(a.face[0], a.face[1], ez(raw)) : typeof a.face === 'number' ? a.face : travels ? (Math.atan2(to[0] - at[0], to[1] - at[1]) * 180) / Math.PI : 180;
+  let anim = a.anim || (moving ? 'walk' : 'stand'); if (raw >= 0.999 && a.end) anim = a.end; if (a.seq) for (const [pp, nm] of a.seq) if (p >= pp) anim = nm;
+  let ex = a.ex || 'neutral'; if (a.exs) for (const [pp, nm] of a.exs) if (p >= pp) ex = nm;
+  const info = MINFO[a.m] || {}; return { x, y: yy, z, s, face, moving, anim, ex, seed: idx * 1.7, show: p >= vis[0] && p <= vis[1], h: (info.h || 2) * s };
+}
+// ---------- validator: what a story must satisfy (checked in the preview console) ----------
+const ALLANIM = ['stand', 'walk', 'run', 'sit', 'wave', 'wave2', 'point', 'celebrate', 'carry', 'carrywalk', 'work', 'plant', 'type', 'push', 'look', 'pinch', 'dance', 'crouch', 'scared', 'swim', 'panic', 'float', 'throw', 'sleep', 'eat', 'up', 'run2'], EXS = ['neutral', 'smile', 'laugh', 'sad', 'worried', 'shock', 'determined', 'angry'], KINDS = ['tale', 'dyk', 'survival', 'fiction'];
+function validateStory(s) {
+  const E = [], wordsOf = (t) => t.split(/\s+/).filter(Boolean).length; if (!s || typeof s !== 'object') return ['story is not an object'];
+  if (!/^[a-z0-9_]+$/.test(s.id || '')) E.push('id must be lowercase letters/digits/_'); if (!s.title || s.title.length > 32) E.push('title missing or longer than 32 chars'); if (!s.caption) E.push('caption missing'); if (!s.tags) E.push('tags missing'); if (KINDS.indexOf(s.kind) < 0) E.push('unknown kind ' + s.kind);
+  if (!SETS[s.set]) E.push('unknown set: ' + s.set); if (!MUS[s.music]) E.push('unknown music: ' + s.music);
+  const bs = s.beats || []; if (bs.length < 4 || bs.length > 6) E.push('needs 4 to 6 beats'); let total = 0;
+  bs.forEach((b, i) => {
+    const L = 'beat ' + (i + 1) + ': '; if (!b.vo) { E.push(L + 'vo text missing'); return; } const w = wordsOf(b.vo); total += w; if (w < 6 || w > 20) E.push(L + 'voice line must be 6 to 20 words (is ' + w + ')');
+    if (b.set && !SETS[b.set]) E.push(L + 'unknown set ' + b.set); if (b.time && !TIMES[b.time]) E.push(L + 'unknown time ' + b.time);
+    const ids = {}; (b.actors || []).forEach((a) => { if (!MODELS[a.m]) E.push(L + 'unknown model ' + a.m); if (!a.id) E.push(L + 'actor without id'); else if (ids[a.id]) E.push(L + 'duplicate actor id ' + a.id); ids[a.id] = 1; if (!Array.isArray(a.at) || a.at.length !== 2) E.push(L + 'actor ' + a.id + ': at must be [x,z]'); if (a.anim && ALLANIM.indexOf(a.anim) < 0) E.push(L + 'unknown anim ' + a.anim); if (a.ex && EXS.indexOf(a.ex) < 0) E.push(L + 'unknown expression ' + a.ex); if (a.c) Object.values(a.c).forEach((v) => { if (typeof v === 'string' && !PAL[v]) E.push(L + 'unknown colour ' + v); }); });
+    if ((b.actors || []).length > 16) E.push(L + 'too many actors (max 16)');
+    const c = b.cam; if (c) { if (CAMS.indexOf(c.mode) < 0) E.push(L + 'unknown camera mode ' + c.mode); ['target', 'look'].forEach((k) => { if (typeof c[k] === 'string' && !ids[c[k]]) E.push(L + 'camera ' + k + ' "' + c[k] + '" is not an actor id'); }); }
+    (b.fx || []).forEach((f) => { if (FXS.indexOf(f) < 0) E.push(L + 'unknown fx ' + f); }); (b.sfx || []).forEach((f) => { if (SFX_NAMES.indexOf(f.split('@')[0]) < 0) E.push(L + 'unknown sfx ' + f); }); (b.tags || []).forEach((t) => { if (!t.count && (t.text || '').length > 24) E.push(L + 'tag text too long'); });
+  });
+  if (total < 44 || total > 70) E.push('total narration must be 44 to 70 words (is ' + total + ')'); return E;
+}
+// ---------- cut-corner tags (the on-screen labels) ----------
+function tag(c, x, y, text, o) {
+  o = o || {}; const size = o.size || 44, k = o.k == null ? 1 : o.k; if (k <= 0) return;
+  c.save(); c.font = `800 ${size}px ${FA}`; const w = c.measureText(text).width + size * 1.2, h = size * 1.7, ch = h * 0.3, fit = Math.min(1, (W - 40) / w); c.translate(x, y); c.scale(k * fit, k * fit);
+  const pts = [[-w / 2 + ch, -h / 2], [w / 2, -h / 2], [w / 2, h / 2 - ch], [w / 2 - ch, h / 2], [-w / 2, h / 2], [-w / 2, -h / 2 + ch]], path = (dx) => { c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(p[0] + dx, p[1] + dx) : c.moveTo(p[0] + dx, p[1] + dx))); c.closePath(); };
+  c.fillStyle = 'rgba(20,10,50,.45)'; path(6); c.fill(); c.fillStyle = o.bg || '#fff6a8'; path(0); c.fill();
+  c.fillStyle = 'rgba(255,255,255,.4)'; c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); c.lineTo(pts[1][0], pts[1][1]); c.lineTo(w / 2 - h * 0.6, 0); c.lineTo(-w / 2, 0); c.lineTo(pts[5][0], pts[5][1]); c.closePath(); c.fill();
+  c.fillStyle = o.col || '#2a1f4f'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, 0, 3); c.restore();
+}
+// ---------- live subtitles: word-by-word, current word highlighted ----------
+function subtitleChunks(text) {
+  const words = text.split(/\s+/).filter(Boolean), chunks = []; let cur = [];
+  words.forEach((w) => { cur.push(w); if (cur.length >= 4 || /[.,?!:;]$/.test(w)) { chunks.push(cur); cur = []; } }); if (cur.length) chunks.push(cur); return chunks;
+}
+function drawSubtitle(c, T, hi) {
+  const B = STORY.beats; let idx = -1;
+  for (let i = 0; i < B.length; i++) { const s = TL.starts[i], dur = VD ? VD[i] : Math.max(1, TL.R[i] - 0.4); if (T >= s - 0.02 && T <= s + dur + 0.25) { idx = i; break; } }
+  if (idx < 0) return;
+  const s = TL.starts[idx], dur = VD ? VD[idx] : Math.max(1, TL.R[idx] - 0.4), chunks = subtitleChunks(B[idx].vo), tot = chunks.reduce((a, ch) => a + ch.join(' ').length, 0) || 1; let t0 = s, ci = chunks.length - 1, wi = 0, cs = s, cd = dur;
+  for (let k = 0; k < chunks.length; k++) { const d = (dur * chunks[k].join(' ').length) / tot; if (T < t0 + d || k === chunks.length - 1) { ci = k; cs = t0; cd = d; break; } t0 += d; }
+  const ch = chunks[ci].map((w) => w.toUpperCase()), chars = ch.reduce((a, w) => a + w.length, 0) || 1; let acc = 0;
+  for (let k = 0; k < ch.length; k++) { if (T >= cs + (cd * acc) / chars) wi = k; acc += ch[k].length; }
+  let size = 60; c.save(); c.textBaseline = 'alphabetic'; c.textAlign = 'left'; c.direction = 'ltr';
+  const measure = () => { c.font = `900 ${size}px ${FA}`; return ch.map((w) => c.measureText(w).width); };
+  let ws = measure(), gap = size * 0.28, total = ws.reduce((a, b) => a + b, 0) + gap * (ch.length - 1);
+  if (total > W - 60) { size = Math.floor((size * (W - 60)) / total); ws = measure(); gap = size * 0.28; total = ws.reduce((a, b) => a + b, 0) + gap * (ch.length - 1); }
+  const y = 1010, pop = 1 + 0.08 * Math.max(0, 1 - (T - cs) / 0.15); let x = W / 2 - total / 2;
+  c.translate(W / 2, y - size * 0.3); c.scale(pop, pop); c.translate(-W / 2, -(y - size * 0.3));
+  c.fillStyle = 'rgba(14,8,36,.5)'; const bw = total + 50, bh = size * 1.55, bx = W / 2 - bw / 2, by = y - size * 1.1; c.beginPath(); c.moveTo(bx + 16, by); c.lineTo(bx + bw, by); c.lineTo(bx + bw, by + bh - 16); c.lineTo(bx + bw - 16, by + bh); c.lineTo(bx, by + bh); c.lineTo(bx, by + 16); c.closePath(); c.fill();
+  ch.forEach((w, k) => { c.lineJoin = 'round'; c.lineWidth = size * 0.16; c.strokeStyle = '#140a30'; c.strokeText(w, x, y); c.fillStyle = k === wi ? hi : '#ffffff'; c.fillText(w, x, y); x += ws[k] + gap; });
+  c.restore();
+}
+// ---------- timeline: each beat stretches to its voice line ----------
+const VOICE_OFF = 0.1, VOICE_TAIL = 0.28, END_HOLD = 1.1, CUT = 0.14;
+let STORY = null, TL = null, VD = null, VAR = null; const SETC = {};
+const wordsIn = (t) => t.split(/\s+/).filter(Boolean).length;
+const BADGE = { tale: ['TRUE STORY', '#ff7060', '#fff'], dyk: ['DID YOU KNOW?', '#ffd23f', '#2a1f4f'], survival: ['SURVIVAL TIP', '#3ff2b4', '#12304a'], fiction: ['SHORT STORY', '#b58cff', '#fff'] };
+function buildTL(v) { const n = STORY.beats.length, E = [], R = [], starts = []; let t = 0; for (let i = 0; i < n; i++) { const d = Math.max(3.4, wordsIn(STORY.beats[i].vo) / 2.6 + 0.6), r = v && v[i] > 0 ? Math.max(1.6, VOICE_OFF + v[i] + VOICE_TAIL) : d; E.push(t); R.push(r); starts.push(t + VOICE_OFF); t += r; } return { E, R, starts, total: t + END_HOLD }; }
+function loadTopic(id) { STORY = STORIES.find((x) => x.id === id) || STORIES[0]; VD = null; TL = buildTL(null); const r = rng(hashS(STORY.id + new Date().toISOString().slice(0, 10))); VAR = { hi: ['#ffd23f', '#3ff2b4', '#ff8a3d'][Math.floor(r() * 3)] }; return { id: STORY.id, title: STORY.title, vo: STORY.beats.map((b) => b.vo), caption: STORY.caption, tags: STORY.tags, footer: STORY.footer, kind: STORY.kind, lang: 'en', tr: [] }; }
+function setVoiceDurations(v) { VD = v; TL = buildTL(v); return { starts: TL.starts, total: TL.total }; }
+// ---------- one frame ----------
+let GRAIN = null;
+function explainer(ctx, T) {
+  const S = STORY; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.clearRect(0, 0, W, HH);
+  let i = S.beats.length - 1; for (let k = 0; k < S.beats.length; k++) if (T < TL.E[k] + TL.R[k]) { i = k; break; }
+  const bt = T - TL.E[i], p = cl(bt / TL.R[i]), b = S.beats[i], setName = b.set || S.set, SET = SETS[setName];
+  if (!SETC[setName]) { FACES = []; STATIC = true; SET.build(); STATIC = false; SETC[setName] = FACES; }
+  const A = {}; (b.actors || []).forEach((a, k) => { A[a.id] = actorState(a, p, T, k); });
+  const cv = camFor(b, p, A), sh0 = bt < 0.25 && i > 0 ? Math.sin(bt * 90) * (1 - bt / 0.25) * 0.12 : 0, cpos = [cv.pos[0] + sh0, cv.pos[1] + sh0 * 0.6, cv.pos[2]], cam = lookCam(cpos, cv.tg);
+  CAMP = cpos; FACES = SETC[setName].slice(); STATIC = false;
+  (b.actors || []).forEach((a, k) => { const st = A[a.id]; if (!st.show) return; const oo = {}, rw = wn(p, a.from == null ? 0 : a.from, a.until == null ? 1 : a.until); for (const kk in (a.o || {})) { const v = a.o[kk]; oo[kk] = Array.isArray(v) && v.length === 2 && typeof v[0] === 'number' ? lerp(v[0], v[1], ez(rw)) : v; } oo.c = a.c; oo.ex = st.ex; MODELS[a.m](st.x, st.y, st.z, st.face, st.s, oo, T, st); });
+  if (SET.dyn) SET.dyn(b, T, p);
+  (b.bolts || []).forEach((bo) => { if (Math.abs(p - bo.p) < 0.045) MODELS.bolt(bo.x, 0, bo.z, 0, 1, { seed: Math.round(bo.p * 100), h: bo.h || 34 }, T, {}); });
+  const env = Object.assign({ amb: 0.6, sk: 0.52, bright: 1, fogNear: 40, fogFar: 260 }, TIMES[b.time || SET.time]);
+  skyDraw(ctx, env, T); renderScene(ctx, cam, env); drawFx(ctx, b.fx || [], T);
+  const bg = BADGE[S.kind] || BADGE.tale; tag(ctx, 175, 74, bg[0], { size: 30, bg: bg[1], col: bg[2] });
+  if (i === 0) tag(ctx, W / 2, 200, S.title.toUpperCase(), { size: 58, k: bk(wn(bt, 0.1, 0.45)) * (1 - wn(bt, 2.4, 2.9)) });
+  (b.tags || []).forEach((tg) => { const a = tg.t[0], e = tg.t[1], k = bk(wn(p, a, a + 0.1)) * (1 - wn(p, e - 0.08, e)); const txt = tg.count ? Math.round(lerp(tg.count[0], tg.count[1], eo(wn(p, a + 0.02, e - 0.1)))).toLocaleString('en-US') + (tg.suffix || '') : tg.text; tag(ctx, W / 2, tg.y || 330, txt, { size: tg.size || 70, k, bg: tg.bg, col: tg.col }); });
+  (b.flashes || []).forEach((fp) => { const d = p - fp; if (d >= 0 && d < 0.07) { ctx.fillStyle = `rgba(255,255,255,${0.75 * (1 - d / 0.07)})`; ctx.fillRect(0, 0, W, HH); } });
+  if (b.flash === 'red') { ctx.fillStyle = `rgba(255,40,30,${0.2 * (0.5 + 0.5 * Math.sin(T * 10))})`; ctx.fillRect(0, 0, W, HH); }
+  drawSubtitle(ctx, T, VAR.hi);
+  if (i > 0 && bt < CUT) { ctx.fillStyle = `rgba(255,255,255,${0.55 * (1 - bt / CUT)})`; ctx.fillRect(0, 0, W, HH); }
+  const g = ctx.createRadialGradient(W / 2, HH / 2, 420, W / 2, HH / 2, 900); g.addColorStop(0, 'rgba(10,5,30,0)'); g.addColorStop(1, 'rgba(10,5,30,.3)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, HH);
+  if (!GRAIN) { GRAIN = document.createElement('canvas'); GRAIN.width = GRAIN.height = 128; const x = GRAIN.getContext('2d'), im = x.createImageData(128, 128), d = im.data, q = rng(9); for (let k = 0; k < d.length; k += 4) { const v = (q() * 255) | 0; d[k] = d[k + 1] = d[k + 2] = v; d[k + 3] = 255; } x.putImageData(im, 0, 0); GRAIN.pat = ctx.createPattern(GRAIN, 'repeat'); }
+  const f = Math.floor(T * 12); ctx.save(); ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = 0.08; ctx.translate((f * 37) % 128, (f * 91) % 128); ctx.fillStyle = GRAIN.pat; ctx.fillRect(-128, -128, W + 256, HH + 256); ctx.restore();
+}
+// ---------- catalog: every model in the kit, turning slowly ----------
 const CAT_PER = 12;
 function catalogNames() { return Object.keys(MODELS).sort((a, b) => ((MINFO[a] || {}).cat || '').localeCompare((MINFO[b] || {}).cat || '') || a.localeCompare(b)); }
 function drawCatalog(ctx, page, T) {
@@ -533,48 +622,16 @@ function drawCatalog(ctx, page, T) {
     ctx.restore(); ctx.fillStyle = '#fff'; ctx.font = '700 20px Poppins, Arial'; ctx.textAlign = 'center'; ctx.fillText(nm, cx + cw / 2, cy0 + ch - 14); ctx.fillStyle = '#ffb08a'; ctx.font = '600 14px Poppins, Arial'; ctx.fillText(info.cat || '', cx + cw / 2, cy0 + ch - 36);
   }
 }
-window.catalogPages = () => Math.ceil(catalogNames().length / CAT_PER);
+window.catalogPages = () => Math.ceil(catalogNames().length / CAT_PER); window.validateStory = validateStory;
 window.KIT = { MODELS: Object.keys(MODELS), SETS: Object.keys(SETS), TIMES: Object.keys(TIMES), FX: FXS, ANIMS: ALLANIM, CAMS, COLORS: Object.keys(PAL), SFX: SFX_NAMES, MUSIC: Object.keys(MUS), EXPRESSIONS: EXS };
-
-// =====================================================================
-//  DEFAULT validateStory STUB (removed from inline init loop).
-//  A real implementation may live in one of the content_story*.js files.
-//  This stub keeps the init IIFE safe even if that file is missing.
-// =====================================================================
-if (typeof window.validateStory !== 'function') {
-  window.validateStory = function (s) {
-    const errs = [];
-    if (!s || typeof s !== 'object') return ['story is not an object'];
-    if (!s.id) errs.push('missing id');
-    if (!s.title) errs.push('missing title');
-    if (!Array.isArray(s.beats) || !s.beats.length) errs.push('no beats');
-    else s.beats.forEach((b, i) => { if (!b || typeof b.vo !== 'string' || !b.vo.trim()) errs.push('beat ' + i + ' missing vo'); });
-    return errs;
-  };
-}
 </script>
-
-<!-- Content scripts: guarded so the page still boots and shows a clear message if any are missing -->
-<script src="content_story.js"  onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story.js')"></script>
-<script src="content_story2.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story2.js')"></script>
-<script src="content_story3.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story3.js')"></script>
-<script src="content_story4.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story4.js')"></script>
-<script src="content_story5.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story5.js')"></script>
-<script src="content_story6.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story6.js')"></script>
-<script src="content_story7.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story7.js')"></script>
-<script src="content_story8.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story8.js')"></script>
-<script src="content_story9.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story9.js')"></script>
-<script src="content_story10.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('content_story10.js')"></script>
-<script src="engine_plus.js" onerror="window.__scriptErr = (window.__scriptErr||[]).concat('engine_plus.js')"></script>
+<script src="content.js"></script>
 <script>
 'use strict';
-// The above content scripts are expected to define: STORIES, explainer(), optionally validateStory().
-// engine_plus.js may define helpers.  Everything below is the UI + audio + init.
-window.TOPIC_IDS = (typeof STORIES !== 'undefined' && Array.isArray(STORIES)) ? STORIES.map((s) => s.id) : [];
-window.TOPIC_KINDS = (typeof STORIES !== 'undefined' && Array.isArray(STORIES)) ? Object.fromEntries(STORIES.map((s) => [s.id, s.kind])) : {};
+window.TOPIC_IDS = STORIES.map((s) => s.id); window.TOPIC_KINDS = Object.fromEntries(STORIES.map((s) => [s.id, s.kind]));
 window.loadTopic = loadTopic; window.setVoiceDurations = setVoiceDurations;
 // =====================================================================
-//  SOUND: whoosh on every cut plus per-beat effects. No music, no pings/tones.
+//  SOUND: soft drone and plucks (optional), a whoosh on every cut, and effects for each beat
 // =====================================================================
 function noteHz(n) { const m = /^([A-G])([#b]?)(\d)$/.exec(n), S = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }; return 440 * Math.pow(2, (S[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (m[3] - 4) * 12 - 9) / 12); }
 function buildAudio(ctx, vo, score) {
@@ -619,11 +676,15 @@ function buildAudio(ctx, vo, score) {
     fire: (t, d) => noise(t, d || 3, { f: [600, 1500], q: 0.3, g: 0.05, swell: true }),
   };
   const LONG = ['wind', 'waves', 'crowd', 'rain', 'drum', 'buzz', 'hum', 'fire'], R0 = MUS[STORY.music || 'hope'].map(noteHz);
-  if (false) { /* music score switched off */ }
+  if (score) {
+    R0.forEach((f, k) => { const o = ctx.createOscillator(); o.type = k ? 'triangle' : 'sine'; o.frequency.value = f; const g = ctx.createGain(), gn = [0.05, 0.03, 0.02][k] * (vo ? 0.7 : 1); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(gn, 1.5); g.gain.setValueAtTime(gn, Math.max(1.5, T - 1.5)); g.gain.linearRampToValueAtTime(0, T); o.connect(g); out(g, 0, 0.25); o.start(0); o.stop(T + 0.1); });
+    const q = rng(id); for (let t = 0.6; t < T - 1; t += 1.1) if (q() < 0.7) tone(t, R0[Math.floor(q() * 3)] * (q() < 0.5 ? 2 : 4), 1.8, { type: 'triangle', g: (vo ? 0.025 : 0.045), vb: 0.5, pan: q() - 0.5 });
+  }
   STORY.beats.forEach((b, i) => {
     const e0 = TL.E[i], R = TL.R[i]; if (i > 0) FX.whoosh(e0 - 0.05);
-    (b.sfx || []).forEach((sp) => { const [n, fr] = sp.split('@'), lg = LONG.indexOf(n) >= 0, t = e0 + (lg ? 0.05 : (fr ? +fr : 0.3) * R); if (FX[n] && !(window.BAN_SFX || []).includes(n)) FX[n](t, lg ? R : undefined); });
+    (b.sfx || []).forEach((sp) => { const [n, fr] = sp.split('@'), lg = LONG.indexOf(n) >= 0, t = e0 + (lg ? 0.05 : (fr ? +fr : 0.3) * R); if (FX[n]) FX[n](t, lg ? R : undefined); });
   });
+  FX.chime(T - END_HOLD + 0.15, 'A5');
 }
 window.renderAudioBase64 = async function (vo, noScore) {
   const sr = 48000, len = Math.ceil(TL.total * sr), ctx = new OfflineAudioContext(2, len, sr); buildAudio(ctx, !!vo, !noScore);
@@ -632,62 +693,31 @@ window.renderAudioBase64 = async function (vo, noScore) {
   const bytes = new Uint8Array(o.buffer); let s = ''; for (let k = 0; k < bytes.length; k += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000)); return btoa(s);
 };
 // =====================================================================
-//  PAGE: preview player + hooks
+//  PAGE: preview player + hooks used by the render script
 // =====================================================================
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 window.frameJPEG = function (t) { explainer(ctx, t); return cv.toDataURL('image/jpeg', 0.92).split(',')[1]; };
-
-// Fixed init: guards every dependency and ALWAYS sets window._ready in finally.
-(async function init() {
-  const $ = (id) => document.getElementById(id);
-  try {
-    try { await document.fonts.load('800 40px Poppins', 'Hello'); await document.fonts.ready; } catch (e) { /* render anyway */ }
-
-    // Check content scripts
-    if (typeof STORIES === 'undefined' || !Array.isArray(STORIES) || !STORIES.length) {
-      const miss = (window.__scriptErr || []).join(', ') || 'unknown';
-      throw new Error('STORIES is empty or undefined. Missing/failed scripts: ' + miss);
-    }
-    if (typeof explainer !== 'function') {
-      throw new Error('explainer() is not defined (engine_plus.js may be missing).');
-    }
-
-    // Validate (now safely guarded — window.validateStory is always a function due to stub above)
-    for (const s of STORIES) {
-      const er = window.validateStory(s);
-      if (er && er.length) console.warn('STORY PROBLEMS', s.id, er);
-    }
-
-    // ---- UI ---------------------------------------------------------
-    let T = 0, playing = false, tPrev = 0, snd = true, loop = true, catMode = false, AC2 = null, SRC = null, BUF = null, BUFKEY = '';
-    const fmt = (s) => Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
-    function draw() { if (catMode) { drawCatalog(ctx, +$('catpage').value || 0, T); return; } explainer(ctx, T); $('seek').max = TL.total; $('seek').value = T; $('time').textContent = fmt(T) + ' / ' + fmt(TL.total); }
-    function audioStop() { try { if (SRC) SRC.stop(); } catch (e) {} SRC = null; }
-    async function audioStart(off) { audioStop(); if (!snd || catMode) return; const key = STORY.id + TL.total; if (BUFKEY !== key) { const oc = new OfflineAudioContext(2, Math.ceil(TL.total * 44100), 44100); buildAudio(oc, false, true); BUF = await oc.startRendering(); BUFKEY = key; } if (!playing) return; AC2 = AC2 || new (window.AudioContext || window.webkitAudioContext)(); SRC = AC2.createBufferSource(); SRC.buffer = BUF; SRC.connect(AC2.destination); SRC.start(0, Math.min(off, TL.total - 0.05)); }
-    function frame(now) { if (!playing) return; T += (now - tPrev) / 1000; tPrev = now; if (!catMode && T >= TL.total) { if (loop) { T = 0; audioStart(0); } else { playing = false; $('play').textContent = 'Play'; T = TL.total - 0.01; audioStop(); } } draw(); requestAnimationFrame(frame); }
-    function play() { playing = true; $('play').textContent = 'Pause'; tPrev = performance.now(); audioStart(T); requestAnimationFrame(frame); }
-    function pause() { playing = false; $('play').textContent = 'Play'; audioStop(); }
-    $('play').onclick = () => (playing ? pause() : play()); $('seek').oninput = () => { T = parseFloat($('seek').value); draw(); if (playing) audioStart(T); };
-    $('snd').onclick = () => { snd = !snd; $('snd').setAttribute('aria-pressed', snd); if (!snd) audioStop(); else if (playing) audioStart(T); };
-    $('loop').onclick = () => { loop = !loop; $('loop').setAttribute('aria-pressed', loop); };
-    $('topic').onchange = () => { pause(); loadTopic($('topic').value); T = 0; draw(); };
-    $('cat').onclick = () => { catMode = !catMode; $('cat').setAttribute('aria-pressed', catMode); $('catpage').style.display = catMode ? '' : 'none'; if (catMode && !playing) play(); if (!catMode) T = 0; draw(); };
-    $('catpage').onchange = draw;
-    STORIES.forEach((s) => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.title; $('topic').appendChild(o); });
+(function ui() {
+  const $ = (id) => document.getElementById(id); let T = 0, playing = false, tPrev = 0, snd = true, loop = true, catMode = false, AC2 = null, SRC = null, BUF = null, BUFKEY = '';
+  const fmt = (s) => Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
+  function draw() { if (catMode) { drawCatalog(ctx, +$('catpage').value || 0, T); return; } explainer(ctx, T); $('seek').max = TL.total; $('seek').value = T; $('time').textContent = fmt(T) + ' / ' + fmt(TL.total); }
+  function audioStop() { try { if (SRC) SRC.stop(); } catch (e) {} SRC = null; }
+  async function audioStart(off) { audioStop(); if (!snd || catMode) return; const key = STORY.id + TL.total; if (BUFKEY !== key) { const oc = new OfflineAudioContext(2, Math.ceil(TL.total * 44100), 44100); buildAudio(oc, false, true); BUF = await oc.startRendering(); BUFKEY = key; } if (!playing) return; AC2 = AC2 || new (window.AudioContext || window.webkitAudioContext)(); SRC = AC2.createBufferSource(); SRC.buffer = BUF; SRC.connect(AC2.destination); SRC.start(0, Math.min(off, TL.total - 0.05)); }
+  function frame(now) { if (!playing) return; T += (now - tPrev) / 1000; tPrev = now; if (!catMode && T >= TL.total) { if (loop) { T = 0; audioStart(0); } else { playing = false; $('play').textContent = 'Play'; T = TL.total - 0.01; audioStop(); } } draw(); requestAnimationFrame(frame); }
+  function play() { playing = true; $('play').textContent = 'Pause'; tPrev = performance.now(); audioStart(T); requestAnimationFrame(frame); }
+  function pause() { playing = false; $('play').textContent = 'Play'; audioStop(); }
+  $('play').onclick = () => (playing ? pause() : play()); $('seek').oninput = () => { T = parseFloat($('seek').value); draw(); if (playing) audioStart(T); };
+  $('snd').onclick = () => { snd = !snd; $('snd').setAttribute('aria-pressed', snd); if (!snd) audioStop(); else if (playing) audioStart(T); };
+  $('loop').onclick = () => { loop = !loop; $('loop').setAttribute('aria-pressed', loop); };
+  $('topic').onchange = () => { pause(); loadTopic($('topic').value); T = 0; draw(); };
+  $('cat').onclick = () => { catMode = !catMode; $('cat').setAttribute('aria-pressed', catMode); $('catpage').style.display = catMode ? '' : 'none'; if (catMode && !playing) play(); if (!catMode) T = 0; draw(); };
+  $('catpage').onchange = draw;
+  STORIES.forEach((s) => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.title; $('topic').appendChild(o); });
+  (async () => { try { await document.fonts.load('800 40px Poppins', 'Hello'); await document.fonts.ready; } catch (e) { /* render anyway */ }
+    for (const s of STORIES) { const er = validateStory(s); if (er.length) console.warn('STORY PROBLEMS', s.id, er); }
     for (let i = 0; i < window.catalogPages(); i++) { const o = document.createElement('option'); o.value = i; o.textContent = 'Catalog ' + (i + 1); $('catpage').appendChild(o); }
-    loadTopic(STORIES[0].id); draw();
-    $('loading').style.display = 'none';
-    window._ready = true;
-  } catch (e) {
-    console.error('init failed:', e);
-    const el = document.getElementById('loading');
-    if (el) el.textContent = 'Error: ' + (e && e.message ? e.message : String(e));
-    // Always signal readiness so the harness can fail fast with a real error message
-    window._ready = true;
-    window._initError = (e && e.message) ? e.message : String(e);
-  }
+    loadTopic(STORIES[0].id); draw(); $('loading').style.display = 'none'; window._ready = true; })();
 })();
-
 </script>
 </body>
 </html>
