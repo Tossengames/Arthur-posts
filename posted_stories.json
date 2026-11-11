@@ -162,6 +162,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "quake",
+      "kind": "survival",
+      "date": "2026-11-11",
+      "slot": "manual",
+      "fb_id": "1126538176629700",
+      "yt_id": "RtEI76OUWCs",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
