@@ -151,6 +151,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "tambora",
+      "kind": "tale",
+      "date": "2026-11-11",
+      "slot": "B",
+      "fb_id": "1147002731058189",
+      "yt_id": "SxJacATSNUc",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
