@@ -206,6 +206,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "www",
+      "kind": "tale",
+      "date": "2026-11-12",
+      "slot": "manual",
+      "fb_id": "1840364443777738",
+      "yt_id": "Q_70UsRNJBw",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
