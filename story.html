@@ -625,7 +625,7 @@ function drawCatalog(ctx, page, T) {
 window.catalogPages = () => Math.ceil(catalogNames().length / CAT_PER); window.validateStory = validateStory;
 window.KIT = { MODELS: Object.keys(MODELS), SETS: Object.keys(SETS), TIMES: Object.keys(TIMES), FX: FXS, ANIMS: ALLANIM, CAMS, COLORS: Object.keys(PAL), SFX: SFX_NAMES, MUSIC: Object.keys(MUS), EXPRESSIONS: EXS };
 </script>
-<script src="content.js"></script>
+<script src="content_story.js"></script>
 <script>
 'use strict';
 window.TOPIC_IDS = STORIES.map((s) => s.id); window.TOPIC_KINDS = Object.fromEntries(STORIES.map((s) => [s.id, s.kind]));
