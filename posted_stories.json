@@ -195,6 +195,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "bearsafety",
+      "kind": "survival",
+      "date": "2026-11-12",
+      "slot": "B",
+      "fb_id": "2213760232686650",
+      "yt_id": "8dAN0SWqBh0",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
