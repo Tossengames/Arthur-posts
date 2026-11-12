@@ -184,6 +184,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "balloon",
+      "kind": "fiction",
+      "date": "2026-11-12",
+      "slot": "B",
+      "fb_id": "2208384429709238",
+      "yt_id": "G8lVklBE2aw",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
