@@ -173,6 +173,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "bertha",
+      "kind": "tale",
+      "date": "2026-11-12",
+      "slot": "B",
+      "fb_id": "1484499173542411",
+      "yt_id": "rrBhjQo3Rik",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
