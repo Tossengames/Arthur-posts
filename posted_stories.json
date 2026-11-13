@@ -228,6 +228,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "brunohoney",
+      "kind": "fiction",
+      "date": "2026-11-13",
+      "slot": "manual",
+      "fb_id": "4480944208901463",
+      "yt_id": "OS-aUuuhTQE",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
