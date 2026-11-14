@@ -261,6 +261,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "voyager",
+      "kind": "dyk",
+      "date": "2026-11-14",
+      "slot": "A",
+      "fb_id": "1940291526950124",
+      "yt_id": "wOR8PaxSfKA",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
