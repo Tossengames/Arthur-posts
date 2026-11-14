@@ -753,4 +753,191 @@ function buildScenery(fin, th, seed) {
   if (!th.island) { for (let i = 0; i < 22; i++) { const a = q() * TAU, d = dmax + 4 + q() * 70, x = Math.floor(fin.cx + Math.sin(a) * d), z = Math.floor(fin.cz + Math.cos(a) * d); sTree(x, z, q, th); }
     for (let i = 0; i < 8; i++) { const a = q() * TAU, d = fin.rad + 6 + q() * 5, x = Math.floor(fin.cx + Math.sin(a) * d), z = Math.floor(fin.cz + Math.cos(a) * d); if (!inside(x, z, 3)) sTree(x, z, q, th); } }
   for (let i = 0; i < 70; i++) { const a = q() * TAU, d = fin.rad + 2 + q() * 10, x = Math.floor(fin.cx + Math.sin(a) * d), z = Math.floor(fin.cz + Math.cos(a) * d); if (inside(x, z, 1)) continue; if (th.island && Math.hypot(x + 0.5 - fin.cx, z + 0.5 - fin.cz) > sandR - 1) continue;
-    const k = q(); if (k < 0.25 && !th.island) bb(MI, x + 0.5, 0.5, z + 0.5, 1, 1, 1, [140, 140, 150], { tex: 'stone', cell: 1, salt: i, ne: 1 }); else if (th.flowers) { bb(MI, x + 0.5, 0.25, z + 0
+    const k = q(); if (k < 0.25 && !th.island) bb(MI, x + 0.5, 0.5, z + 0.5, 1, 1, 1, [140, 140, 150], { tex: 'stone', cell: 1, salt: i, ne: 1 }); else if (th.flowers) { bb(MI, x + 0.5, 0.25, z + 0.5, 0.12, 0.5, 0.12, [60, 170, 60], { ne: 1 }); bb(MI, x + 0.5, 0.55, z + 0.5, 0.4, 0.22, 0.4, ['red', 'yellow', 'pink', 'white', 'orange'][i % 5], { ne: 1 }); } }
+  const sc = FACES; STATIC = false; FACES = []; return sc;
+}
+// ---------- compile ----------
+function compile(def, seed, modeIn, maxLen) {
+  const R = rng(seed), P = Object.assign({}, R.pick(def.palettes && def.palettes.length ? def.palettes : [{}]));
+  const mode = modeIn === 'solo' ? 'solo' : modeIn === 'team' || modeIn === 'blocks' ? 'team' : R.pick(['solo', 'team', 'team']);
+  const themeKey = def.world === 'island' ? 'island' : R.pick(['grass', 'grass', 'grass', 'spring', 'spring', 'autumn', 'snow']), th = THEMES[themeKey];
+  const envKey = R.pick(['day', 'day', 'day', 'clear', 'clear', 'golden']), az = R() * TAU, astyle = R.pick(['drop', 'drop', 'pop', 'slide']);
+  const c = makeCtx(P, R); def.build(c, P, R);
+  const phases = []; c.phases.forEach((ph) => { ph.jobs.forEach((j) => { j.blocks = j.blocks.filter((b) => !b.dead); }); ph.jobs = ph.jobs.filter((j) => j.blocks.length); if (ph.jobs.length) phases.push(ph); });
+  const all = []; phases.forEach((ph) => ph.jobs.forEach((j) => j.blocks.forEach((b) => all.push(b))));
+  all.forEach((b) => { if (b.fence) { const has = (dx, dz) => c.map.has(c.K(b.x + dx, b.y, b.z + dz)), ps = [[0.375, 0, 0.375, 0.25, 1, 0.25]]; if (has(1, 0)) ps.push([0.625, 0.3, 0.44, 0.375, 0.12, 0.12], [0.625, 0.65, 0.44, 0.375, 0.12, 0.12]); if (has(-1, 0)) ps.push([0, 0.3, 0.44, 0.375, 0.12, 0.12], [0, 0.65, 0.44, 0.375, 0.12, 0.12]); if (has(0, 1)) ps.push([0.44, 0.3, 0.625, 0.12, 0.12, 0.375], [0.44, 0.65, 0.625, 0.12, 0.12, 0.375]); if (has(0, -1)) ps.push([0.44, 0.3, 0, 0.12, 0.12, 0.375], [0.44, 0.65, 0, 0.12, 0.12, 0.375]); b.parts = ps; } });
+  const fin = { phases, tier: def.tier || 3, ax0: 1e9, ax1: -1e9, az0: 1e9, az1: -1e9, x0: 1e9, x1: -1e9, z0: 1e9, z1: -1e9, H: 1 };
+  all.forEach((b) => { fin.ax0 = Math.min(fin.ax0, b.x); fin.ax1 = Math.max(fin.ax1, b.x); fin.az0 = Math.min(fin.az0, b.z); fin.az1 = Math.max(fin.az1, b.z); if (!b.deco) { fin.x0 = Math.min(fin.x0, b.x); fin.x1 = Math.max(fin.x1, b.x); fin.z0 = Math.min(fin.z0, b.z); fin.z1 = Math.max(fin.z1, b.z); fin.H = Math.max(fin.H, b.y + 1); } });
+  if (fin.x0 > fin.x1) { fin.x0 = fin.ax0; fin.x1 = fin.ax1; fin.z0 = fin.az0; fin.z1 = fin.az1; }
+  fin.cx = (fin.x0 + fin.x1 + 1) / 2; fin.cz = (fin.z0 + fin.z1 + 1) / 2; fin.rad = Math.max(fin.x1 - fin.x0 + 1, fin.z1 - fin.z0 + 1) / 2 + 1;
+  const dur = Math.max(40, Math.min(def.dur || [0, 56, 66, 78, 90, 100][cl(fin.tier, 1, 5)], maxLen || 999)), sch = schedule(fin, mode, R, dur);
+  const S = all.slice().sort((a, b) => a.tp - b.tp), solid = new Map(); S.forEach((b) => { b.r = b.tp + ANIM; if (!b.parts) solid.set(c.K(b.x, b.y, b.z), b); });
+  const SF = [];
+  S.forEach((b) => {
+    if (b.parts) { b.parts.forEach((pt) => { const mn = pt[6] || b.m, tmp = []; emitBox(tmp, b.x + pt[0] + pt[3] / 2, b.y + pt[1] + pt[4] / 2, b.z + pt[2] + pt[5] / 2, pt[3], pt[4], pt[5], (d) => matColor(mn, b.x, b.y, b.z, d), { em: faceEm(mn), tex: texOk(pt) ? { m: mn, x: b.x, y: b.y, z: b.z, part: pt } : null }, false); tmp.forEach((f) => { f.t0 = b.r; f.t1 = Infinity; SF.push(f); }); }); return; }
+    for (let k = 0; k < 3; k++) for (let s = -1; s <= 1; s += 2) {
+      if (k === 1 && s < 0) continue; const nb = [b.x, b.y, b.z]; nb[k] += s; const nbb = solid.get(c.K(nb[0], nb[1], nb[2])), t1 = nbb ? nbb.r : Infinity; if (t1 <= b.r) continue;
+      const d = k * 2 + (s > 0 ? 0 : 1), tmp = []; emitBox(tmp, b.x + 0.5, b.y + 0.5, b.z + 0.5, 1, 1, 1, null, { em: faceEm(b.m), tex: { m: b.m, x: b.x, y: b.y, z: b.z }, mask: 1 << d }, false); tmp.forEach((f) => { f.t0 = b.r; f.t1 = t1; SF.push(f); });
+    }
+  });
+  SF.sort((a, b) => a.t0 - b.t0);
+  const hT = [], hM = []; let mx = 0; S.forEach((b) => { if (b.deco) return; mx = Math.max(mx, b.y + 1); hT.push(b.tp); hM.push(mx); });
+  const ubT = (arr, T) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] <= T) lo = m + 1; else hi = m; } return lo; };
+  const tpArr = S.map((b) => b.tp), hAt = (T) => { const i = ubT(hT, T); return i ? hM[i - 1] : 0; };
+  const env = Object.assign({ amb: 0.74, sk: 0.4, bright: 1, fogNear: 70, fogFar: 300 }, TIMES[envKey], { sun: [Math.cos(az) * 0.55, 0.85, Math.sin(az) * 0.55] });
+  const scene = buildScenery(fin, th, seed), cq = rng(seed + 5), clouds = []; for (let i = 0; i < 14; i++) clouds.push({ x: (cq() - 0.5) * 340, z: (cq() - 0.5) * 340, y: 42 + cq() * 20, w: 10 + Math.floor(cq() * 12), d: 6 + Math.floor(cq() * 8), sp: 0.6 + cq() * 0.8 });
+  const cstyle = R.pick(['orbit', 'orbit', 'sway', 'high']), cdir = R() < 0.5 ? -1 : 1, a0 = (R() * 60 - 30) * D2R, sweep = (90 + R() * 60) * D2R;
+  const o = { def, seed, mode, env, envKey, themeKey, fin, phases, S, SF, scene, clouds, bds: sch.bds, tEnd: sch.tEnd, total: sch.total, I: sch.I, astyle, tpArr, hAt, ubT, cstyle, cdir, a0, sweep };
+  o.smoothH = (T) => { let s = 0; for (let k = 0; k < 5; k++) s += hAt(T - k * 0.25); return s / 5; };
+  const I = sch.I, tEnd = sch.tEnd, RT = 5.4, dAng = (a, b) => ((b - a + 3 * Math.PI) % TAU) - Math.PI;
+  const foc = (blocks) => { let sx = 0, sy = 0, sz = 0, n = 0, mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9, mny = 1e9, mxy = -1e9; blocks.forEach((b) => { sx += b.x + 0.5; sy += b.y + 0.5; sz += b.z + 0.5; n++; mnx = Math.min(mnx, b.x); mxx = Math.max(mxx, b.x); mnz = Math.min(mnz, b.z); mxz = Math.max(mxz, b.z); mny = Math.min(mny, b.y); mxy = Math.max(mxy, b.y); }); n = n || 1; return { fx: sx / n, fy: sy / n, fz: sz / n, ext: Math.max(mxx - mnx, mxz - mnz, (mxy - mny) * 0.8) + 1 }; };
+  // ---- camera director: a list of shots (zoom on the work, side views, back view, crane up, low angle) between wide orbits ----
+  const shots = [], kinds = ['zoom'].concat(R.shuffle(['side', 'zoom', 'crane', 'zoom', 'back', 'low', 'zoom', 'side', 'zoom'])); let ki = 0, sideSign = cdir;
+  phases.forEach((ph, i) => { const D = ph.t1 - ph.t0; if (i === 0 || i === phases.length - 1 || D < 2.6) return; const n = D >= 9 ? 2 : 1; for (let k = 0; k < n; k++) { const type = kinds[ki++ % kinds.length]; if (type === 'side') sideSign = -sideSign; const js = ph.jobs.slice(Math.floor((k * ph.jobs.length) / n), Math.max(Math.floor(((k + 1) * ph.jobs.length) / n), Math.floor((k * ph.jobs.length) / n) + 1)), blocks = [].concat(...js.map((j) => j.blocks)); shots.push({ t0: ph.t0 + (D * k) / n, t1: ph.t0 + (D * (k + 1)) / n, type, side: sideSign, f: foc(blocks.length ? blocks : [].concat(...ph.jobs.map((j) => j.blocks))) }); } });
+  function baseCam(T) {
+    const sH = o.smoothH(T), p = wn(T, I, tEnd); let a = cstyle === 'sway' ? a0 + cdir * 0.7 * Math.sin(p * 3.2) : a0 + cdir * sweep * p;
+    let d = Math.max(fin.rad * 2.9 + 3, sH * 0.9 + fin.rad * 1.1 + 6) * (1 + 0.04 * Math.sin(T * 0.8)), ty = Math.max(1.5, sH * 0.45), h = ty + d * (cstyle === 'high' ? 0.55 : 0.36) + 1.5, tg = [fin.cx, ty, fin.cz], sh = null;
+    for (const q of shots) if (T >= q.t0 && T <= q.t1) { sh = q; break; }
+    if (sh) {
+      const w = ez(wn(T, sh.t0 + 0.1, sh.t0 + 0.9)) * (1 - ez(wn(T, sh.t1 - 0.9, sh.t1 - 0.1)));
+      if (w > 0) {
+        const u = wn(T, sh.t0, sh.t1), dr = (u - 0.5) * 2; let S2;
+        if (sh.type === 'zoom') { const f = sh.f, rf = Math.hypot(f.fx - fin.cx, f.fz - fin.cz), dz = cl(f.ext * 1.1 + 7, 10, 18) * (1 - 0.25 * u), aZ = (rf > 2 ? Math.atan2(f.fx - fin.cx, -(f.fz - fin.cz)) : a) + cdir * 0.3 * dr; S2 = { a: aZ, d: rf + dz, h: f.fy + dz * 0.34 + 1.5, tg: [f.fx, Math.max(1.5, f.fy * 0.9), f.fz] }; }
+        else if (sh.type === 'side') S2 = { a: sh.side * 1.5708 + sh.side * 0.35 * dr, d: d * 0.8, h: ty + d * 0.24 + 1.5, tg: [fin.cx, ty, fin.cz] };
+        else if (sh.type === 'back') S2 = { a: Math.PI + cdir * 0.4 * dr, d: d * 0.85, h: ty + d * 0.3 + 1.5, tg: [fin.cx, ty, fin.cz] };
+        else if (sh.type === 'crane') S2 = { a: a + 0.25 * dr, d: d * 0.8, h: lerp(ty + 2, fin.H * 1.3 + d * 0.5, ez(u)), tg: [fin.cx, lerp(ty * 0.8, fin.H * 0.6, u), fin.cz] };
+        else S2 = { a: a + 0.4 * dr, d: d * 0.65, h: lerp(2.0, 3.6, u), tg: [fin.cx, Math.max(2, fin.H * 0.65), fin.cz] };
+        a += dAng(a, S2.a) * w; d = lerp(d, S2.d, w); h = lerp(h, S2.h, w); tg = lerp3(tg, S2.tg, w);
+      }
+    }
+    return { a, d, h, tg };
+  }
+  const posOf = (c) => [fin.cx + Math.sin(c.a) * c.d, c.h, fin.cz - Math.cos(c.a) * c.d];
+  o.shots = shots; o.rotEnd = tEnd + RT; o.thumbT = tEnd + RT + 1.0;
+  o.camera = (T) => {
+    if (T < I + 1.2) { const bc = baseCam(I + 1.2), u = ez(wn(T, I - 0.3, I + 1.2)); return { pos: lerp3([fin.cx, 3.6, fin.z0 - 18], posOf(bc), u), tg: lerp3([fin.cx, 3.4, fin.z0 - 2], bc.tg, u) }; }
+    if (T <= tEnd) { const c = baseCam(T); return { pos: posOf(c), tg: c.tg }; }
+    const c0 = baseCam(tEnd), diff = (0 - c0.a) * cdir, d0 = ((diff % TAU) + TAU) % TAU, delta = d0 < 2.4 ? d0 + TAU : d0, rt = ez(wn(T, tEnd, tEnd + RT));
+    const dH = Math.max(fin.rad * 2.5 + 4, fin.H + 8), hH = fin.H * 0.42 + dH * 0.24 + 1, a = c0.a + cdir * delta * rt;
+    return { pos: posOf({ a, d: lerp(c0.d, dH, rt), h: lerp(c0.h, hH, rt) }), tg: lerp3(c0.tg, [fin.cx, fin.H * 0.4, fin.cz], rt) };
+  };
+  const short = def.short || def.name.toLowerCase(), art = /^[aeiou]/i.test(short) ? 'AN' : 'A', crewNames = sch.bds.map((b) => b.name);
+  o.titleName = (art + ' ' + short).toUpperCase() + '!'; o.short = short;
+  o.info = Object.assign({ id: def.id, name: def.name, short, tier: fin.tier, mode, seed, total: sch.total, builders: sch.bds.length, crew: crewNames, blocks: S.length, phases: phases.length, env: envKey, theme: themeKey, music: def.music || 'hope' }, makeSEO(def, short, fin.tier, crewNames, rng(seed + 11)));
+  return o;
+}
+// ---------- one frame ----------
+function builderAt(bd, t, I) {
+  const gs = bd.groups; let lo = 0, hi = gs.length - 1, i = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (gs[m].t0 <= t) { i = m; lo = m + 1; } else hi = m - 1; }
+  const sc0 = 1 + 0.5 * (1 - wn(t, I, I + 0.7));
+  if (i < 0) return { x: bd.start[0], y: 0, z: bd.start[2], face: 180 + (bd.i - 1) * 9, anim: t < I + 0.1 ? 'wave' : 'look', work: false, s: sc0, ex: 'laugh' };
+  const g = gs[i], k = g.tw > g.t0 ? ez(wn(t, g.t0, g.tw)) : 1, x = lerp(g.from[0], g.to[0], k), y = lerp(g.from[1], g.to[1], k), z = lerp(g.from[2], g.to[2], k), mv = g.tw > g.t0 && t < g.tw, dx = g.to[0] - g.from[0], dz = g.to[2] - g.from[2];
+  const fl = Math.atan2(g.look[0] - g.to[0], g.look[1] - g.to[2]) / D2R, ft = Math.atan2(dx, dz) / D2R, air = y > 0.35; let face, anim, sc = sc0, ex = 'smile';
+  if (g.final) { face = mv ? ft : 180 + g.fo; anim = mv ? (air ? 'flymove' : 'walk') : ['wave', 'wave2', 'celebrate', 'wave'][bd.i % 4]; sc = lerp(1, 1.7, k); ex = 'laugh'; }
+  else { face = mv ? angLerp(ft, fl, wn(k, 0.7, 1)) : fl; if (mv) anim = air ? 'flymove' : (Math.hypot(dx, dz) / (g.tw - g.t0) > 6 ? 'run' : 'walk'); else if (t <= g.te) anim = air ? 'flywork' : 'work'; else anim = air ? 'fly' : 'look'; if (i === 0 && t < g.t0 + 0.01) anim = 'wave'; }
+  return { x, y, z, face, anim, work: !g.final && (mv || t <= g.te), col: g.col, s: sc, ex: !g.final && (mv || t <= g.te) ? 'determined' : ex };
+}
+function emitBuilding(S, T) {
+  const SF = S.SF, cp = CAMP; let lo = 0, hi = SF.length; while (lo < hi) { const m = (lo + hi) >> 1; if (SF[m].t0 <= T) lo = m + 1; else hi = m; }
+  for (let i = 0; i < lo; i++) { const f = SF[i]; if (f.t1 <= T) continue; const v0 = f.v[0], nn = f.n; if (nn[0] * (cp[0] - v0[0]) + nn[1] * (cp[1] - v0[1]) + nn[2] * (cp[2] - v0[2]) <= 0) continue; FACES.push(f); }
+  const A = S.S; lo = 0; hi = A.length; while (lo < hi) { const m = (lo + hi) >> 1; if (A[m].tp > T - ANIM) hi = m; else lo = m + 1; }
+  for (let i = lo; i < A.length && A[i].tp <= T; i++) {
+    const b = A[i]; if (b.r <= T) continue; const u = cl((T - b.tp) / ANIM); let sc = 1, ox = 0, oy = 0;
+    if (S.astyle === 'drop') { oy = (1 - eo(u)) * 6; sc = 0.85 + 0.15 * u; } else if (S.astyle === 'pop') sc = Math.max(0.05, bk(u)); else ox = (1 - eo(u)) * 5 * (hf(b.x, b.y, b.z, 2) < 0.5 ? -1 : 1);
+    const cx = b.x + 0.5, cy = b.y + 0.5, cz = b.z + 0.5;
+    if (b.parts) b.parts.forEach((pt) => { const mn = pt[6] || b.m, px = b.x + pt[0] + pt[3] / 2, py = b.y + pt[1] + pt[4] / 2, pz = b.z + pt[2] + pt[5] / 2; emitBox(FACES, cx + (px - cx) * sc + ox, cy + (py - cy) * sc + oy, cz + (pz - cz) * sc, pt[3] * sc, pt[4] * sc, pt[5] * sc, (d) => matColor(mn, b.x, b.y, b.z, d), { em: faceEm(mn), tex: texOk(pt) ? { m: mn, x: b.x, y: b.y, z: b.z, part: pt } : null }, true); });
+    else emitBox(FACES, cx + ox, cy + oy, cz, sc, sc, sc, null, { em: faceEm(b.m), tex: { m: b.m, x: b.x, y: b.y, z: b.z } }, true);
+  }
+}
+let CUR = null;
+function drawFrame(ctx, T) {
+  const S = CUR; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.clearRect(0, 0, W, HH);
+  const cv = S.camera(T); CAMP = cv.pos; const cam = lookCam(cv.pos, cv.tg); FACES = S.scene.slice(); STATIC = false;
+  S.clouds.forEach((cd) => { const x = ((cd.x + T * cd.sp + 200) % 400) - 200 + S.fin.cx; emitBox(FACES, x, cd.y, cd.z + S.fin.cz, cd.w, 2, cd.d, [255, 255, 255], { em: 1, a: 0.92 }, true); });
+  emitBuilding(S, T);
+  S.bds.forEach((bd) => { const s = builderAt(bd, T, S.I), o = { c: bd.cfg, noshadow: true }; if (s.work) { o.hold = 'block'; o.hcol = s.col; } drawHuman(bd.kind, s.x, s.y, s.z, s.face, s.s, o, T, { anim: s.anim, seed: bd.i * 1.7, ex: s.ex }); shadow(s.x, 0, s.z, 0.5 * s.s); });
+  skyDraw(ctx, S.env, T); renderScene(ctx, cam, S.env);
+  if (T < S.I) { const k = bk(wn(T, 0.1, 0.5)) * (1 - wn(T, S.I - 0.4, S.I)); tag(ctx, W / 2, 200, "LET'S BUILD", { size: 48, bg: '#7cf2c0', k }); tag(ctx, W / 2, 320, S.titleName, { size: 80, bg: '#fff6a8', k }); }
+  if (T >= S.rotEnd + 0.9) { const k = bk(wn(T, S.rotEnd + 0.9, S.rotEnd + 1.4)), say = S.bds.length > 1 ? ['LIKE!', 'SUBSCRIBE!', 'SHARE!', 'FOLLOW US!'] : ['LIKE & SUBSCRIBE!'];
+    S.bds.forEach((bd) => { const s = builderAt(bd, T, S.I), v = cam.view([s.x, s.y + 2.1 * s.s + 0.9, s.z]); if (v[2] > 0.5) bubble(ctx, W / 2 + (F * v[0]) / v[2], HH / 2 - (F * v[1]) / v[2], say[bd.i % say.length], k); });
+    tag(ctx, W / 2, 215, 'LIKE & SUBSCRIBE!', { size: 62, bg: '#ff7060', col: '#ffffff', k }); tag(ctx, W / 2, 322, 'NEW BUILD EVERY DAY', { size: 36, bg: '#fff6a8', k }); }
+  if (T >= S.tEnd) { const q = rng(321); for (let i = 0; i < 70; i++) { const t = (T * (0.3 + q() * 0.4) + q()) % 1; ctx.save(); ctx.translate(q() * W + Math.sin(T * 3 + i) * 30, -30 + t * (HH + 60)); ctx.rotate(T * 4 + i); ctx.fillStyle = ['#ff7060', '#ffd23f', '#7cf2c0', '#7aa8ff', '#ff9bd0'][i % 5]; ctx.fillRect(-8, -4, 16, 8); ctx.restore(); } }
+}
+function loadBuild(id, opts) { opts = opts || {}; const def = BUILDINGS.find((b) => b.id === id) || BUILDINGS[0], seed = opts.seed != null ? opts.seed : (Math.random() * 1e9) | 0; CUR = compile(def, seed, opts.mode || 'random', opts.maxLen); return CUR.info; }
+function validateBuilding(def) { const E = []; try { const o = compile(def, 1, 'solo'); if (!o.S.length) E.push('no blocks'); if (o.S.length > 9000) E.push('very many blocks: ' + o.S.length); if (o.phases.length < 2 || o.phases.length > 14) E.push('use 2 to 14 phases (has ' + o.phases.length + ')'); } catch (e) { E.push('recipe error: ' + e.message); } return E; }
+
+function makeSEO(def, short, tier, crew, R) {
+  const T = short.replace(/\b\w/g, (m) => m.toUpperCase()), level = ['', 'Beginner', 'Easy', 'Medium', 'Advanced', 'Expert'][cl(tier, 1, 5)], feats = def.features || [def.name.toLowerCase()], kws = def.keywords || [short];
+  const pats = ["Let's Build a " + T + "! Easy Block Build Time-Lapse #shorts", 'How to Build a ' + T + ' Step by Step (Block Build Idea) #shorts', T + ' Build Idea You Can Copy! Satisfying Time-Lapse #shorts', 'Build a ' + T + ' With Us! Cozy Block Build Tutorial #shorts'];
+  const title = R.pick(pats), names = crew.length > 1 ? crew.slice(0, -1).join(', ') + ' & ' + crew[crew.length - 1] : crew[0];
+  const hashtags = ['#shorts', '#buildingideas', '#timelapse', '#satisfying', '#blockbuilding'].concat(kws.slice(0, 2).map((k) => '#' + k.replace(/[^a-z0-9]/gi, '').toLowerCase()));
+  const tags = ['building ideas', 'block building', 'build tutorial', 'time lapse build', 'satisfying build', 'cozy builds', 'voxel build', 'minecraft style builds', 'easy build ideas'].concat(kws).concat([short + ' build', 'how to build a ' + short]);
+  const featLine = feats.join(', ').replace(/, ([^,]*)$/, ' and $1');
+  const description = "Watch " + names + " build " + (/^[aeiou]/i.test(short) ? 'an ' : 'a ') + short + " block by block in this satisfying blocky time-lapse!\n\n" +
+    '🧱 What we build: ' + featLine + '.\n🛠️ Difficulty: ' + level + ' (level ' + tier + ' of 5)\n👷 Your builders: ' + names + '\n⏸️ Pause on any step and copy the design!\n\n' +
+    '👍 Like and follow for a new build idea every day!\n💬 What should we build next? Tell us in the comments!\n\n' + hashtags.join(' ') + '\n\nKeywords: ' + tags.slice(0, 12).join(', ') + '.\n\n' + (def.footer || 'A made-up build in a blocky voxel style, sped up. Every video is a different random version.');
+  return { title, description, tags, hashtags: hashtags.join(' '), fbDescription: title.replace(' #shorts', '') + '\n\n' + (def.caption || '') + '\n\n' + hashtags.join(' '), caption: def.caption || ('Watch a ' + short + ' get built block by block! 🧱'), footer: def.footer || '', tagsLine: hashtags.join(' ') };
+}
+function thumbFrame(ctx) {
+  const S = CUR; drawFrame(ctx, S.thumbT);
+  tag(ctx, W / 2, 150, S.short.toUpperCase(), { size: 74, bg: '#fff6a8' }); tag(ctx, W / 2, 262, 'BUILD IDEA', { size: 44, bg: '#ff7060', col: '#ffffff' });
+}
+
+function bubble(ctx, x, y, text, k) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k); ctx.font = `900 34px ${FA}`; const w = ctx.measureText(text).width + 40, h = 60, r = 18, bx = -w / 2, by = -h - 22;
+  ctx.beginPath(); ctx.moveTo(bx + r, by); ctx.arcTo(bx + w, by, bx + w, by + h, r); ctx.arcTo(bx + w, by + h, bx, by + h, r); ctx.lineTo(12, by + h); ctx.lineTo(0, -2); ctx.lineTo(-12, by + h); ctx.arcTo(bx, by + h, bx, by, r); ctx.arcTo(bx, by, bx + w, by, r); ctx.closePath();
+  ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = '#2a1f4f'; ctx.lineJoin = 'round'; ctx.stroke(); ctx.fillStyle = '#2a1f4f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, by + h / 2 + 2); ctx.restore();
+}
+// =====================================================================
+//  SOUND: only the block-placing taps (wood / stone / glass / soft). No music, no chimes.
+// =====================================================================
+function buildAudio(ctx) {
+  const S = CUR, T = S.total, sr = ctx.sampleRate, comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 3; comp.connect(ctx.destination);
+  const dry = ctx.createGain(); dry.gain.value = 0.9; dry.connect(comp);
+  const q = rng(5), mk = (sec, fn) => { const len = Math.floor(sr * sec), b = ctx.createBuffer(1, len, sr), d = b.getChannelData(0); for (let i = 0; i < len; i++) d[i] = fn(i / sr); return b; };
+  let lp = 0; const BUF = {
+    wood: mk(0.14, (t) => Math.sin(TAU * (170 * t - 480 * t * t)) * Math.exp(-t * 38) * 0.9 + (q() * 2 - 1) * Math.exp(-t * 160) * 0.45),
+    stone: mk(0.14, (t) => (q() * 2 - 1) * Math.exp(-t * 90) * 0.55 + Math.sin(TAU * 85 * t) * Math.exp(-t * 45) * 0.7),
+    glass: mk(0.12, (t) => (Math.sin(TAU * 2100 * t) * 0.4 + (q() * 2 - 1) * 0.15) * Math.exp(-t * 55)),
+    soft: mk(0.12, (t) => { lp += 0.3 * ((q() * 2 - 1) - lp); return lp * Math.exp(-t * 50) * 1.5; }),
+  };
+  const play = (buf, t, g, rate, pan) => { if (t >= T || t < 0) return; const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = rate; const gn = ctx.createGain(); gn.gain.value = g; const p = ctx.createStereoPanner(); p.pan.value = pan; s.connect(gn); gn.connect(p); p.connect(dry); s.start(t); };
+  let last = -1; S.S.forEach((b) => { if (b.tp < last + 0.05) return; last = b.tp; const M = MAT[b.m] || MAT.stone; play(BUF[M.s === 'wood' ? 'wood' : M.s === 'glass' ? 'glass' : M.s === 'soft' ? 'soft' : 'stone'], b.tp, M.s === 'glass' ? 0.12 : 0.24, 0.85 + hf(b.x, b.y, b.z, 9) * 0.4, cl(((b.x - S.fin.cx) / Math.max(4, S.fin.rad)) * 0.5, -0.6, 0.6)); });
+}
+window.renderAudioBase64 = async function (vo, noScore) {
+  const sr = 48000, len = Math.ceil(CUR.total * sr), ctx = new OfflineAudioContext(2, len, sr); buildAudio(ctx);
+  const buf = await ctx.startRendering(), L = buf.getChannelData(0), R = buf.getChannelData(1), o = new Int16Array(len * 2);
+  for (let k = 0; k < len; k++) { o[2 * k] = cl(L[k], -1, 1) * 32767; o[2 * k + 1] = cl(R[k], -1, 1) * 32767; }
+  const bytes = new Uint8Array(o.buffer); let s = ''; for (let k = 0; k < bytes.length; k += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000)); return btoa(s);
+};
+// =====================================================================
+//  PAGE: hooks used by the render script + preview player
+// =====================================================================
+window.BUILD_IDS = BUILDINGS.map((b) => b.id); window.BUILD_TIERS = Object.fromEntries(BUILDINGS.map((b) => [b.id, b.tier]));
+window.loadBuild = loadBuild; window.validateBuilding = validateBuilding;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+window.frameJPEG = function (t) { drawFrame(ctx, t); return cv.toDataURL('image/jpeg', 0.92).split(',')[1]; };
+window.thumbnailJPEG = function (withText) { if (withText === false) drawFrame(ctx, CUR.thumbT); else thumbFrame(ctx); return cv.toDataURL('image/jpeg', 0.95).split(',')[1]; };
+(function ui() {
+  const $ = (id) => document.getElementById(id); let T = 0, playing = false, tPrev = 0, snd = true, loop = true, AC2 = null, SRC = null, BUF = null, BUFKEY = '';
+  const fmt = (s) => Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
+  function draw() { drawFrame(ctx, T); $('seek').max = CUR.total; $('seek').value = T; $('time').textContent = fmt(T) + ' / ' + fmt(CUR.total); }
+  function audioStop() { try { if (SRC) SRC.stop(); } catch (e) {} SRC = null; }
+  async function audioStart(off) { audioStop(); if (!snd) return; const key = CUR.seed + CUR.def.id + CUR.mode + CUR.total; if (BUFKEY !== key) { const oc = new OfflineAudioContext(2, Math.ceil(CUR.total * 44100), 44100); buildAudio(oc); BUF = await oc.startRendering(); BUFKEY = key; } if (!playing) return; AC2 = AC2 || new (window.AudioContext || window.webkitAudioContext)(); SRC = AC2.createBufferSource(); SRC.buffer = BUF; SRC.connect(AC2.destination); SRC.start(0, Math.min(off, CUR.total - 0.05)); }
+  function frame(now) { if (!playing) return; T += (now - tPrev) / 1000; tPrev = now; if (T >= CUR.total) { if (loop) { T = 0; audioStart(0); } else { playing = false; $('play').textContent = 'Play'; T = CUR.total - 0.01; audioStop(); } } draw(); requestAnimationFrame(frame); }
+  function play() { playing = true; $('play').textContent = 'Pause'; tPrev = performance.now(); audioStart(T); requestAnimationFrame(frame); }
+  function pause() { playing = false; $('play').textContent = 'Play'; audioStop(); }
+  function reload(seed) { pause(); const i = loadBuild($('bsel').value, { mode: $('msel').value, seed, maxLen: 0 }); T = 0; $('info').textContent = i.name + ' | level ' + i.tier + ' | ' + i.mode + ': ' + i.crew.join(', ') + ' | ' + i.blocks + ' blocks | ' + i.env + ', ' + i.theme + ' | seed ' + i.seed + ' | ' + i.total.toFixed(0) + 's'; draw(); }
+  $('play').onclick = () => (playing ? pause() : play()); $('seek').oninput = () => { T = parseFloat($('seek').value); draw(); if (playing) audioStart(T); };
+  $('snd').onclick = () => { snd = !snd; $('snd').setAttribute('aria-pressed', snd); if (!snd) audioStop(); else if (playing) audioStart(T); };
+  $('loop').onclick = () => { loop = !loop; $('loop').setAttribute('aria-pressed', loop); };
+  $('endb').onclick = () => { pause(); T = CUR.total - 0.3; draw(); }; $('thumb').onclick = () => { pause(); thumbFrame(ctx); }; $('bsel').onchange = () => reload(); $('msel').onchange = () => reload(); $('roll').onclick = () => reload();
+  BUILDINGS.forEach((b) => { const o = document.createElement('option'); o.value = b.id; o.textContent = b.name + ' (L' + b.tier + ')'; $('bsel').appendChild(o); });
+  (async () => { try { await document.fonts.load('800 40px Poppins', 'Hello'); await document.fonts.ready; } catch (e) { /* render anyway */ }
+    const q = new URLSearchParams(location.search); if (q.get('b')) $('bsel').value = q.get('b'); if (q.get('mode')) $('msel').value = q.get('mode');
+    (window.EXTRA_BUILDINGS || []).forEach((d) => { const er = validateBuilding(d); if (er.length) console.warn('BUILDING PROBLEMS', d.id, er); });
+    reload(q.get('seed') ? parseInt(q.get('seed'), 10) : undefined); $('loading').style.display = 'none'; window._ready = true; })();
+})();
+</script>
+</body>
+</html>
