@@ -239,6 +239,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "octopus",
+      "kind": "dyk",
+      "date": "2026-11-14",
+      "slot": "B",
+      "fb_id": "1170483208962187",
+      "yt_id": "9hmcYTE2_qY",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
