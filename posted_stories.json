@@ -250,6 +250,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "emuwar",
+      "kind": "tale",
+      "date": "2026-11-14",
+      "slot": "manual",
+      "fb_id": "2421250658629299",
+      "yt_id": "gZP_xYVC2Kw",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
