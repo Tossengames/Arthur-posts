@@ -272,6 +272,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "lightning",
+      "kind": "survival",
+      "date": "2026-11-15",
+      "slot": "manual",
+      "fb_id": "1871698510529108",
+      "yt_id": "yyDPAmnJFzQ",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
