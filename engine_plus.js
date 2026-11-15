@@ -1,4 +1,6 @@
 'use strict';
+// ENGINE_PLUS VERSION 3  (bigger sturdier people, auto-framing, 23 new places, 45 new props, places catalog)
+window.ENGINE_PLUS_VERSION = 'v3';
 // =====================================================================
 //  engine_plus.js  -- loaded by story.html AFTER the engine and the content files.
 //  It upgrades the engine by replacing functions: humans with joints, more animations,
@@ -16,7 +18,6 @@
   ['kneel', 'jump', 'kick', 'clap', 'bow', 'salute', 'think', 'read', 'phone', 'dig', 'climb', 'fall', 'shiver', 'march', 'cheer', 'sit2', 'idle2'].forEach((a) => { if (ALLANIM.indexOf(a) < 0) ALLANIM.push(a); });
   ['snow', 'leaves', 'petals', 'fireflies', 'bubbles', 'embers', 'steam', 'rays', 'speed', 'stars', 'sparkle'].forEach((f) => { if (FXS.indexOf(f) < 0) FXS.push(f); });
   ['push', 'pull', 'arc', 'whip', 'pan', 'topdown', 'low', 'auto'].forEach((m) => { if (CAMS.indexOf(m) < 0) CAMS.push(m); });
-  if (KINDS.indexOf('fiction') >= 0) KINDS.splice(KINDS.indexOf('fiction'), 1);
   ['tale', 'dyk', 'survival', 'history', 'science'].forEach((k) => { if (KINDS.indexOf(k) < 0) KINDS.push(k); });
   BADGE.history = ['HISTORY', '#ff7060', '#fff']; BADGE.science = ['SCIENCE', '#7cc4ff', '#12304a'];
 
@@ -156,12 +157,14 @@
   };
 
   // ---------------------------------------------------------------- HUMANS: skeleton constants
-  const J = { HIPY: 0.89, KNEEY: 0.484, ANKY: 0.078, LX: 0.1, SHY: 1.44, SX: 0.255, ELY: 1.14, NECKY: 1.47 };
+  const J = { HIPY: 0.89, KNEEY: 0.484, ANKY: 0.078, LX: 0.125, SHY: 1.44, SX: 0.335, ELY: 1.14, NECKY: 1.47 };
+  const WT = 1.34, WA = 1.4, WL = 1.32, HSC = 1.14, HK0 = 1.38;   // body width, arm width, leg width, overall size, head size
+  const wd = (M, cx, k) => mm(M, piv([k, 0, 0, 0, 1, 0, 0, 0, k, 0, 0, 0], [cx, 0, 0]));
   const HC2 = {};
 
   // more people
   const NEWHP = {
-    teen: { shirt: 'purple', pants: 'navy', hair: 'hairBrown', k: 0.9, pack: 'teal' }, student: { shirt: 'blue', pants: 'dark', pack: 'green', hair: 'hairBlack', k: 0.9 }, baby: { dress: 'pink', hair: 'hairBlond', hs: 'bald', k: 0.42, hk: 1.7, blush: 1, skin: 'skin1' },
+    teen: { shirt: 'purple', pants: 'navy', hair: 'hairBrown', k: 0.9, pack: 'teal' }, student: { shirt: 'blue', pants: 'dark', pack: 'green', hair: 'hairBlack', k: 0.9 }, baby: { dress: 'pink', hair: 'hairBlond', hs: 'bald', k: 0.42, hk: 2.0, blush: 1, skin: 'skin1' },
     grandma: { dress: 'purple', hair: 'white', hs: 'bun', glasses: 1, skin: 'skin1', blush: 1 }, chef: { coat: 'white', shirt: 'white', pants: 'dark', hat: 'chef', hatc: 'white', must: 'hairBrown' }, doctor: { coat: 'white', shirt: 'teal', pants: 'blue', glasses: 1, skin: 'skin2' },
     nurse: { shirt: 'teal', pants: 'teal', hat: 'cap', hatc: 'white', hs: 'bob', skin: 'skin1', hair: 'hairBrown' }, firefighter: { coat: 'yellow', shirt: 'orange', pants: 'dark', hat: 'helmet', hatc: 'red', shoes: 'black', gloves: 'dark' }, police: { shirt: 'navy', pants: 'navy', hat: 'cap', hatc: 'navy', shoes: 'black' },
     knight: { coat: 'silver', shirt: 'grey', pants: 'grey', hat: 'knight', hatc: 'silver', shoes: 'dark', gloves: 'grey' }, king: { coat: 'crimson', shirt: 'gold', pants: 'dark', hat: 'crown', hatc: 'gold', beard: 'hairBrown', cape: 'crimson' }, queen: { dress: 'violet', hs: 'long', hat: 'crown', hatc: 'gold', skin: 'skin1', blush: 1, sleeves: 1 },
@@ -172,9 +175,9 @@
     maid: { dress: 'dark', apron: 'white', hs: 'bun', skin: 'skin1', blush: 1 }, tourist: { shirt: 'yellow', pants: 'khaki', hat: 'cap', hatc: 'teal', pack: 'blue' }, referee: { shirt: 'black', pants: 'black', stripe: 1, shoes: 'black' }, athlete: { shirt: 'red', pants: 'white', short: 1, shorts: 1, skin: 'skin3', hair: 'hairBlack', shoes: 'white' },
     businessman: { coat: 'grey', shirt: 'white', pants: 'grey', hair: 'hairBlack', shoes: 'black' }, robot2: { robot: 1, skin: 'orange', shirt: 'orange', pants: 'dark', shoes: 'black', hs: 'bald' }, robot3: { robot: 1, skin: 'green', shirt: 'green', pants: 'dark', shoes: 'black', hs: 'bald', k: 1.1 },
   };
-  HP.boy.hk = 1.3; HP.girl.hk = 1.3;
-  Object.keys(NEWHP).forEach((n) => { HP[n] = NEWHP[n]; MINFO[n] = { h: 1.8 * (NEWHP[n].k || 1), cat: 'people' }; MODELS[n] = (x, y, z, f, s, o, T, st) => drawHuman(n, x, y, z, f, s == null ? 1 : s, o || {}, T || 0, st || { anim: 'stand' }); });
-  Object.keys(HP).forEach((n) => { if (MINFO[n]) MINFO[n].h = 1.8 * (HP[n].k || 1); });
+  HP.boy.hk = 1.7; HP.girl.hk = 1.7; HP.baby && (HP.baby.hk = 2.0);
+  Object.keys(NEWHP).forEach((n) => { HP[n] = NEWHP[n]; MINFO[n] = { h: 2.1 * (NEWHP[n].k || 1), cat: 'people' }; MODELS[n] = (x, y, z, f, s, o, T, st) => drawHuman(n, x, y, z, f, s == null ? 1 : s, o || {}, T || 0, st || { anim: 'stand' }); });
+  Object.keys(HP).forEach((n) => { if (MINFO[n]) MINFO[n].h = 2.1 * (HP[n].k || 1); });
 
   // ---------------------------------------------------------------- HUMANS: building the voxel body parts
   function mkHuman2(cf, ex, bl) {
@@ -207,7 +210,7 @@
     }
     P.torso = buildPart(tg, uT, [-3 * uT, J.HIPY, -2 * uT], 3, 0.04);
     if (dress) { const g = new Grid(8, 5, 6); g.fill(0, 0, 0, 7, 4, 5, dress); g.fill(0, 0, 0, 7, 0, 5, mixc(dress, WH, 0.3)); if (cf.apron) g.fill(2, 0, 5, 5, 4, 5, colr(cf.apron)); P.skirt = buildPart(g, uL, [-4 * uL, J.HIPY - 5 * uL + 0.05, -3 * uL], 4, 0.04); }
-    if (coat && !rb && !cf.hat !== 'knight') { const g = new Grid(8, 7, 5); g.fill(0, 0, 0, 7, 6, 4, coat); g.fill(3, 0, 4, 4, 6, 4, shirt); P.skirt = buildPart(g, uL, [-4 * uL, J.HIPY - 7 * uL + 0.06, -2.5 * uL], 4, 0.04); }
+    if (coat && !rb && cf.hat !== 'knight') { const g = new Grid(8, 7, 5); g.fill(0, 0, 0, 7, 6, 4, coat); g.fill(3, 0, 4, 4, 6, 4, shirt); P.skirt = buildPart(g, uL, [-4 * uL, J.HIPY - 7 * uL + 0.06, -2.5 * uL], 4, 0.04); }
     if (cf.pack) { const g = new Grid(4, 6, 2); g.fill(0, 0, 0, 3, 5, 1, colr(cf.pack)); g.fill(0, 3, 0, 3, 3, 1, sh(colr(cf.pack), 0.75)); P.pack = buildPart(g, 0.062, [-0.124, 1.08, -0.26], 5, 0.05); }
     if (cf.cape) { const g = new Grid(7, 14, 1); g.fill(0, 0, 0, 6, 13, 0, colr(cf.cape)); g.fill(0, 0, 0, 6, 0, 0, mixc(colr(cf.cape), WH, 0.4)); P.cape = buildPart(g, 0.06, [-0.21, 0.66, -0.2], 6, 0.04); }
     // arms
@@ -297,9 +300,9 @@
       case 'kneel': return A({ hipL: 1.4, kneeL: 1.5, hipR: 0.15, kneeR: 2.3, dy: -0.36, bend: 0.15, shL: 0.6, shR: 0.7, elL: 0.9, elR: 0.9, nod: 0.15 });
       case 'scared': return A({ shL: 1.7, shR: 1.7, elL: 2.0, elR: 2.0, abL: 0.25, abR: 0.25, bend: -0.12, kneeL: 0.3, kneeR: 0.3, look: sn(T * 25 + sd) * 0.12, hop: ab(sn(T * 20)) * 0.02 });
       case 'shiver': return A({ shL: 1.1, shR: 1.1, elL: 2.5, elR: 2.5, abL: -0.3, abR: -0.3, kneeL: 0.25, kneeR: 0.25, bend: 0.1, hop: ab(sn(T * 24 + sd)) * 0.015, look: sn(T * 22) * 0.05 });
-      case 'swim': return A({ prone: 1, hipL: sn(T * 9 + sd) * 0.5, hipR: -sn(T * 9 + sd) * 0.5, shL: 2.6 + sn(T * 5 + sd) * 1.2, shR: 2.6 - sn(T * 5 + sd) * 1.2, elL: 0.3, elR: 0.3, nod: -0.5 });
+      case 'swim': return A({ prone: 1, dy: -0.4, hipL: sn(T * 9 + sd) * 0.5, hipR: -sn(T * 9 + sd) * 0.5, shL: 2.6 + sn(T * 5 + sd) * 1.2, shR: 2.6 - sn(T * 5 + sd) * 1.2, elL: 0.3, elR: 0.3, nod: -0.5 });
       case 'panic': return A({ shL: 2.8 + 0.5 * sn(T * 12 + sd), shR: 2.8 - 0.5 * sn(T * 12 + sd), abL: 0.5, abR: 0.5, kneeL: 0.25, kneeR: 0.25, hop: ab(sn(T * 6)) * 0.1, look: sn(T * 5) * 0.35, bend: -0.1 });
-      case 'float': return A({ prone: -1, yaw: 180, shL: 0, shR: 0, abL: 1.0, abR: 1.0, hipL: 0.1, hipR: 0.1 });
+      case 'float': return A({ prone: -1, dy: -0.4, yaw: 180, shL: 0, shR: 0, abL: 1.0, abR: 1.0, hipL: 0.1, hipR: 0.1 });
       case 'throw': { const ph = wn(sn(T * 3 + sd) * 0.5 + 0.5, 0.2, 0.8); return A({ shR: 2.4 - 1.9 * ph, elR: 1.6 - 1.2 * ph, shL: 0.5, bend: 0.2 * ph, hipL: -0.3 * ph, hipR: 0.3 * ph, twist: 0.4 * ph }); }
       case 'sleep': return A({ prone: -1, dy: -0.74, shL: 0.35, shR: 0.35, elL: 1.2, elR: 1.2, hipL: 0.1, hipR: 0.1, kneeL: 0.15, kneeR: 0.15 });
       case 'jump': { const j = ab(sn(T * 4 + sd)); return A({ hop: j * 0.4, kneeL: 0.9 * (1 - j), kneeR: 0.9 * (1 - j), hipL: 0.4 * (1 - j), hipR: 0.4 * (1 - j), shL: 2.0 * j, shR: 2.0 * j, abL: 0.4, abR: 0.4 }); }
@@ -326,24 +329,24 @@
     const cf = Object.assign({}, HBASE, HP[name] || {}, o.c || {}), ex = o.ex || st.ex || 'neutral', bl = blinkAt(T, st.seed), key = JSON.stringify(cf) + '|' + ex + '|' + bl, sd = st.seed || 0;
     const P = HC2[key] || (HC2[key] = mkHuman2(cf, ex, bl));
     let po = poseOf2(st.anim || 'stand', T, sd); if (st.anim0 && st.bl != null && st.bl < 1) po = blendPose(poseOf2(st.anim0, T, sd), po, ez(st.bl));
-    const k = (cf.k || 1) * s, pr = po.prone || 0;
+    const k = (cf.k || 1) * s * HSC, pr = po.prone || 0;
     const M0 = mm(mT(x, y + ((po.hop || 0) + (po.dy || 0)) * k, z), mm(mRy((face + (po.yaw || 0)) * D2R), mS(k)));
     const Mb = pr ? mm(M0, piv(mRx(pr * Math.PI / 2), [0, J.HIPY, 0])) : M0;
     const Mu = mm(Mb, piv(mm(mRy(po.twist || 0), mm(mRz(po.lean || 0), mRx(po.bend || 0))), [0, J.HIPY, 0]));
-    if (!o.noshadow && !pr) shadow(x, y, z, 0.42 * k);
+    if (!o.noshadow && !pr) shadow(x, y, z, 0.5 * k);
     [[-1, 'L'], [1, 'R']].forEach(([sg, L]) => {
-      const hx = sg * J.LX, Mth = mm(Mb, piv(mRx(-(po['hip' + L] || 0)), [hx, J.HIPY, 0])); drawPart(P['thigh' + L], Mth);
-      const Msh = mm(Mth, piv(mRx(po['knee' + L] || 0), [hx, J.KNEEY, 0])); drawPart(P['shin' + L], Msh);
-      drawPart(P['foot' + L], mm(Msh, piv(mRx(-(po['ank' + L] || 0)), [hx, J.ANKY, 0])));
+      const hx = sg * J.LX, Mth = mm(Mb, piv(mRx(-(po['hip' + L] || 0)), [hx, J.HIPY, 0])); drawPart(P['thigh' + L], wd(Mth, hx, WL));
+      const Msh = mm(Mth, piv(mRx(po['knee' + L] || 0), [hx, J.KNEEY, 0])); drawPart(P['shin' + L], wd(Msh, hx, WL));
+      drawPart(P['foot' + L], wd(mm(Msh, piv(mRx(-(po['ank' + L] || 0)), [hx, J.ANKY, 0])), hx, WL));
     });
-    if (P.skirt) drawPart(P.skirt, mm(Mb, piv(mRx(-((po.hipL || 0) + (po.hipR || 0)) * 0.22), [0, J.HIPY, 0])));
-    drawPart(P.torso, Mu); if (P.pack) drawPart(P.pack, Mu);
-    if (P.cape) drawPart(P.cape, mm(Mu, piv(mRx(0.08 + ab(po.hipL || 0) * 0.2 + sn(T * 3 + sd) * 0.03), [0, J.SHY, -0.13])));
-    let Mh = mm(Mu, piv(mm(mRy(po.look || 0), mm(mRz(po.tilt || 0), mRx(po.nod || 0))), [0, J.NECKY, 0])); if (cf.hk && cf.hk !== 1) Mh = mm(Mh, piv(mS(cf.hk), [0, J.NECKY, 0])); drawPart(P.head, Mh);
+    if (P.skirt) drawPart(P.skirt, wd(mm(Mb, piv(mRx(-((po.hipL || 0) + (po.hipR || 0)) * 0.22), [0, J.HIPY, 0])), 0, 1.22));
+    drawPart(P.torso, wd(Mu, 0, WT)); if (P.pack) drawPart(P.pack, wd(Mu, 0, WT));
+    if (P.cape) drawPart(P.cape, wd(mm(Mu, piv(mRx(0.08 + ab(po.hipL || 0) * 0.2 + sn(T * 3 + sd) * 0.03), [0, J.SHY, -0.13])), 0, WT));
+    let Mh = mm(Mu, piv(mm(mRy(po.look || 0), mm(mRz(po.tilt || 0), mRx(po.nod || 0))), [0, J.NECKY, 0])); Mh = mm(Mh, piv(mS(cf.hk || HK0), [0, J.NECKY, 0])); drawPart(P.head, Mh);
     let handW = null;
     [[-1, 'L'], [1, 'R']].forEach(([sg, L]) => {
-      const sx = sg * J.SX, Mua = mm(Mu, piv(mm(mRz(sg * (po['ab' + L] || 0)), mRx(-(po['sh' + L] || 0))), [sx, J.SHY, 0])); drawPart(P['ua' + L], Mua);
-      const Mfa = mm(Mua, piv(mRx(-(po['el' + L] || 0)), [sx, J.ELY, 0])); drawPart(P['fa' + L], Mfa); if (L === 'R') handW = ap(Mfa, [sx, 0.9, 0.05]);
+      const sx = sg * J.SX, Mua = mm(Mu, piv(mm(mRz(sg * (po['ab' + L] || 0)), mRx(-(po['sh' + L] || 0))), [sx, J.SHY, 0])); drawPart(P['ua' + L], wd(Mua, sx, WA));
+      const Mfa = mm(Mua, piv(mRx(-(po['el' + L] || 0)), [sx, J.ELY, 0])); drawPart(P['fa' + L], wd(Mfa, sx, WA)); if (L === 'R') handW = ap(Mfa, [sx, 0.9, 0.05]);
     });
     if (o.hold) { if (po.carry) holdItem(o.hold, mm(Mu, mm(mT(0, 1.12, 0.36), mS(1))), T); else holdItem(o.hold, mm(mT(handW[0], handW[1], handW[2]), mm(mRy(face * D2R), mS(k))), T); }
   };
@@ -366,10 +369,8 @@
     if (sp.mane || sp.trunk || sp.ear === 'long' || sp.ear === 'big' || sp.horns) {
       const C = Object.assign({}, sp.cols, cols || {}), a = colr(C.a), d = colr(C.d), [hw, hh, hl] = sp.h, [sw, sht, sl] = sp.sn, hg = new Grid(hw + 4, hh + 8, hl + sl + 3);
       hg.fill(2, 0, 1, hw + 1, hh - 1, hl, a); const sx0 = 2 + ((hw - sw) >> 1), b = colr(C.b), n = colr(C.n);
-      if (sp.trunk) { hg.fill(sx0, -0, hl + 1, sx0 + sw - 1, 0, hl + sl, a); for (let y = 0; y < sht; y++) hg.set(sx0, 0, 0, a); hg.fill(sx0, 0, hl + 1, sx0 + sw - 1, sht - 1, hl + 1, a); hg.fill(sx0, 0, hl + 1, sx0 + sw - 1, sht - 1, hl + 1, a); }
-      else hg.fill(sx0, 0, hl + 1, sx0 + sw - 1, sht - 1, hl + sl, b);
-      if (sp.trunk) { const tg = new Grid(2, 8, 2); tg.fill(0, 0, 0, 1, 7, 1, a); P.trunk = buildPart(tg, u * 0.8, [-u * 0.8, P.hy - 8 * u * 0.8 + hh * u * 0.6, P.hz + (hl + 1) * u], 15, 0.05); }
-      else hg.set(sx0 + (sw >> 1), sht - 1, hl + sl, n);
+      if (!sp.trunk) { hg.fill(sx0, 0, hl + 1, sx0 + sw - 1, sht - 1, hl + sl, b); hg.set(sx0 + (sw >> 1), sht - 1, hl + sl, n); }
+      else { hg.fill(sx0, 0, hl + 1, sx0 + sw - 1, sht - 1, hl + 1, a); const tg = new Grid(2, 8, 2); tg.fill(0, 0, 0, 1, 7, 1, a); P.trunk = buildPart(tg, u * 0.8, [-u * 0.8, P.hy + sht * u - 8 * u * 0.8, P.hz + (hl + 1) * u], 15, 0.05); }
       [3, hw].forEach((ex) => hg.set(ex, hh - 2, hl, d));
       if (sp.ear === 'long') { hg.fill(2, hh, 1, 2, hh + 4, 2, a); hg.fill(hw + 1, hh, 1, hw + 1, hh + 4, 2, a); } else if (sp.ear === 'big') { hg.fill(0, 1, 2, 1, hh - 1, 4, sh(a, 0.92)); hg.fill(hw + 2, 1, 2, hw + 3, hh - 1, 4, sh(a, 0.92)); } else if (sp.ear === 'round') { hg.fill(2, hh, 1, 2, hh, 2, a); hg.fill(hw + 1, hh, 1, hw + 1, hh, 2, a); } else if (sp.ear === 'point') { hg.fill(2, hh, 1, 2, hh + 1, 1, a); hg.fill(hw + 1, hh, 1, hw + 1, hh + 1, 1, a); } else if (sp.ear === 'floppy') { hg.fill(1, hh - 3, 1, 1, hh - 1, 2, d); hg.fill(hw + 2, hh - 3, 1, hw + 2, hh - 1, 2, d); }
       if (sp.mane) { const mc = colr(sp.mane); for (let x = 0; x < hw + 4; x++) for (let y = -1; y < hh + 2; y++) for (let z = 0; z < 3; z++) if (!(y < 0 && (x < 2 || x > hw + 1))) hg.set(x, y + 1, z, mc); }
@@ -429,7 +430,7 @@
 
   // ---------------------------------------------------------------- CAMERA (new moves + automatic variation)
   const rot2 = (px, pz, cx, cz, a) => { const dx = px - cx, dz = pz - cz, c = cs(a), s2 = sn(a); return [cx + dx * c - dz * s2, cz + dx * s2 + dz * c]; };
-  window.camFor = function (b, p, A, bi) {
+  function camBase(b, p, A) {
     const c = b.cam || { mode: 'orbit', target: b.actors && b.actors[0] ? b.actors[0].id : [0, 1, 10], r: 8, h: 2.5 }, e = ez(p);
     let res;
     if (c.mode === 'static') res = { pos: c.at.slice(), tg: aim(c.look, A) };
@@ -441,10 +442,36 @@
     else if (c.mode === 'low') { const t = aim(c.target, A), a0 = lerp(c.a0 == null ? -20 : c.a0, c.a1 == null ? 20 : c.a1, e) * D2R, r = c.r || 6; res = { pos: [t[0] + sn(a0) * r, Math.max(0.35, t[1] - (c.h == null ? 1.0 : c.h)), t[2] - cs(a0) * r], tg: [t[0], t[1] + 0.4, t[2]] }; }
     else if (c.mode === 'arc') { const t = aim(c.target, A), a = lerp(c.a0 == null ? -40 : c.a0, c.a1 == null ? 40 : c.a1, e) * D2R, r = c.r || 8, h = lerp(c.h0 == null ? 1.5 : c.h0, c.h1 == null ? 3.5 : c.h1, e); res = { pos: [t[0] + sn(a) * r, t[1] + h, t[2] - cs(a) * r], tg: t }; }
     else { const t = aim(c.target, A), a = lerp(c.a0 == null ? -30 : c.a0, c.a1 == null ? 30 : c.a1, p) * D2R, r = c.r || 8; res = { pos: [t[0] + sn(a) * r, t[1] + (c.h == null ? 1.5 : c.h), t[2] - cs(a) * r], tg: t }; }
-    // variation layer: seeded modifier on top of the written camera (never the same twice in a row)
+    return res;
+  }
+  const SHOTS = [0.30, 0.44, 0.52, 0.64, 0.38, 0.76];   // subject height as a fraction of the frame height (wide ... tight)
+  const LIVING = ['people', 'animals', 'robots'];
+  function subjectOf(b) {
+    const c = b.cam || {}, A = b.actors || [];
+    for (const t of [c.target, c.look]) if (typeof t === 'string') { const x = A.find((q) => q.id === t); if (x && ((MINFO[x.m] || {}).h || 2) <= 14) return x; }
+    let best = null, bs = 0;
+    A.forEach((x) => { const inf = MINFO[x.m] || {}; if (inf.cat === 'effects' || (inf.h || 2) > 14 || x.m === 'sky_sparkle') return; const sc = ((LIVING.indexOf(inf.cat) >= 0 || x.m === 'crowd') ? 100 : 0) + (inf.h || 1) * (Array.isArray(x.s) ? x.s[0] : (x.s || 1)); if (sc > bs) { bs = sc; best = x; } });
+    return best;
+  }
+  function shotFracs(S) { if (!S._shots) { S._shots = []; S.beats.forEach((bx, k) => { const r0 = rng(hashS(S.id + '#shot' + k)); let f0 = k === 0 ? 0.44 : SHOTS[Math.floor(r0() * SHOTS.length)]; if (k > 0 && f0 === S._shots[k - 1]) f0 = SHOTS[(SHOTS.indexOf(f0) + 2) % SHOTS.length]; S._shots.push(f0); }); } return S._shots; }
+  function frameFactor(b, bi) {
+    if (!STORY || b.frame === 'off' || bi == null) return 1; const S = STORY; S._af = S._af || [];
+    if (S._af[bi] != null) return S._af[bi];
+    const sub = subjectOf(b); if (!sub) return (S._af[bi] = 1);
+    const A5 = {}; (b.actors || []).forEach((x, k) => { A5[x.id] = actorState(x, 0.5, 0, k); });
+    const st = A5[sub.id], base = camBase(b, 0.5, A5), H = Math.max(((MINFO[sub.m] || {}).h || 2) * st.s * (sub.m === 'crowd' ? 1.3 : 1), 0.3);
+    const sp = [st.x, st.y + H * 0.5, st.z], D = Math.hypot(base.pos[0] - sp[0], base.pos[1] - sp[1], base.pos[2] - sp[2]) || 8, frac = shotFracs(S)[bi], dstar = F * H / (frac * HH);
+    return (S._af[bi] = cl(dstar / D, 0.3, 1.9));
+  }
+  window.camFor = function (b, p, A, bi) {
+    const res = camBase(b, p, A), e = ez(p), f = frameFactor(b, bi);
+    if (Math.abs(f - 1) > 0.02) { const t = res.tg; res.pos = [t[0] + (res.pos[0] - t[0]) * f, t[1] + (res.pos[1] - t[1]) * f, t[2] + (res.pos[2] - t[2]) * f]; }
+    // keep the subject inside the frame sideways
+    const sub = subjectOf(b); if (sub && A[sub.id] && A[sub.id].show) { const q = A[sub.id], cam0 = lookCam(res.pos, res.tg), v = cam0.view([q.x, q.y + q.h * 0.5, q.z]); if (v[2] > 0.5) { const sx = W / 2 + F * v[0] / v[2], dx = Math.abs(sx - W / 2); if (dx > 0.26 * W) { const k2 = Math.min(0.85, 0.35 + (dx - 0.26 * W) / (0.5 * W)); res.tg = [lerp(res.tg[0], q.x, k2), res.tg[1], lerp(res.tg[2], q.z, k2)]; } } }
     res.roll = 0; res.shake = 0;
+    // variation layer: seeded modifier on top of the written camera (never the same twice in a row)
     if (STORY && !b.nocamvar && bi != null) {
-      const rr = rng(hashS(STORY.id + '|' + bi)), prev = bi > 0 ? CAMVAR_CACHE[bi - 1] : 'none'; let m = rr() < 0.62 ? CAM_MODS[1 + Math.floor(rr() * (CAM_MODS.length - 1))] : 'none'; if (m === prev && m !== 'none') m = 'none'; CAMVAR_CACHE[bi] = m;
+      if (!STORY._cm) { STORY._cm = []; STORY.beats.forEach((bx, k) => { const r0 = rng(hashS(STORY.id + '|' + k)); let mm0 = r0() < 0.62 ? CAM_MODS[1 + Math.floor(r0() * (CAM_MODS.length - 1))] : 'none'; if (k > 0 && mm0 === STORY._cm[k - 1]) mm0 = 'none'; STORY._cm.push(mm0); }); } const rr = rng(hashS(STORY.id + '|r' + bi)), m = STORY._cm[bi];
       const pos = res.pos, tg = res.tg, dx = pos[0] - tg[0], dy = pos[1] - tg[1], dz = pos[2] - tg[2], dist = Math.hypot(dx, dy, dz) || 8, sg = rr() < 0.5 ? -1 : 1;
       if (m === 'pushin') { const k2 = 0.2 * e; res.pos = [pos[0] - dx * k2, pos[1] - dy * k2, pos[2] - dz * k2]; }
       else if (m === 'pullout') { const k2 = 0.22 * e; res.pos = [pos[0] + dx * k2, pos[1] + dy * k2 * 0.5 + 0.2 * e, pos[2] + dz * k2]; }
@@ -458,12 +485,12 @@
     if (res.pos[1] < 0.5) res.pos[1] = 0.5;
     return res;
   };
-  const CAMVAR_CACHE = []; let CURT = 0;
+  let CURT = 0;
 
   // ---------------------------------------------------------------- EXPLAINER (render beat -> buffers -> transitions -> grade / bloom / overlays)
   let BUF = [null, null];
   const getBuf = (i) => { if (!BUF[i]) { BUF[i] = document.createElement('canvas'); BUF[i].width = W; BUF[i].height = HH; BUF[i].ctx = BUF[i].getContext('2d'); } return BUF[i]; };
-  const trFor = (S, i) => { if (i <= 0) return 'cut'; const b = S.beats[i]; if (b.tr && (TRANSITIONS.indexOf(b.tr) >= 0)) return b.tr; const r = rng(hashS(S.id + '#tr' + i)); let t = TRANSITIONS[Math.floor(r() * TRANSITIONS.length)]; if (i > 1 && t === trFor.last) t = TRANSITIONS[(TRANSITIONS.indexOf(t) + 1) % TRANSITIONS.length]; trFor.last = t; return t; };
+  const trFor = (S, i) => { if (i <= 0) return 'cut'; if (!S._trs) { S._trs = []; let prev = ''; S.beats.forEach((bb2, k) => { if (k === 0) { S._trs.push('cut'); return; } let t = bb2.tr && TRANSITIONS.indexOf(bb2.tr) >= 0 ? bb2.tr : TRANSITIONS[Math.floor(rng(hashS(S.id + '#tr' + k))() * TRANSITIONS.length)]; if (t === prev && !bb2.tr) t = TRANSITIONS[(TRANSITIONS.indexOf(t) + 1) % TRANSITIONS.length]; prev = t; S._trs.push(t); }); } return S._trs[i]; };
   const TRD = { cut: 0.001, flash: 0.14, whip: 0.24, zoom: 0.22, wipe: 0.3, dip: 0.32, slide: 0.28 };
 
   function renderBeat(c, i, bt, T) {
@@ -487,7 +514,7 @@
 
   let GR2 = null;
   window.explainer = function (ctx, T) {
-    const S = STORY; CUR_THEME = themeFor(S); if (S._look !== CUR_THEME) { S._look = CUR_THEME; VAR.hi = CUR_THEME.hi[Math.floor(rng(hashS(S.id + 'h'))() * 3)]; }
+    const S = STORY; CUR_THEME = themeFor(S); VAR.hi = CUR_THEME.hi[hashS(S.id) % 3];
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.filter = 'none'; ctx.clearRect(0, 0, W, HH);
     let i = S.beats.length - 1; for (let k = 0; k < S.beats.length; k++) if (T < TL.E[k] + TL.R[k]) { i = k; break; }
     const bt = T - TL.E[i], b = S.beats[i], A0 = getBuf(0), tr = trFor(S, i), trd = TRD[tr];
@@ -537,7 +564,208 @@
   // ---------------------------------------------------------------- CATALOG (people cycle through animations)
   const CATANIMS = ['stand', 'walk', 'run', 'wave', 'point', 'celebrate', 'sit', 'crouch', 'kneel', 'clap', 'bow', 'salute', 'think', 'jump', 'kick', 'dance', 'throw', 'climb'];
   const drawCatalogOrig = window.drawCatalog;
-  window.drawCatalog = function (ctx, page, T) { CUR_THEME = THEMES.classic; return drawCatalogOrig(ctx, page, T); };
+  window.drawCatalog = function (ctx, page, T) {
+    CUR_THEME = THEMES.classic; const saved = {};
+    Object.keys(MODELS).forEach((n) => { if ((MINFO[n] || {}).cat === 'people' && n !== 'crowd') { saved[n] = MODELS[n]; MODELS[n] = (x, y, z, f, s2, o, TT, st) => saved[n](x, y, z, f, s2, o, TT, Object.assign({}, st, { anim: CATANIMS[(Math.floor(TT / 2.2) + hashS(n)) % CATANIMS.length] })); } });
+    try { return drawCatalogOrig(ctx, page, T); } finally { Object.keys(saved).forEach((n) => { MODELS[n] = saved[n]; }); }
+  };
+
+  // ---------------------------------------------------------------- BUG FIX: meadow trees were never drawn (q * 360 instead of q() * 360)
+  SETS.meadow = { time: 'day', build() {
+    ground(-110, 110, -60, 170, 5, (x, z) => ((Math.floor(x / 10) + Math.floor(z / 10)) & 1 ? [88, 206, 96] : [74, 192, 88]), 5); farM(190, [26, 36, 22], [100, 140, 220]); tufts(120, 3, -60, 60, 2, 100, [40, 160, 70]);
+    scat(26, 7, -75, 75, 10, 130, (x, z, q) => put('tree', x, 0, z, q() * 360, 0.9 + q() * 0.5), (x, z) => Math.abs(x) < 10 && z < 45);
+    scat(30, 8, -50, 50, 4, 90, (x, z, q) => put('flower', x, 0, z, 0, 1.5, { c: { a: ['red', 'yellow', 'pink', 'white'][Math.floor(q() * 4)] } }));
+  } };
+
+  // ---------------------------------------------------------------- CATALOG: models pages + places (sets) pages
+  const CATSET = {};
+  const modelPages = () => Math.ceil(catalogNames().length / CAT_PER), setNames = () => Object.keys(SETS).sort();
+  window.catalogPages = () => modelPages() + Math.ceil(setNames().length / CAT_PER);
+  const drawCatalogModels = window.drawCatalog;
+  window.drawCatalog = function (ctx, page, T) {
+    const mp = modelPages(); if (page < mp) return drawCatalogModels(ctx, page, T);
+    CUR_THEME = THEMES.classic; const names = setNames(), cw = 240, ch = 320; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.fillStyle = '#1b1636'; ctx.fillRect(0, 0, W, HH);
+    for (let k = 0; k < CAT_PER; k++) {
+      const nm = names[(page - mp) * CAT_PER + k]; if (!nm) break; const col = k % 3, row = Math.floor(k / 3), cx = col * cw, cy0 = row * ch, SET = SETS[nm];
+      ctx.save(); ctx.beginPath(); ctx.rect(cx + 4, cy0 + 4, cw - 8, ch - 8); ctx.clip();
+      try { if (!CATSET[nm]) { FACES = []; STATIC = true; SET.build(); STATIC = false; CATSET[nm] = FACES; } FACES = CATSET[nm].slice(); const cp = [0, 3.4, -6]; CAMP = cp; if (SET.dyn) SET.dyn({}, T, 0.5); const env = Object.assign({ amb: 0.6, sk: 0.52, bright: 1, fogNear: 40, fogFar: 260 }, TIMES[SET.time || 'day']); skyDraw(ctx, env, T); renderScene(ctx, lookCam(cp, [0, 2.6, 40]), env, { ox: cx + cw / 2, oy: cy0 + ch * 0.5, k: cw / W }); } catch (e) { /* skip */ }
+      ctx.restore(); ctx.fillStyle = '#fff'; ctx.font = '700 20px Poppins, Arial'; ctx.textAlign = 'center'; ctx.fillText(nm, cx + cw / 2, cy0 + ch - 14); ctx.fillStyle = '#8ad0ff'; ctx.font = '600 14px Poppins, Arial'; ctx.fillText('place', cx + cw / 2, cy0 + ch - 36);
+    }
+  };
   window.CAT_ANIMS = CATANIMS;
   window.THEMES = THEMES;
+})();
+'use strict';
+// =====================================================================
+//  NEW PROPS AND PLACES (cities, harbor, farm, castle, jungle, arctic, reef, cave, stadium, classroom ...)
+// =====================================================================
+// =====================================================================
+//  library_plus.js -- loaded after the content files and before engine_plus.js
+//  NEW PLACES (sets): city, oldtown, harbor, farm, village, castle, jungle, savanna, arctic, reef, cave,
+//                     volcano, airport, stadium, classroom, hospital, kitchen, library, bridgeview, island,
+//                     canyon, lakeside, rooftop
+//  NEW MODELS: skyscraper, clocktower, church, windmill, lighthouse, barn, castlewall, castletower, temple, hut,
+//              igloo, bridge, bus, rowboat, helicopter, airliner, tractor, trafficlight, signpost, fountain, statue,
+//              chair, desk, tv, fridge, stove, campfire, ladder, telescope, microscope, laptop, globe, trophy,
+//              cactus, bamboo, acacia, waterfall, iceberg, crystal, stalactite, hangar, tower, goalposts, stands
+// =====================================================================
+(() => {
+  const roomSet = (window.KITX && window.KITX.roomSet) || ((fa, fb, wall, seed, tx, extra) => ({ time: 'day', build() {
+    ground(-42, 42, -22, 74, 4, (x, z) => (((Math.floor(x / 4) + Math.floor(z / 4)) & 1) ? fa : fb), seed);
+    bb(MI, 0, 15, 74, 86, 30, 1, wall, { tex: tx || 'plank', cell: 6, salt: seed }); bb(MI, -43, 15, 26, 1, 30, 98, sh(wall, 0.92), { tex: tx || 'plank', cell: 6, salt: seed + 1 }); bb(MI, 43, 15, 26, 1, 30, 98, sh(wall, 0.92), { tex: tx || 'plank', cell: 6, salt: seed + 2 }); bb(MI, 0, 30.5, 26, 86, 1, 98, [236, 232, 222], { cell: 10 });
+    for (let x = -24; x <= 24; x += 16) bb(MI, x, 17, 73.3, 7, 9, 0.2, [190, 226, 255], { em: 1, ne: 1 }); if (extra) extra();
+  } }));
+  const rn = (n) => rng(n);
+
+  // =================================================================== MODELS
+  defP('skyscraper', { h: 60, r: 0, cat: 'buildings', sh: 0 }, (M, o) => { const h = o.h || 50, w = o.w || 9, c = cc(o, 'a', [120, 170, 210]); bb(M, 0, h / 2, 0, w, h, w, c, { tex: 'check', cell: 2.2, salt: Math.round(h) }); bb(M, 0, h + 1, 0, w * 0.7, 2, w * 0.7, sh(c, 0.7), { cell: 2 }); bb(M, 0, h + 4, 0, 0.3, 6, 0.3, 'dark', { ne: 1 }); if (o.lit) for (let y = 3; y < h - 2; y += 4) for (let k = -w / 2 + 1.5; k < w / 2; k += 2.2) if (hf(y | 0, k | 0, h | 0, 3) > 0.45) bb(M, k, y, -w / 2 - 0.05, 1.2, 1.4, 0.1, [255, 232, 140], { em: 1, ne: 1 }); });
+  defP('clocktower', { h: 24, r: 0, cat: 'buildings', sh: 0 }, (M) => { bb(M, 0, 8, 0, 6, 16, 6, [196, 170, 130], { tex: 'brick', cell: 1.2 }); bb(M, 0, 17, 0, 7, 3, 7, [176, 150, 110], { tex: 'stone', cell: 1.2 }); [[0, -3.55], [0, 3.55]].forEach(([x, z]) => { bb(M, x, 17, z, 3.4, 3.4, 0.12, 'cream', { em: 1 }); bb(M, x, 17.5, z + (z < 0 ? -0.1 : 0.1), 0.2, 1.2, 0.06, 'black', { ne: 1 }); bb(M, x + 0.5, 17, z + (z < 0 ? -0.1 : 0.1), 1.0, 0.2, 0.06, 'black', { ne: 1 }); }); for (let i = 0; i < 5; i++) bb(M, 0, 19.5 + i * 1.1, 0, 6.4 - i * 1.3, 1.1, 6.4 - i * 1.3, [70, 120, 130], { tex: 'tile', cell: 0.8, salt: i }); });
+  defP('church', { h: 18, r: 0, cat: 'buildings', sh: 0 }, (M) => { bb(M, 0, 3.5, 0, 8, 7, 14, [236, 226, 206], { tex: 'brick', cell: 1.4 }); for (let i = 0; i < 4; i++) bb(M, 0, 7.4 + i * 0.9, 0, 9 - i * 2.2, 0.9, 14.6, [150, 80, 70], { tex: 'tile', cell: 0.9, salt: i }); bb(M, 0, 8, -8.2, 4, 16, 4, [236, 226, 206], { tex: 'brick', cell: 1.2 }); for (let i = 0; i < 5; i++) bb(M, 0, 16.5 + i * 0.9, -8.2, 4.4 - i * 0.9, 0.9, 4.4 - i * 0.9, [150, 80, 70], { tex: 'tile', cell: 0.7, salt: i }); bb(M, 0, 21.5, -8.2, 0.2, 1.8, 0.2, 'gold', { ne: 1 }); bb(M, 0, 21.9, -8.2, 1.2, 0.2, 0.2, 'gold', { ne: 1 }); bb(M, 0, 1.6, -10.3, 1.6, 3.2, 0.2, 'brown', { tex: 'plank', cell: 0.5 }); [-2, 2].forEach((x) => [2.5, 5].forEach((y) => bb(M, x * 1.2, y, -7.1, 0.9, 1.4, 0.1, [255, 226, 130], { em: 1, ne: 1 }))); });
+  defP('windmill', { h: 14, r: 0, cat: 'buildings', sh: 0 }, (M, o, T) => { cy(M, 0, 0, 0, 3, 10, 10, [230, 214, 190], { r2: 2, rows: 3, tex: 'brick', capc: [150, 90, 70] }); cy(M, 0, 10, 0, 2.4, 1.6, 10, [150, 90, 70], { r2: 0.3 }); bb(M, 0, 1.4, -3, 1.2, 2.6, 0.2, 'brown', { ne: 1 }); const R = mm(M, mm(mT(0, 8.5, -2.4), mRz(T * 0.8))); for (let k = 0; k < 4; k++) { const Rk = mm(R, mRz(k * Math.PI / 2)); bb(Rk, 0, 3.4, -0.2, 0.3, 6.8, 0.2, 'wood', { ne: 1 }); bb(Rk, 0.7, 4, -0.3, 1.2, 4.4, 0.1, [246, 242, 230], { cell: 1.2 }); } });
+  defP('lighthouse', { h: 22, r: 0, cat: 'buildings', sh: 0 }, (M, o, T) => { cy(M, 0, 0, 0, 3, 14, 12, 'white', { r2: 2, rows: 4, tex: 'stripe', capc: 'red' }); bb(M, 0, 14.2, 0, 5, 0.5, 5, 'dark', { ne: 1 }); bb(M, 0, 15.6, 0, 2.6, 2.4, 2.6, [255, 240, 170], { em: 1, ne: 1 }); cy(M, 0, 16.8, 0, 2.2, 1.8, 10, 'red', { r2: 0.2 }); bb(M, 0, 1.4, -2.9, 1.2, 2.6, 0.2, 'brown', { ne: 1 }); });
+  defP('barn', { h: 9, r: 0, cat: 'buildings', sh: 0 }, (M) => { bb(M, 0, 3, 0, 10, 6, 8, [190, 50, 44], { tex: 'plank', cell: 1 }); for (let i = 0; i < 4; i++) bb(M, 0, 6.5 + i * 0.9, 0, 11 - i * 2.8, 0.9, 8.8, [90, 80, 80], { tex: 'roof', cell: 1, salt: i }); bb(M, 0, 2.2, -4.05, 3.4, 4.4, 0.2, 'white', { ne: 1 }); [[0.785], [-0.785]].forEach(([a]) => bb(mm(M, mT(0, 2.2, -4.2)), 0, 0, 0, 0.2, 5.2, 0.1, [190, 50, 44], { ne: 1 })); bb(M, 0, 7.4, -4.2, 1.6, 1.2, 0.1, [255, 226, 130], { em: 1, ne: 1 }); });
+  defP('castlewall', { h: 9, r: 0, cat: 'buildings', sh: 0 }, (M, o) => { const L = o.len || 30, c = [168, 164, 176]; bb(M, 0, 3.5, 0, 3, 7, L, c, { tex: 'stone', cell: 1.6 }); for (let z = -L / 2 + 0.7; z < L / 2; z += 1.6) [-1.2, 1.2].forEach((x) => bb(M, x, 7.4, z, 0.6, 0.8, 0.9, sh(c, 1.08), { ne: 1 })); });
+  defP('castletower', { h: 20, r: 0, cat: 'buildings', sh: 0 }, (M, o, T) => { cy(M, 0, 0, 0, 3.4, 12, 12, [168, 164, 176], { rows: 6, tex: 'stone', capc: [150, 150, 160] }); cy(M, 0, 12, 0, 4.2, 1, 12, [150, 150, 164], { rows: 1 }); cy(M, 0, 13, 0, 3.8, 4.5, 12, [190, 60, 56], { r2: 0.1 }); bb(M, 0, 18.5, 0, 0.1, 3, 0.1, 'silver', { ne: 1 }); bb(M, 0.6, 19.4 + Math.sin(T * 4) * 0.05, 0, 1.2, 0.8, 0.06, [255, 210, 60], { ne: 1 }); [0, 1, 2].forEach((i) => bb(M, 0, 4 + i * 3, -3.45, 0.5, 1.2, 0.2, [255, 226, 130], { em: 1, ne: 1 })); });
+  defP('temple', { h: 12, r: 0, cat: 'buildings', sh: 0 }, (M) => { bb(M, 0, 0.4, 0, 16, 0.8, 10, [232, 224, 206], { tex: 'marble', cell: 1.6 }); bb(M, 0, 1.1, 0, 15, 0.6, 9, [226, 218, 198], { tex: 'marble', cell: 1.6 }); for (let i = 0; i < 6; i++) { bb(M, -6 + i * 2.4, 5, -3.6, 1.3, 7.6, 1.3, [240, 234, 220], { tex: 'marble', cell: 1.2 }); bb(M, -6 + i * 2.4, 8.9, -3.6, 1.7, 0.4, 1.7, [226, 218, 198], { ne: 1 }); } bb(M, 0, 9.6, 0, 15, 0.8, 9, [236, 228, 210], { cell: 1.6 }); for (let i = 0; i < 4; i++) bb(M, 0, 10.4 + i * 0.7, 0, 14 - i * 3.4, 0.7, 9, [226, 190, 160], { tex: 'tile', cell: 1, salt: i }); });
+  defP('hut', { h: 5, r: 2.4, cat: 'buildings' }, (M, o) => { cy(M, 0, 0, 0, 2, 2.4, 10, cc(o, 'a', [196, 150, 100]), { rows: 2, tex: 'mud' }); cy(M, 0, 2.4, 0, 2.8, 2.6, 10, [214, 180, 90], { r2: 0.15, rows: 3, tex: 'grass' }); bb(M, 0, 0.9, -2.0, 0.9, 1.8, 0.1, 'brown', { ne: 1 }); });
+  defP('igloo', { h: 4, r: 3, cat: 'buildings' }, (M) => { [[3, 0.9], [2.7, 0.9], [2.1, 0.8], [1.4, 0.7], [0.7, 0.5]].reduce((y, [r, h], i) => { cy(M, 0, y, 0, r, h, 12, [240, 246, 255], { tex: 'snow', rows: 1, capc: [240, 246, 255] }); return y + h; }, 0); cy(mm(M, mm(mT(0, 0.9, -2.9), mRx(Math.PI / 2))), 0, 0, 0, 0.9, 1.6, 10, [226, 236, 250], { cap: false }); bb(M, 0, 0.8, -3.7, 1.2, 1.4, 0.1, [30, 30, 50], { ne: 1 }); });
+  defP('bridge', { h: 10, r: 0, cat: 'buildings', sh: 0 }, (M, o) => { const L = o.len || 40; bb(M, 0, 4, 0, 8, 0.8, L, [150, 150, 164], { tex: 'stone', cell: 2 }); [-1, 1].forEach((d) => { bb(M, d * 3.8, 5, 0, 0.4, 1.2, L, [176, 176, 190], { cell: 2 }); }); for (let z = -L / 2 + 4; z < L / 2; z += 8) { bb(M, 0, 1.8, z, 6, 3.6, 2, [130, 130, 146], { tex: 'stone', cell: 1.4 }); } [-L / 2 + 1, L / 2 - 1].forEach((z) => [-3.8, 3.8].forEach((x) => bb(M, x, 9, z, 1, 10, 1, [160, 160, 176], { cell: 1.2 }))); });
+  defP('bus', { h: 4, r: 5, cat: 'vehicles' }, (M, o) => { const c = cc(o, 'a', [255, 190, 40]); bb(M, 0, 2, 0, 2.6, 3, 9, c, { cell: 1.4 }); for (let k = 0; k < 5; k++) [-1.32, 1.32].forEach((x) => bb(M, x, 2.6, -3 + k * 1.6, 0.06, 1.1, 1.2, [150, 226, 255], { em: 1, ne: 1 })); bb(M, 0, 2.5, 4.52, 2.2, 1.4, 0.06, [150, 226, 255], { em: 1, ne: 1 }); bb(M, 0, 0.7, 0, 2.5, 0.6, 9, 'dark', { ne: 1 }); [[-1.2, 3], [1.2, 3], [-1.2, -3], [1.2, -3]].forEach(([x, z]) => cy(mm(M, mm(mT(x, 0.55, z), mRz(Math.PI / 2))), 0, -0.15, 0, 0.55, 0.3, 8, 'black', { capc: 'grey' })); });
+  defP('rowboat', { h: 1.2, r: 2, cat: 'vehicles', sh: 0 }, (M, o, T) => { const rk = Math.sin(T * 1.6) * 0.04, M2 = mm(M, mRz(rk)); bb(M2, 0, 0.35, 0, 1.6, 0.7, 4, [150, 96, 56], { tex: 'plank', cell: 0.8 }); bb(M2, 0, 0.4, 2.1, 0.9, 0.6, 0.8, [150, 96, 56], { cell: 0.5 }); [-1, 1].forEach((d) => bb(mm(M2, mm(mT(d * 0.9, 0.9, 0), mRz(d * (0.6 + Math.sin(T * 2) * 0.1)))), d * 0.9, 0, 0, 2.2, 0.08, 0.15, 'wood', { ne: 1 })); });
+  defP('helicopter', { h: 4, r: 0, cat: 'vehicles', sh: 0 }, (M, o, T) => { const c = cc(o, 'a', [220, 60, 60]); bb(M, 0, 1.2, 0, 2.2, 2, 4, c, { cell: 1.2 }); bb(M, 0, 1.5, 2.05, 1.8, 1.2, 0.1, [150, 226, 255], { em: 1, ne: 1 }); bb(M, 0, 1.5, -3.8, 0.5, 0.5, 4.2, c, { ne: 1 }); bb(M, 0, 2.2, -5.7, 0.1, 1.6, 0.8, sh(c, 0.9), { ne: 1 }); [-1, 1].forEach((x) => bb(M, x, 0.1, 0.2, 0.15, 0.15, 4, 'dark', { ne: 1 })); bb(M, 0, 2.4, 0, 0.3, 0.5, 0.3, 'dark', { ne: 1 }); bb(mm(M, mm(mT(0, 2.7, 0), mRy(T * 25))), 0, 0, 0, 9, 0.08, 0.5, 'dark', { ne: 1 }); });
+  defP('airliner', { h: 6, r: 0, cat: 'vehicles', sh: 0 }, (M, o) => { const c = cc(o, 'a', 'white'), f = (p) => ap(M, p); bb(M, 0, 2, 0, 3.2, 3.2, 28, c, { cell: 3 }); bb(M, 0, 2, 15, 2.4, 2.4, 4, c, { cell: 2 }); [-1, 1].forEach((d) => { FACES.push({ v: [[0, 1.5, 6], [0, 1.5, -4], [d * 14, 1.5, -8]].map(f), n: nrm3(an(M, [0, 1, 0])), c: sh(c, 0.92), e: [1, 1, 1], em: 0, sn: null, L: 2, a: 1, b: 0, ts: 1 }); bb(M, d * 5, 0.6, 0, 1.4, 1.4, 3, 'dark', { ne: 1 }); }); bb(M, 0, 5, -13, 0.3, 4.5, 4, c, { cell: 1.5 }); bb(M, 0, 2.6, 0, 3.24, 0.4, 24, [60, 110, 200], { ne: 1 }); });
+  defP('tractor', { h: 3.4, r: 3, cat: 'vehicles' }, (M, o) => { const c = cc(o, 'a', [60, 160, 70]); bb(M, 0, 1.6, 0.8, 1.6, 1.4, 2.6, c, { cell: 0.9 }); bb(M, 0, 2.7, -0.8, 1.7, 1.6, 1.6, sh(c, 1.08), { cell: 0.8 }); bb(M, 0, 2.7, -0.8, 1.74, 1.0, 1.2, [150, 226, 255], { em: 1, ne: 1 }); [-1, 1].forEach((d) => { cy(mm(M, mm(mT(d * 1.1, 1.2, -1), mRz(Math.PI / 2))), 0, -0.2, 0, 1.2, 0.5, 10, 'black', { capc: 'grey' }); cy(mm(M, mm(mT(d * 0.9, 0.55, 1.8), mRz(Math.PI / 2))), 0, -0.15, 0, 0.55, 0.3, 8, 'black', { capc: 'grey' }); }); });
+  defP('trafficlight', { h: 6, r: 0.4, cat: 'props' }, (M, o, T) => { bb(M, 0, 2.5, 0, 0.3, 5, 0.3, 'dark', { ne: 1 }); bb(M, 0, 5.2, 0, 0.8, 2.2, 0.6, 'black', { ne: 1 }); const k = Math.floor(T * 0.5) % 3; [[4.6, [255, 60, 60]], [5.2, [255, 210, 60]], [5.8, [60, 220, 100]]].forEach(([y, c], i) => bb(M, 0, y, -0.32, 0.4, 0.4, 0.06, k === i ? c : sh(c, 0.25), { em: k === i ? 1 : 0, ne: 1 })); });
+  defP('signpost', { h: 4, r: 0.4, cat: 'props' }, (M) => { bb(M, 0, 1.6, 0, 0.2, 3.2, 0.2, 'wood', { ne: 1 }); bb(M, 0, 3.0, -0.15, 1.6, 0.6, 0.1, [250, 226, 150], { tex: 'plank', cell: 0.4 }); bb(M, 0.3, 2.3, -0.15, 1.4, 0.5, 0.1, [250, 226, 150], { tex: 'plank', cell: 0.4 }); });
+  defP('fountain', { h: 4, r: 3, cat: 'props' }, (M, o, T) => { cy(M, 0, 0, 0, 3, 0.8, 14, [190, 186, 200], { tex: 'stone', capc: [90, 170, 230] }); cy(M, 0, 0.8, 0, 0.5, 2, 8, [200, 196, 208], { r2: 0.4 }); cy(M, 0, 2.8, 0, 1.4, 0.4, 10, [190, 186, 200], { capc: [90, 170, 230] }); for (let k = 0; k < 8; k++) { const a = T * 2 + k * 0.8; bb(M, Math.cos(a) * 0.3, 3.2 + ((T * 1.4 + k * 0.13) % 1) * 1.4, Math.sin(a) * 0.3, 0.14, 0.14, 0.14, [200, 235, 255], { em: 1, ne: 1 }); } });
+  defP('statue', { h: 6, r: 1, cat: 'props' }, (M, o) => { const c = cc(o, 'a', [186, 176, 150]); bb(M, 0, 0.8, 0, 2.2, 1.6, 2.2, [176, 170, 184], { tex: 'stone', cell: 0.8 }); bb(M, 0, 2.6, 0, 1, 2.1, 0.6, c, { cell: 0.5 }); bb(M, 0, 4.1, 0, 0.7, 0.8, 0.7, c, { cell: 0.4 }); bb(M, -0.7, 2.8, 0, 0.3, 1.6, 0.3, c, { ne: 1 }); bb(M, 0.7, 3.4, 0.3, 0.3, 1.2, 0.3, c, { ne: 1 }); });
+  defP('chair', { h: 2, r: 0.7, cat: 'props' }, (M, o) => { const c = cc(o, 'a', 'wood'); bb(M, 0, 0.9, 0, 1, 0.12, 1, c, { tex: 'plank', cell: 0.5 }); bb(M, 0, 1.6, -0.45, 1, 1.4, 0.12, c, { tex: 'plank', cell: 0.5 }); [[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]].forEach(([x, z]) => bb(M, x, 0.45, z, 0.1, 0.9, 0.1, sh(c, 0.8), { ne: 1 })); });
+  defP('desk', { h: 2, r: 1.4, cat: 'props' }, (M, o) => { bb(M, 0, 1.4, 0, 3, 0.15, 1.6, 'wood', { tex: 'plank', cell: 0.5 }); [[-1.3, -0.6], [1.3, -0.6], [-1.3, 0.6], [1.3, 0.6]].forEach(([x, z]) => bb(M, x, 0.7, z, 0.15, 1.4, 0.15, 'brown', { ne: 1 })); bb(M, 1.0, 1.0, 0, 0.9, 0.7, 1.2, 'brown', { cell: 0.5 }); });
+  defP('tv', { h: 2, r: 1, cat: 'props' }, (M, o, T) => { bb(M, 0, 1, 0, 2.2, 1.4, 0.3, [24, 24, 34], { cell: 1 }); bb(M, 0, 1, 0.16, 2.0, 1.2, 0.04, [90 + 60 * Math.sin(T * 3) | 0, 170, 235], { em: 1, ne: 1 }); bb(M, 0, 0.15, 0, 0.8, 0.3, 0.5, 'dark', { ne: 1 }); });
+  defP('fridge', { h: 3.4, r: 1, cat: 'props' }, (M) => { bb(M, 0, 1.7, 0, 1.6, 3.4, 1.4, [226, 232, 240], { cell: 1.2 }); bb(M, 0, 2.4, -0.72, 1.5, 0.05, 0.05, 'dark', { ne: 1 }); bb(M, 0.6, 2.7, -0.75, 0.08, 0.7, 0.08, 'silver', { ne: 1 }); bb(M, 0.6, 1.3, -0.75, 0.08, 1.2, 0.08, 'silver', { ne: 1 }); });
+  defP('stove', { h: 2, r: 1, cat: 'props' }, (M, o, T) => { bb(M, 0, 0.9, 0, 1.8, 1.8, 1.4, [210, 214, 224], { tex: 'metal', cell: 0.6 }); [[-0.4, -0.3], [0.4, -0.3], [-0.4, 0.3], [0.4, 0.3]].forEach(([x, z]) => bb(M, x, 1.85, z, 0.5, 0.06, 0.5, 'dark', { ne: 1 })); bb(M, 0, 0.8, -0.72, 1.2, 0.8, 0.05, [40, 40, 50], { ne: 1 }); if (o.on) bb(M, -0.4, 1.95 + Math.sin(T * 12) * 0.03, -0.3, 0.3, 0.15, 0.3, [255, 150, 40], { em: 1, ne: 1 }); });
+  defP('campfire', { h: 1.6, r: 1, cat: 'props' }, (M, o, T) => { [0, 1, 2, 3, 4].forEach((i) => bb(mm(M, mRy(i * 1.26)), 0.4, 0.15, 0, 1.0, 0.25, 0.25, 'wood', { ne: 1 })); for (let i = 0; i < 4; i++) { const h = 0.7 + 0.35 * Math.sin(T * 11 + i * 2) + (i % 2) * 0.2; bb(M, (i - 1.5) * 0.25, 0.3 + h / 2, Math.sin(i) * 0.15, 0.34, h, 0.34, i % 2 ? [255, 170, 40] : [255, 90, 30], { em: 1, ne: 1 }); } bb(M, 0, 0.5, 0, 0.2, 0.5, 0.2, [255, 236, 130], { em: 1, ne: 1 }); });
+  defP('ladder', { h: 4, r: 0.5, cat: 'props' }, (M, o) => { const H = o.h || 4; [-0.4, 0.4].forEach((x) => bb(M, x, H / 2, 0, 0.1, H, 0.1, 'wood', { ne: 1 })); for (let y = 0.4; y < H; y += 0.5) bb(M, 0, y, 0, 0.8, 0.08, 0.08, 'wood', { ne: 1 }); });
+  defP('telescope', { h: 3, r: 0.8, cat: 'props' }, (M) => { [[-0.5, 0], [0.5, 0], [0, 0.6]].forEach(([x, z]) => bb(mm(M, piv(mRx(0), [0, 1.4, 0])), x * 0.6, 0.7, z * 0.6, 0.08, 1.4, 0.08, 'wood', { ne: 1 })); cy(mm(M, mm(mT(0, 1.6, 0), mRx(-0.9))), 0, -1, 0, 0.22, 2.2, 10, [60, 80, 150], { capc: [150, 220, 255] }); bb(M, 0, 1.5, 0, 0.5, 0.4, 0.5, 'dark', { ne: 1 }); });
+  defP('microscope', { h: 1.8, r: 0.6, cat: 'props' }, (M) => { bb(M, 0, 0.1, 0, 1, 0.2, 0.8, 'dark', { ne: 1 }); bb(M, 0, 0.9, 0.3, 0.2, 1.6, 0.2, [226, 230, 240], { ne: 1 }); cy(mm(M, mm(mT(0, 1.4, -0.1), mRx(-0.3))), 0, -0.5, 0, 0.18, 1.1, 8, 'silver', { capc: 'dark' }); bb(M, 0, 0.5, -0.2, 0.6, 0.06, 0.5, 'grey', { ne: 1 }); });
+  defP('laptop', { h: 0.8, r: 0.5, cat: 'props', sh: 0 }, (M, o, T) => { bb(M, 0, 0.04, 0, 1, 0.08, 0.7, [200, 204, 214], { ne: 1 }); bb(mm(M, piv(mRx(-0.3), [0, 0.08, 0.35])), 0, 0.45, 0.35, 1, 0.7, 0.05, [200, 204, 214], { ne: 1 }); bb(mm(M, piv(mRx(-0.3), [0, 0.08, 0.35])), 0, 0.45, 0.32, 0.9, 0.6, 0.03, [90, 210, 255], { em: 1, ne: 1 }); });
+  defP('globe', { h: 2, r: 0.7, cat: 'props' }, (M, o, T) => { bb(M, 0, 0.1, 0, 0.8, 0.2, 0.8, 'wood', { ne: 1 }); bb(M, 0, 0.5, 0, 0.1, 0.8, 0.1, 'silver', { ne: 1 }); const R = mm(M, mm(mT(0, 1.4, 0), mRy(T * 0.5))); [[-0.7, 0.4], [-0.3, 0.7], [0.3, 0.7], [0.7, 0.4]].forEach(([t, r], i) => cy(R, 0, t * 0.8 - 0.2, 0, r * 0.9, 0.4, 12, i % 2 ? [60, 150, 90] : [60, 120, 220], { tex: 'sand', capc: [70, 140, 230] })); });
+  defP('trophy', { h: 2, r: 0.5, cat: 'props', sh: 0 }, (M, o, T) => { cy(M, 0, 0, 0, 0.5, 0.3, 8, 'dark', {}); bb(M, 0, 0.6, 0, 0.16, 0.6, 0.16, 'gold', { ne: 1 }); cy(M, 0, 0.9, 0, 0.3, 0.8, 10, [255, 210, 60], { r2: 0.6, capc: [255, 232, 130], em: 1 }); [-1, 1].forEach((d) => bb(M, d * 0.7, 1.4, 0, 0.12, 0.5, 0.1, 'gold', { ne: 1 })); });
+  defP('cactus', { h: 3, r: 0.8, cat: 'nature' }, (M, o) => { const c = cc(o, 'a', [60, 150, 90]); bb(M, 0, 1.2, 0, 0.7, 2.4, 0.7, c, { tex: 'stripe', cell: 0.35 }); bb(M, -0.7, 1.6, 0, 0.6, 0.35, 0.35, sh(c, 1.05), { ne: 1 }); bb(M, -0.95, 2.0, 0, 0.35, 0.9, 0.35, sh(c, 1.05), { ne: 1 }); bb(M, 0.7, 1.2, 0, 0.6, 0.35, 0.35, sh(c, 1.05), { ne: 1 }); bb(M, 0.95, 1.6, 0, 0.35, 0.9, 0.35, sh(c, 1.05), { ne: 1 }); bb(M, 0, 2.5, 0, 0.3, 0.2, 0.3, 'pink', { em: 1, ne: 1 }); });
+  defP('bamboo', { h: 8, r: 0.6, cat: 'nature' }, (M, o, T) => { for (let k = 0; k < 4; k++) { const sw = Math.sin(T * 0.8 + k) * 0.05, h = 6 + k; for (let j = 0; j < h; j++) bb(mm(M, mRz(sw * j * 0.15)), (k - 1.5) * 0.45, j + 0.5, (k % 2) * 0.3, 0.25, 1, 0.25, j % 2 ? [90, 170, 70] : [120, 190, 90], { ne: 1 }); } });
+  defP('acacia', { h: 8, r: 3, cat: 'nature' }, (M) => { bb(M, 0, 2.2, 0, 0.6, 4.4, 0.6, [120, 84, 56], { tex: 'plank', cell: 0.5 }); bb(M, 0, 4.8, 0, 6.5, 0.9, 6.5, [90, 160, 70], { tex: 'leaf', cell: 1.2 }); bb(M, 0, 5.5, 0, 4.6, 0.7, 4.6, [110, 180, 80], { tex: 'leaf', cell: 1.2, salt: 3 }); });
+  defP('waterfall', { h: 14, r: 0, cat: 'nature', sh: 0 }, (M, o, T) => { bb(M, 0, 7, 0.9, 10, 14, 1.8, [110, 112, 126], { tex: 'rock', cell: 2 }); for (let i = 0; i < 8; i++) { const x = -3 + i * 0.85; bb(M, x, 7, -0.1, 0.7, 14, 0.2, [190, 230, 255], { em: 1, ne: 1 }); bb(M, x, ((T * 6 + i * 3) % 14), -0.2, 0.5, 1.5, 0.2, [255, 255, 255], { em: 1, ne: 1 }); } bb(M, 0, 0.5, -1.4, 7, 1, 2.4, [230, 245, 255], { em: 1, ne: 1 }); });
+  defP('iceberg', { h: 6, r: 0, cat: 'nature', sh: 0 }, (M, o) => { const c = [226, 242, 255]; bb(M, 0, 1.5, 0, 6, 3, 5, c, { tex: 'ice', cell: 1.5 }); bb(M, 0.6, 3.6, 0, 3.4, 2.4, 3, sh(c, 1.04), { tex: 'ice', cell: 1.2, salt: 2 }); bb(M, -0.4, 5.2, 0.2, 1.6, 1.6, 1.6, sh(c, 1.08), { tex: 'ice', cell: 0.8, salt: 3 }); bb(M, 0, -1.4, 0, 7, 2.8, 6, [150, 200, 230], { ne: 1, em: 0 }); });
+  defP('crystal', { h: 3, r: 0.8, cat: 'nature', sh: 0 }, (M, o, T) => { const c = cc(o, 'a', [140, 200, 255]); [[0, 0, 2.6], [0.6, 0.3, 1.8], [-0.6, -0.2, 1.5], [0.2, -0.6, 1.1]].forEach(([x, z, h], i) => cy(mm(M, mT(x, 0, z)), 0, 0, 0, 0.3, h, 5, mixc(c, [255, 255, 255], 0.15 * i), { r2: 0.05, em: 1 })); });
+  defP('stalactite', { h: 4, r: 0, cat: 'nature', sh: 0 }, (M, o) => { [[0, 0, 3], [1.2, 0.4, 2], [-1.1, -0.3, 2.4]].forEach(([x, z, h]) => cy(mm(M, mm(mT(x, h, z), mRx(Math.PI))), 0, 0, 0, 0.5, h, 6, [130, 124, 136], { r2: 0.05, tex: 'rock', cap: true })); });
+  defP('hangar', { h: 8, r: 0, cat: 'buildings', sh: 0 }, (M) => { bb(M, 0, 3.5, 0, 22, 7, 16, [170, 176, 190], { tex: 'metal', cell: 2 }); for (let i = 0; i < 4; i++) bb(M, 0, 7.4 + i * 0.7, 0, 22 - i * 5, 0.7, 16, [140, 146, 160], { tex: 'metal', cell: 2, salt: i }); bb(M, 0, 3, -8.1, 12, 6, 0.2, [90, 96, 110], { ne: 1 }); });
+  defP('tower', { h: 22, r: 0, cat: 'buildings', sh: 0 }, (M) => { bb(M, 0, 8, 0, 3, 16, 3, [210, 214, 224], { tex: 'metal', cell: 2 }); bb(M, 0, 17, 0, 7, 2.4, 7, [150, 226, 255], { em: 1 }); bb(M, 0, 18.6, 0, 7.6, 0.6, 7.6, 'dark', { ne: 1 }); bb(M, 0, 20.5, 0, 0.2, 3.5, 0.2, 'silver', { ne: 1 }); });
+  defP('goalposts', { h: 7, r: 0, cat: 'props', sh: 0 }, (M) => { bb(M, 0, 3, 0, 0.3, 6, 0.3, 'gold', { ne: 1 }); bb(M, 0, 6, 0, 5, 0.3, 0.3, 'gold', { ne: 1 }); [-2.5, 2.5].forEach((x) => bb(M, x, 8, 0, 0.2, 4, 0.2, 'gold', { ne: 1 })); });
+  defP('stands', { h: 8, r: 0, cat: 'buildings', sh: 0 }, (M, o, T) => { const L = o.len || 60, q = rng(5); for (let i = 0; i < 6; i++) { bb(M, 0, i * 1.1 + 0.5, i * 1.6, L, 1.1, 1.6, [190, 186, 200], { tex: 'stone', cell: 3, salt: i }); for (let k = -L / 2 + 1; k < L / 2; k += 1.6) if (q() > 0.25) bb(M, k, i * 1.1 + 1.5, i * 1.6 + 0.2, 0.9, 1.2, 0.7, [[236, 70, 70], [70, 120, 236], [255, 214, 60], [250, 250, 250]][Math.floor(q() * 4)], { ne: 1 }); } });
+
+  // =================================================================== PLACES
+  const road = (w, seed, z0, z1) => ground(-90, 90, z0 || -40, z1 || 220, 5, (x) => (Math.abs(x) < w ? [88, 88, 100] : Math.abs(x) < w + 3 ? [190, 186, 196] : [150, 150, 160]), seed);
+  SETS.city = { time: 'day', build() {
+    road(9, 101); for (let z = -30; z < 210; z += 10) bb(MI, 0, 0.04, z, 0.35, 0.05, 4, [250, 240, 200], { ne: 1 }); for (let z = 0; z < 200; z += 40) bb(MI, 0, 0.04, z, 18, 0.05, 3, 'white', { tex: 'stripe', cell: 1.5, ne: 1 });
+    const r = rn(102), cols = [[120, 170, 210], [150, 170, 190], [100, 140, 180], [170, 190, 210], [130, 150, 170]];
+    for (let z = 10; z < 200; z += 14) [-1, 1].forEach((d) => put('skyscraper', d * (20 + r() * 6), 0, z + r() * 4, 0, 1, { h: 22 + r() * 60, w: 9 + r() * 3, c: { a: cols[Math.floor(r() * 5)] }, lit: 1 }));
+    for (let z = 20; z < 120; z += 24) [-1, 1].forEach((d) => { put('trafficlight', d * 10.5, 0, z, 0, 1); put('lamp', d * 11.5, 0, z + 10, 0, 1); });
+    [[-5, 60, 'red'], [5, 84, 'blue'], [-5, 110, 'white'], [5, 140, 'yellow']].forEach(([x, z, c]) => put('car', x, 0, z, x < 0 ? 0 : 180, 1.1, { c: { a: c } })); put('bus', -5, 0, 40, 0, 1);
+  } };
+  SETS.oldtown = { time: 'day', build() {
+    ground(-70, 70, -40, 200, 4, (x, z) => (Math.abs(x) < 9 ? (((Math.floor(x / 2) + Math.floor(z / 2)) & 1) ? [150, 142, 136] : [136, 130, 126]) : [176, 168, 156]), 111);
+    const r = rn(112); for (let z = 6; z < 150; z += 13) [-1, 1].forEach((d, i) => put('house', d * (15 + r() * 2), 0, z + r() * 3, d > 0 ? 90 : 270, 1.7 + r() * 0.5, { style: 'timber', c: { a: [[250, 214, 170], [236, 226, 206], [226, 196, 170], [210, 200, 220]][Math.floor(r() * 4)], b: ['brick', 'rust', 'brick', 'red'][Math.floor(r() * 4)] } }));
+    put('clocktower', 0, 0, 170, 0, 1.4); put('fountain', 0, 0, 90, 0, 1.2); [30, 55, 110, 130].forEach((z) => [-1, 1].forEach((d) => put('lamp', d * 8, 0, z, 0, 1))); put('stall', -6, 0, 70, 160, 1.2); put('stall', 6, 0, 76, 200, 1.2, { c: { a: 'blue' } }); farM(240, [18, 26], [150, 150, 200]);
+  } };
+  SETS.harbor = { time: 'day', build() {
+    ground(-90, 90, -40, 36, 4, (x, z) => (((Math.floor(x / 4) + Math.floor(z / 4)) & 1) ? [170, 130, 84] : [160, 122, 78]), 121); bb(MI, 0, 0.3, 36.5, 180, 0.6, 1, [120, 90, 60], { tex: 'plank', cell: 2 });
+    put('lighthouse', -50, 0, 60, 0, 1.2); put('ship', -20, -0.5, 80, 20, 1.6); put('ship', 30, -0.5, 100, 340, 2); put('rowboat', 14, -0.4, 52, 20, 1.2); [[-24, 24], [-20, 26], [22, 20], [26, 24]].forEach(([x, z]) => put('crate', x, 0, z, 10, 1.2)); [[-12, 28], [18, 30]].forEach(([x, z]) => put('barrel', x, 0, z, 0, 1.2)); put('shop', 50, 0, 10, 180, 1.4); farM(260, [10, 16], [130, 170, 200]);
+  }, dyn(b, T) { waterDyn(-120, 120, 37, 220, -0.45, 5, T, [30, 120, 190], [70, 170, 220], 0.12); } };
+  SETS.farm = { time: 'day', build() {
+    ground(-110, 110, -60, 190, 5, (x, z) => (z > 40 && Math.abs(x) > 20 ? (((Math.floor(z / 5)) & 1) ? [200, 170, 70] : [186, 154, 60]) : (((Math.floor(x / 10) + Math.floor(z / 10)) & 1) ? [96, 190, 90] : [84, 176, 80])), 131);
+    put('barn', -26, 0, 50, 0, 1.3); put('windmill', 34, 0, 90, 0, 1.2); put('tractor', 18, 0, 30, 200, 1.1); put('hay', -10, 0, 34, 30, 1.4); put('hay', -6, 0, 38, 10, 1.4); put('fence', -40, 0, 20, 0, 1, { n: 20 }); scat(12, 132, -80, 80, 70, 150, (x, z, q) => put('tree', x, 0, z, q() * 360, 1 + q() * 0.5), (x) => Math.abs(x) < 16); farM(210, [14, 22], [120, 160, 200]);
+  } };
+  SETS.village = { time: 'day', build() {
+    ground(-110, 110, -60, 170, 5, (x, z) => (Math.hypot(x, z - 40) < 26 ? [196, 160, 110] : (((Math.floor(x / 10) + Math.floor(z / 10)) & 1) ? [150, 190, 90] : [138, 178, 80])), 141);
+    [[-18, 30], [-6, 60], [12, 56], [24, 40], [20, 22], [-24, 50]].forEach(([x, z], i) => put('hut', x, 0, z, (i * 70) % 360, 1.3 + (i % 3) * 0.1)); put('campfire', 0, 0, 38, 0, 1.2); put('well', -2, 0, 52, 0, 1.2); scat(14, 142, -80, 80, 70, 140, (x, z, q) => put('palm', x, 0, z, 0, 1 + q() * 0.4)); farM(210, [14, 20], [100, 150, 110]);
+  }, dyn(b, T) { } };
+  SETS.castle = { time: 'day', build() {
+    ground(-90, 90, -40, 180, 5, (x, z) => (z < 90 ? (((Math.floor(x / 5) + Math.floor(z / 5)) & 1) ? [170, 166, 176] : [158, 154, 166]) : [110, 170, 90]), 151);
+    put('castlewall', 0, 0, 100, 0, 1, { len: 70 }); bb(MI, 0, 0, 100, 0.01, 0.01, 0.01, 'dark', { ne: 1 }); put('castletower', -34, 0, 100, 0, 1.2); put('castletower', 34, 0, 100, 0, 1.2); put('castletower', 0, 0, 120, 0, 1.6); bb(MI, 0, 3, 98.4, 8, 6, 0.4, [90, 66, 46], { tex: 'plank', cell: 1 }); [-16, 16].forEach((x) => put('flag', x, 7.6, 100, 0, 1, { c: { a: 'red', b: 'gold' } })); [[-20, 40], [20, 44]].forEach(([x, z]) => put('torch', x, 0, z, 0, 1.4)); farM(220, [20, 28], [130, 150, 190]);
+  } };
+  SETS.jungle = { time: 'day', build() {
+    ground(-110, 110, -60, 170, 5, (x, z) => (Math.abs(x) < 6 ? [150, 112, 70] : (((Math.floor(x / 10) + Math.floor(z / 10)) & 1) ? [44, 140, 60] : [36, 126, 52])), 161);
+    scat(34, 162, -80, 80, 6, 150, (x, z, q) => put('palm', x, 0, z, q() * 360, 1.2 + q() * 0.8), (x, z) => Math.abs(x) < 7 && z < 60); scat(24, 163, -70, 70, 6, 130, (x, z, q) => put('tree', x, 0, z, q() * 360, 1.4 + q() * 0.6, { c: { a: [30, 130, 60] } }), (x, z) => Math.abs(x) < 8 && z < 60); scat(30, 164, -50, 50, 4, 100, (x, z, q) => put('bush', x, 0, z, q() * 360, 1.2 + q(), { c: { a: [40, 150, 70] } }), (x) => Math.abs(x) < 5); scat(14, 165, -40, 40, 6, 80, (x, z, q) => put('flower', x, 0, z, 0, 2, { c: { a: ['red', 'orange', 'magenta'][Math.floor(q() * 3)] } })); put('waterfall', 40, 0, 120, 0, 1.4); farM(200, [20, 28], [60, 130, 100]);
+  } };
+  SETS.savanna = { time: 'hazy', build() {
+    ground(-120, 120, -60, 200, 5, (x, z) => (((Math.floor(x / 10) + Math.floor(z / 10)) & 1) ? [214, 186, 100] : [204, 174, 90]), 171); tufts(160, 172, -70, 70, 2, 120, [200, 170, 70]);
+    scat(10, 173, -80, 80, 20, 150, (x, z, q) => put('acacia', x, 0, z, q() * 360, 1 + q() * 0.6), (x, z) => Math.abs(x) < 10 && z < 50); scat(8, 174, -60, 60, 10, 100, (x, z, q) => put('rock', x, 0, z, q() * 360, 1 + q(), { c: { a: [186, 150, 110] } }), (x) => Math.abs(x) < 6); mount(-60, 230, 70, 14, [176, 130, 100]); mount(60, 240, 80, 18, [170, 126, 98]);
+  } };
+  SETS.arctic = { time: 'clear', build() {
+    ground(-120, 120, -60, 200, 5, (x, z) => (((Math.floor(x / 10) + Math.floor(z / 10)) & 1) ? [240, 248, 255] : [226, 240, 252]), 181);
+    put('igloo', -16, 0, 40, 20, 1.5); put('igloo', 16, 0, 56, 340, 1.3); put('iceberg', -50, 0, 120, 0, 2.4); put('iceberg', 40, 0, 150, 0, 3); scat(14, 182, -80, 80, 30, 140, (x, z, q) => put('pine', x, 0, z, 0, 0.9 + q() * 0.6, { snow: 1 }), (x, z) => Math.abs(x) < 12 && z < 70); mount(-70, 230, 70, 22, [200, 216, 240]); mount(60, 240, 80, 26, [196, 212, 240]);
+  } };
+  SETS.reef = { time: 'deep', build() {
+    ground(-100, 100, -30, 130, 5, (x, z) => (((Math.floor(x / 10) + Math.floor(z / 10)) & 1) ? [236, 218, 170] : [224, 206, 160]), 191);
+    scat(30, 192, -70, 70, 6, 100, (x, z, q) => put('coral', x, 0, z, q() * 360, 1 + q() * 1.8, { c: { a: ['pink', 'orange', 'magenta', 'purple', 'yellow', 'cyan'][Math.floor(q() * 6)] } }), (x, z) => Math.abs(x) < 4 && z < 26); scat(12, 193, -60, 60, 10, 100, (x, z, q) => put('rock', x, 0, z, q() * 360, 1 + q() * 1.5, { c: { a: [110, 130, 150] } }), (x, z) => Math.abs(x) < 5 && z < 26);
+  }, dyn(b, T) { for (let k = 0; k < 10; k++) { const x = -40 + k * 9, z = 36 + (k % 3) * 8; for (let j = 0; j < 6; j++) bb(MI, x + Math.sin(T * 1.4 + k + j * 0.6) * 0.3 * j, 0.6 + j * 1.0, z, 0.35, 1.1, 0.25, [40, 150 + j * 10, 90], { ne: 1 }); } for (let k = 0; k < 12; k++) bb(MI, -14 + k * 2.6 + Math.sin(T + k) * 0.3, ((T * 1.2 + k * 0.37) % 1) * 9, 18 + (k % 4) * 3, 0.18, 0.18, 0.18, [220, 245, 255], { em: 1, ne: 1 }); } };
+  SETS.cave = { time: 'tomb', build() {
+    ground(-40, 40, -20, 120, 5, (x, z) => (((Math.floor(x / 5) + Math.floor(z / 5)) & 1) ? [96, 90, 104] : [84, 78, 92]), 201); bb(MI, -30, 10, 50, 2, 20, 150, [76, 72, 88], { tex: 'rock', cell: 3 }); bb(MI, 30, 10, 50, 2, 20, 150, [76, 72, 88], { tex: 'rock', cell: 3 }); bb(MI, 0, 21, 50, 62, 2, 150, [66, 62, 78], { tex: 'rock', cell: 4 }); bb(MI, 0, 10, 126, 62, 20, 2, [70, 66, 82], { tex: 'rock', cell: 3 });
+    scat(14, 202, -28, 28, 10, 120, (x, z, q) => put('stalactite', x, 20, z, 0, 1 + q() * 0.8)); [[-10, 40, [140, 200, 255]], [12, 70, [255, 150, 220]], [-14, 90, [150, 255, 200]], [8, 30, [255, 230, 130]]].forEach(([x, z, c]) => put('crystal', x, 0, z, 0, 1.6, { c: { a: c } })); scat(8, 203, -20, 20, 10, 100, (x, z, q) => put('rock', x, 0, z, q() * 360, 1 + q(), { c: { a: [100, 96, 112] } }));
+  } };
+  SETS.volcano = { time: 'dusk', build() {
+    ground(-120, 120, -60, 200, 5, (x, z) => (Math.abs(x + Math.sin(z * 0.05) * 14) < 4 ? [255, 110, 40] : (((Math.floor(x / 10) + Math.floor(z / 10)) & 1) ? [60, 54, 62] : [50, 44, 54])), 211);
+    put('mountain', 0, 0, 170, 0, 1, { r: 110, h: 56, c: { a: [70, 62, 70] } }); bb(MI, 0, 56, 170, 14, 2, 10, [255, 120, 40], { em: 1, ne: 1 }); scat(12, 212, -70, 70, 10, 120, (x, z, q) => put('rock', x, 0, z, q() * 360, 1 + q() * 1.5, { c: { a: [70, 64, 72] } }), (x) => Math.abs(x) < 8);
+  }, dyn(b, T) { for (let k = 0; k < 14; k++) { const t = (T * 0.5 + k * 0.17) % 1; bb(MI, -6 + k * 1.0 + Math.sin(k) * 3, 56 + t * 20, 170 + Math.cos(k) * 3, 0.5, 0.5, 0.5, [255, 150 - t * 90, 40], { em: 1, ne: 1 }); } } };
+  SETS.airport = { time: 'day', build() {
+    ground(-120, 120, -60, 220, 5, (x, z) => (Math.abs(x) < 14 ? [86, 86, 98] : [130, 190, 110]), 221); for (let z = -50; z < 210; z += 14) bb(MI, 0, 0.04, z, 0.6, 0.05, 6, 'white', { ne: 1 }); [-12, 12].forEach((x) => bb(MI, x, 0.04, 80, 0.4, 0.05, 280, 'white', { ne: 1 }));
+    put('hangar', -44, 0, 60, 0, 1.2); put('tower', 40, 0, 70, 0, 1.2); put('airliner', 0, 0, 90, 180, 0.7); put('helicopter', 28, 0, 40, 200, 1); farM(240, [10, 16], [130, 160, 200]);
+  } };
+  SETS.stadium = { time: 'day', build() {
+    ground(-80, 80, -30, 140, 5, (x, z) => ((Math.floor(z / 10) & 1) ? [70, 186, 84] : [60, 172, 76]), 231); bb(MI, 0, 0.04, 70, 0.3, 0.05, 80, 'white', { ne: 1 }); [-24, 24].forEach((x) => bb(MI, x, 0.04, 70, 0.3, 0.05, 120, 'white', { ne: 1 }));
+    put('stands', 0, 0, 112, 0, 1.4, { len: 120 }); [-60, 60].forEach((x) => put('stands', x, 0, 40, 90, 1, { len: 90 })); put('goal', 0, 0, 108, 180, 1.4); put('goal', 0, 0, 0, 0, 1.4); [-50, 50].forEach((x) => put('lamp', x, 0, 20, 0, 1.6));
+  } };
+  SETS.classroom = roomSet([186, 150, 100], [176, 140, 92], [236, 232, 214], 241, 'plank', () => { bb(MI, 0, 10, 73, 30, 9, 0.3, [40, 90, 70], { ne: 1 }); bb(MI, 0, 14.6, 72.9, 31, 0.5, 0.2, 'wood', { ne: 1 }); [[-16, 40], [0, 40], [16, 40], [-16, 52], [0, 52], [16, 52]].forEach(([x, z]) => { put('desk', x, 0, z, 180, 1.2); put('chair', x, 0, z - 3, 180, 1.1); }); });
+  SETS.hospital = roomSet([226, 236, 240], [214, 226, 232], [236, 244, 246], 251, 'tile', () => { [[-24, 50], [0, 50], [24, 50]].forEach(([x, z]) => put('bed', x, 0, z, 180, 1.6)); bb(MI, 0, 12, 73, 12, 2, 0.2, [220, 60, 70], { ne: 1 }); bb(MI, 0, 12, 72.9, 2, 8, 0.2, [220, 60, 70], { ne: 1 }); });
+  SETS.kitchen = roomSet([226, 210, 190], [216, 200, 180], [250, 236, 214], 261, 'tile', () => { bb(MI, 0, 2.2, 70, 60, 4.4, 4, [186, 150, 110], { tex: 'plank', cell: 3 }); bb(MI, 0, 4.5, 70, 60.4, 0.3, 4.4, [236, 230, 220], { ne: 1 }); put('fridge', -26, 0, 69, 180, 1.6); put('stove', 0, 0, 69, 180, 1.8, { on: 1 }); bb(MI, 0, 2.2, 40, 20, 0.3, 8, 'wood', { tex: 'plank', cell: 2 }); });
+  SETS.library = roomSet([170, 130, 84], [160, 122, 78], [196, 170, 130], 271, 'plank', () => { [-30, -15, 0, 15, 30].forEach((x) => put('shelf', x, 0, 70.5, 180, 3)); [[-12, 40], [12, 44]].forEach(([x, z]) => { put('desk', x, 0, z, 180, 1.3); put('chair', x, 0, z - 3, 180, 1.2); }); });
+  SETS.bridgeview = { time: 'day', build() {
+    ground(-120, 120, -40, 20, 5, (x, z) => ((Math.floor(x / 5) + Math.floor(z / 5)) & 1 ? [180, 176, 190] : [168, 164, 178]), 281); put('bridge', 0, 0, 80, 90, 1, { len: 70 }); put('skyscraper', -60, 0, 150, 0, 1, { h: 60, c: { a: [130, 170, 200] } }); put('skyscraper', -40, 0, 170, 0, 1, { h: 80, w: 11 }); put('skyscraper', 50, 0, 160, 0, 1, { h: 70 }); farM(250, [14, 20], [150, 160, 200]);
+  }, dyn(b, T) { waterDyn(-140, 140, 20, 220, -0.5, 5, T, [44, 130, 210], [80, 180, 240], 0.1); } };
+  SETS.island = { time: 'day', build() {
+    ground(-24, 24, -10, 50, 4, (x, z) => (((Math.floor(x / 4) + Math.floor(z / 4)) & 1) ? [250, 226, 160] : [242, 216, 148]), 291); [[-12, 24], [10, 30], [-4, 40]].forEach(([x, z]) => put('palm', x, 0, z, 0, 1.3)); put('hut', 8, 0, 20, 160, 1.2); put('campfire', -6, 0, 14, 0, 1);
+  }, dyn(b, T) { waterDyn(-160, 160, -60, 300, -0.45, 6, T, [30, 150, 226], [70, 200, 240], 0.12); } };
+  SETS.canyon = { time: 'hazy', build() {
+    ground(-60, 60, -40, 220, 5, (x, z) => (Math.abs(x) < 10 ? [180, 140, 100] : [196, 100, 60]), 301); [-1, 1].forEach((d) => { for (let i = 0; i < 8; i++) bb(MI, d * (34 + i * 3), i * 6 + 6, 80, 20, 12 + i * 2, 280, [196 - i * 6, 100 - i * 4, 64], { tex: 'stone', cell: 8, salt: i }); }); scat(10, 302, -12, 12, 6, 160, (x, z, q) => put('rock', x, 0, z, q() * 360, 1 + q() * 1.5, { c: { a: [200, 120, 80] } })); scat(6, 303, -14, 14, 10, 150, (x, z, q) => put('cactus', x, 0, z, 0, 1.2 + q() * 0.6));
+  } };
+  SETS.lakeside = { time: 'day', build() {
+    ground(-120, 120, -40, 22, 5, (x, z) => (((Math.floor(x / 10) + Math.floor(z / 10)) & 1) ? [96, 176, 90] : [84, 164, 80]), 311); bb(MI, 0, 0.5, 26, 8, 0.4, 24, [150, 104, 64], { tex: 'plank', cell: 2 }); scat(20, 312, -90, 90, -20, 18, (x, z, q) => put('pine', x, 0, z, 0, 1 + q() * 0.8), (x) => Math.abs(x) < 10); put('rowboat', 8, -0.4, 40, 80, 1.2); mount(-80, 240, 80, 40, [120, 130, 160]); mount(50, 250, 90, 50, [110, 120, 156]);
+  }, dyn(b, T) { waterDyn(-130, 130, 22, 230, -0.5, 5, T, [40, 120, 190], [80, 170, 230], 0.08); } };
+  SETS.rooftop = { time: 'night', build() {
+    ground(-30, 30, -20, 30, 5, (x, z) => (((Math.floor(x / 5) + Math.floor(z / 5)) & 1) ? [96, 96, 112] : [86, 86, 102]), 321); bb(MI, 0, 0.6, 30.5, 60, 1.2, 1, [70, 70, 86], { cell: 3 }); const r = rn(322); for (let i = 0; i < 26; i++) put('skyscraper', -120 + i * 10 + r() * 4, 0, 90 + r() * 120, 0, 1, { h: 20 + r() * 80, w: 8 + r() * 4, lit: 1, c: { a: [60 + r() * 40 | 0, 80 + r() * 40 | 0, 120 + r() * 40 | 0] } }); put('lamp', -10, 0, 20, 0, 1);
+  } };
+
+  // =================================================================== extra hand-held items
+  const holdOrig = window.holdItem;
+  window.holdItem = function (name, M, T) {
+    switch (name) {
+      case 'sword': bb(M, 0, 0.55, 0, 0.07, 1.1, 0.04, [220, 226, 236], { ne: 1 }); bb(M, 0, 0.0, 0, 0.32, 0.07, 0.07, 'gold', { ne: 1 }); bb(M, 0, -0.18, 0, 0.08, 0.3, 0.08, 'brown', { ne: 1 }); break;
+      case 'shield': bb(M, 0, 0.3, 0.1, 0.55, 0.65, 0.07, 'red', { cell: 0.3 }); bb(M, 0, 0.3, 0.14, 0.14, 0.5, 0.04, 'gold', { ne: 1 }); break;
+      case 'laptop': bb(M, 0, 0, 0, 0.45, 0.04, 0.32, [200, 204, 214], { ne: 1 }); bb(M, 0, 0.18, -0.15, 0.45, 0.32, 0.03, [90, 210, 255], { em: 1, ne: 1 }); break;
+      case 'trophy': cy(M, 0, -0.1, 0, 0.12, 0.26, 8, 'gold', { r2: 0.2, em: 1 }); bb(M, 0, -0.14, 0, 0.1, 0.12, 0.1, 'gold', { ne: 1 }); break;
+      case 'map': bb(M, 0, 0, 0, 0.5, 0.02, 0.4, [240, 224, 180], { cell: 0.25 }); bb(M, 0.05, 0.02, 0, 0.18, 0.01, 0.01, 'red', { ne: 1 }); break;
+      case 'hammer': bb(M, 0, 0.12, 0, 0.06, 0.5, 0.06, 'wood', { ne: 1 }); bb(M, 0, 0.4, 0, 0.3, 0.14, 0.14, 'dark', { ne: 1 }); break;
+      case 'shovel': bb(M, 0, 0.1, 0, 0.06, 0.9, 0.06, 'wood', { ne: 1 }); bb(M, 0, -0.4, 0.04, 0.26, 0.3, 0.04, 'silver', { ne: 1 }); break;
+      case 'telescope': cy(mm(M, mRx(1.2)), 0, -0.3, 0, 0.07, 0.6, 8, [60, 80, 150], { capc: [150, 220, 255] }); break;
+      case 'mic': cy(M, 0, -0.1, 0, 0.04, 0.3, 6, 'dark', { r2: 0.05 }); bb(M, 0, 0.12, 0, 0.1, 0.1, 0.1, 'silver', { ne: 1 }); break;
+      case 'camera': bb(M, 0, 0, 0, 0.26, 0.16, 0.1, 'dark', { ne: 1 }); bb(M, 0, 0, 0.08, 0.1, 0.1, 0.08, 'silver', { ne: 1 }); break;
+      case 'basketball': case 'soccerball': { const c = name === 'basketball' ? [240, 120, 40] : [250, 250, 252]; bb(M, 0, 0, 0, 0.3, 0.3, 0.3, c, { cell: 0.15 }); break; }
+      case 'cup': cy(M, 0, -0.08, 0, 0.07, 0.16, 8, 'white', { r2: 0.09, capc: [90, 50, 30] }); break;
+      case 'bag': bb(M, 0, -0.05, 0, 0.3, 0.3, 0.14, 'brown', { cell: 0.15 }); break;
+      case 'apple': bb(M, 0, 0, 0, 0.14, 0.14, 0.14, 'red', { ne: 1 }); break;
+      case 'bread': bb(M, 0, 0, 0, 0.34, 0.14, 0.14, [226, 176, 100], { cell: 0.14 }); break;
+      case 'bouquet': [-0.06, 0, 0.06].forEach((x, i) => bb(M, x, 0.1 + i * 0.03, 0, 0.08, 0.08, 0.08, ['pink', 'yellow', 'red'][i], { em: 1, ne: 1 })); bb(M, 0, -0.1, 0, 0.03, 0.3, 0.03, 'green', { ne: 1 }); break;
+      default: return holdOrig(name, M, T);
+    }
+  };
 })();
