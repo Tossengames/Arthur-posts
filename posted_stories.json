@@ -294,6 +294,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "molasses",
+      "kind": "tale",
+      "date": "2026-11-15",
+      "slot": "A",
+      "fb_id": "1632870131871009",
+      "yt_id": "3Fm1jEh49KM",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
