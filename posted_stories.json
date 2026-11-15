@@ -283,6 +283,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "rosetta",
+      "kind": "dyk",
+      "date": "2026-11-15",
+      "slot": "manual",
+      "fb_id": "1603974468080488",
+      "yt_id": "ha9YEkQdo8o",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
