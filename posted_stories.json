@@ -305,6 +305,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "gutenberg",
+      "kind": "dyk",
+      "date": "2026-11-16",
+      "slot": "manual",
+      "fb_id": "1621702705760232",
+      "yt_id": "fdNeZg710hw",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
