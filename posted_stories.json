@@ -316,6 +316,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "bannister",
+      "kind": "tale",
+      "date": "2026-11-17",
+      "slot": "B",
+      "fb_id": "1277863014547359",
+      "yt_id": "sQZpg50ZgDA",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
