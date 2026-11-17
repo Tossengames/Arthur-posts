@@ -327,6 +327,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "waggle",
+      "kind": "dyk",
+      "date": "2026-11-17",
+      "slot": "manual",
+      "fb_id": "29630711999848256",
+      "yt_id": "IIqCq8dDDHs",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
