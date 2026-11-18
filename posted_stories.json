@@ -338,6 +338,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "hachiko",
+      "kind": "tale",
+      "date": "2026-11-18",
+      "slot": "B",
+      "fb_id": "29418292417855490",
+      "yt_id": "YaVmLGEG9lA",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
