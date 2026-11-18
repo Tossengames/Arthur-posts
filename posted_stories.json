@@ -349,6 +349,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "lostwoods",
+      "kind": "survival",
+      "date": "2026-11-18",
+      "slot": "manual",
+      "fb_id": "1140668372098724",
+      "yt_id": "97JME10sNS4",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
