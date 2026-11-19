@@ -360,6 +360,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "balloon",
+      "kind": "fiction",
+      "date": "2026-11-19",
+      "slot": "B",
+      "fb_id": "2442329363238397",
+      "yt_id": "ARn4SG0NQJ8",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
