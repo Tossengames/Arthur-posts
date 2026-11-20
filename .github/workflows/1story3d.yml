@@ -38,8 +38,8 @@ on:
   schedule:
     # Two daily runs, both aimed at US peak windows.
     # Times are UTC; the comments show the US Eastern equivalent.
-    - cron: "17 19 * * *"   # 19:17 UTC = 3:17 PM EDT / 2:17 PM EST  (US afternoon break)
-    - cron: "17 0 * * *"    # 00:17 UTC = 8:17 PM EDT / 7:17 PM EST  (US evening scroll)
+  #  - cron: "17 19 * * *"   # 19:17 UTC = 3:17 PM EDT / 2:17 PM EST  (US afternoon break)
+ #   - cron: "17 0 * * *"    # 00:17 UTC = 8:17 PM EDT / 7:17 PM EST  (US evening scroll)
 
 permissions:
   contents: write
