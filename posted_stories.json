@@ -382,6 +382,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "rip",
+      "kind": "survival",
+      "date": "2026-11-20",
+      "slot": "manual",
+      "fb_id": "1449551234060181",
+      "yt_id": "4tVykU86mQo",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
