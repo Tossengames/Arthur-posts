@@ -11,11 +11,14 @@ name: 🌱 Post Farm Short to YouTube + Facebook
 # ─────────────────────────────────────────────────────────────
 #  EASY SETTINGS
 env:
-  BGMUSIC_DIR: ""               # leave EMPTY for no music. (A folder name = your own tracks mixed under the voice)
-  BGMUSIC_VOLUME: "0.18"
-  KOKORO_VOICE: af_heart        # Others: af_bella, af_nicole, am_michael, bf_emma, bm_george
-  EDGE_VOICE: en-US-AriaNeural  # fallback voice
-  MAX_LEN: "29.5"               # keep every reel under this many seconds
+  BGMUSIC_DIR: ""               # EMPTY = use the page's built-in music. A folder name = your own tracks instead
+  BGMUSIC_VOLUME: "0.18"        # volume of YOUR folder music (only used when BGMUSIC_DIR is set)
+  PAGE_MUSIC_VOLUME: "0.22"     # volume of the built-in music under the voice (0 = no music at all)
+  KOKORO_VOICE: "am_michael,am_adam,am_onyx"   # voice POOL: one is picked per video (never the same as last time). Add af_heart etc. to mix genders
+  EDGE_VOICE: "en-US-AndrewNeural,en-US-GuyNeural"   # fallback pool
+  MAX_LEN: "29.5"               # short reels stay under this many seconds
+  MAX_LEN_LONG: "175"           # full guides stay under this (YouTube Shorts allow up to 3 min)
+  LONG_EVERY: "5"               # every 5th post is a full guide (0 = never, unless you pick length=long)
 
 on:
   workflow_dispatch:
@@ -24,6 +27,11 @@ on:
         description: "Force a topic id (leave empty to auto-pick). Example: tomato, worm, onion"
         required: false
         default: ""
+      length:
+        description: "Video length. auto = mostly short reels with a full guide every LONG_EVERY posts"
+        type: choice
+        options: [auto, short, long]
+        default: auto
       targets:
         description: "Where to post"
         type: choice
@@ -48,7 +56,7 @@ on:
         default: "public"
         options: [public, unlisted, private]
   schedule:
-    - cron: "0 15 * * *"   # once a day at 15:00 UTC
+    - cron: "0 15 * * 1,3,5,6"   # Mon, Wed, Fri, Sat at 15:00 UTC (4 a week looks more human than daily)
 
 permissions:
   contents: write
@@ -81,7 +89,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/piper
-          key: piper-binary-jenny-dioco-v3
+          key: piper-binary-ryan-v1
 
       - name: Cache Kokoro model files
         uses: actions/cache@v4
@@ -126,11 +134,11 @@ jobs:
               find /tmp/piper_extract -name "*.so*" -exec cp {} ~/.cache/piper/ \;
             fi
           fi
-          VOICE_FILE=~/.cache/piper/en_US-jenny_dioco-medium.onnx
-          CONFIG_FILE=~/.cache/piper/en_US-jenny_dioco-medium.onnx.json
+          VOICE_FILE=~/.cache/piper/en_US-ryan-medium.onnx
+          CONFIG_FILE=~/.cache/piper/en_US-ryan-medium.onnx.json
           if [ ! -f "$VOICE_FILE" ]; then
-            curl -L -o "$VOICE_FILE" "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/jenny_dioco/medium/en_US-jenny_dioco-medium.onnx" || true
-            curl -L -o "$CONFIG_FILE" "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/jenny_dioco/medium/en_US-jenny_dioco-medium.onnx.json" || true
+            curl -L -o "$VOICE_FILE" "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx" || true
+            curl -L -o "$CONFIG_FILE" "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx.json" || true
           fi
 
       - name: Render and Post
@@ -144,6 +152,10 @@ jobs:
 
           FPS              = 30
           MAX_LEN          = float(os.environ.get("MAX_LEN", "29.5") or 29.5)
+          MAX_LEN_LONG     = float(os.environ.get("MAX_LEN_LONG", "175") or 175)
+          LONG_EVERY       = int(os.environ.get("LONG_EVERY", "5") or 0)
+          PAGE_MUSIC_VOLUME = float(os.environ.get("PAGE_MUSIC_VOLUME", "0.22") or 0)
+          FB_MAX_SECONDS   = 90
           TARGET_MB        = 40
           LIMIT_MB         = 48
           AUDIO_BPS        = 128000
@@ -152,11 +164,13 @@ jobs:
           BGMUSIC_DIR      = (os.environ.get("BGMUSIC_DIR", "") or "").strip()
           BGMUSIC_VOLUME   = float(os.environ.get("BGMUSIC_VOLUME", "0.18") or 0.18)
           PIPER_BIN        = str(Path.home() / ".cache/piper/piper")
-          PIPER_VOICE      = str(Path.home() / ".cache/piper/en_US-jenny_dioco-medium.onnx")
+          PIPER_VOICE      = str(Path.home() / ".cache/piper/en_US-ryan-medium.onnx")
           TTS_ENGINE       = (os.environ.get("TTS_ENGINE", "") or "auto").strip().lower()
           VOICE_PICK       = os.environ.get("TTS_VOICE", "").strip()
-          EDGE_VOICE       = VOICE_PICK if (TTS_ENGINE == "edge" and VOICE_PICK) else (os.environ.get("EDGE_VOICE", "") or "en-US-AriaNeural")
-          KOKORO_VOICE     = VOICE_PICK if (TTS_ENGINE == "kokoro" and VOICE_PICK) else (os.environ.get("KOKORO_VOICE", "") or "af_heart")
+          EDGE_POOL        = [v.strip() for v in (os.environ.get("EDGE_VOICE", "") or "en-US-AndrewNeural").split(",") if v.strip()]
+          KOKORO_POOL      = [v.strip() for v in (os.environ.get("KOKORO_VOICE", "") or "am_michael").split(",") if v.strip()]
+          EDGE_VOICE       = VOICE_PICK if (TTS_ENGINE == "edge" and VOICE_PICK) else EDGE_POOL[0]
+          KOKORO_VOICE     = VOICE_PICK if (TTS_ENGINE == "kokoro" and VOICE_PICK) else KOKORO_POOL[0]
           KOKORO_MODEL     = str(Path.home() / ".cache/kokoro/kokoro-v1.0.onnx")
           KOKORO_VOICES    = str(Path.home() / ".cache/kokoro/voices-v1.0.bin")
           EDGE_RATE        = RATES[0]
@@ -321,15 +335,16 @@ jobs:
           def strip_emoji(t):
             return re.sub(r"\s+", " ", EMOJI_RE.sub("", t)).strip()
 
-          def build_text(info, meta):
+          def build_text(info, meta, is_long=False):
             cat = str(meta.get("cat") or YT_CATEGORY_DEFAULT)
             core = strip_emoji(meta.get("seoTitle") or info["title"])
             core = re.sub(r"[<>]", "", core).strip()
             if len(core) + len(YT_TITLE_SUFFIX) > 100: core = core[:100 - len(YT_TITLE_SUFFIX) - 1].rstrip() + "\u2026"
+            if is_long and "guide" not in core.lower(): core = core[:100 - len(YT_TITLE_SUFFIX) - 14].rstrip() + " (Full Guide)"
             title = core + YT_TITLE_SUFFIX
             hook = meta.get("hook") or info["caption"]
             hashtags = [x for x in (info.get("tags") or "").split() if x.startswith("#") and x.lower() != "#shorts"]
-            about = f"{strip_emoji(info['title'])}: a tiny-space farming tip in under 30 seconds."
+            about = (f"{strip_emoji(info['title'])}: a full step by step tiny-space farming guide." if is_long else f"{strip_emoji(info['title'])}: a tiny-space farming tip in under 30 seconds.")
             desc = f"{hook}\n\n{about}\n\n{info.get('footer','')}\n\n{YT_FOOTER}\n\n{' '.join(hashtags[:12])} #Shorts"
             tags = []
             for t in [x.lstrip('#') for x in hashtags] + (meta.get("keywords") or []) + ["tiny farm", "homestead", "small space gardening", info["id"]]:
@@ -414,6 +429,14 @@ jobs:
             print(f"Already posted today ({today}). Nothing to do.")
             sys.exit(0)
 
+          # rotate the voice: pick from the pool, never the same as the last post
+          last_voice = hist[-1].get("voice") if hist else None
+          if not (VOICE_PICK and TTS_ENGINE in ("kokoro", "edge")):
+            ko = [v for v in KOKORO_POOL if v != last_voice] or KOKORO_POOL
+            ed = [v for v in EDGE_POOL if v != last_voice] or EDGE_POOL
+            KOKORO_VOICE, EDGE_VOICE = random.choice(ko), random.choice(ed)
+          print(f"Voices this run: kokoro={KOKORO_VOICE} edge={EDGE_VOICE}")
+          length_in = (os.environ.get("LENGTH") or "auto").strip().lower()
           yt_privacy = (os.environ.get("YT_PRIVACY") or YT_DEFAULT_PRIVACY).strip().lower()
           if yt_privacy not in ("public", "unlisted", "private"): yt_privacy = "public"
           yt_enabled = targets in ("all", "youtube") and all(os.environ.get(k) for k in ("YT_REFRESH_TOKEN", "YT_CLIENT_ID", "YT_CLIENT_SECRET"))
@@ -451,9 +474,23 @@ jobs:
 
           ids   = driver.execute_script("return window.TOPIC_IDS;")
           kinds = driver.execute_script("return window.TOPIC_KINDS;")
+          long_ids = driver.execute_script("return window.LONG_IDS || [];")
+          since_long = 0
+          for r_ in reversed(hist):
+            if r_.get("mode") == "long": break
+            since_long += 1
+          want_long = bool(long_ids) and (length_in == "long" or (length_in == "auto" and LONG_EVERY > 0 and since_long >= LONG_EVERY))
           forced = os.environ.get("FORCE_TOPIC", "").strip()
-          topic_id = forced if forced in ids else pick_topic(ids, kinds, hist)
-          info = driver.execute_script("return window.loadTopic(arguments[0]);", topic_id)
+          if forced in ids:
+            topic_id = forced
+            want_long = want_long and forced in long_ids
+          else:
+            pool_ids = long_ids if want_long else ids
+            topic_id = pick_topic(pool_ids, {i: kinds[i] for i in pool_ids}, hist)
+          info = driver.execute_script("return window.loadTopic(arguments[0], arguments[1]);", topic_id, "long" if want_long else "short")
+          is_long = bool(info.get("long"))
+          max_len = MAX_LEN_LONG if is_long else MAX_LEN
+          print(f"Format: {info.get('format')} | Mode: {'FULL GUIDE' if is_long else 'short reel'} (length input: {length_in}, posts since last guide: {since_long})")
           try:
             meta = driver.execute_script("var tid = arguments[0]; var s = STORIES.find(function (x) { return x.id === tid; }) || {}; return {cat: s.cat || null, seoTitle: s.seoTitle || null, hook: s.hook || null, keywords: s.keywords || null};", topic_id) or {}
           except Exception as e:
@@ -475,7 +512,7 @@ jobs:
               tl = driver.execute_script("return window.setVoiceDurations(arguments[0]);", durs)
               starts, total = tl["starts"], float(tl["total"])
               print(f"Voice rate {rate}: video would be {total:.1f}s")
-              if total <= MAX_LEN: break
+              if total <= max_len: break
             print("Voice engine(s) actually used:", ENGINES_USED or "none")
             print("Voice durations:", [round(d, 2) for d in durs])
             print(f"Video length: {total:.1f}s")
@@ -502,10 +539,12 @@ jobs:
 
             # ── SOUND EFFECTS (rendered by the page; it adds a soft music bed only if there is no voice) ──
             print("Rendering sound effects...")
+            page_vol = 0 if music else PAGE_MUSIC_VOLUME
+            print(f"Built-in music volume: {page_vol}" if page_vol else "Built-in music: off")
             b64a = driver.execute_async_script("""
               var done = arguments[0];
-              window.renderAudioBase64(%s).then(done).catch(function(e){ done(null); });
-            """ % ("true" if voice_wav else "false"))
+              window.renderAudioBase64(%s, %s).then(done).catch(function(e){ done(null); });
+            """ % ("true" if voice_wav else "false", str(page_vol)))
             sfx_raw = os.path.join(OUT_DIR, "sfx.raw")
             if b64a:
               with open(sfx_raw, "wb") as f: f.write(base64.b64decode(b64a))
@@ -576,7 +615,10 @@ jobs:
             sys.exit(0)
 
           # ── POST ────────────────────────────────────────────
-          title, desc, tags, comment, category_id, fb_desc = build_text(info, meta)
+          title, desc, tags, comment, category_id, fb_desc = build_text(info, meta, is_long)
+          if fb_enabled and total > FB_MAX_SECONDS:
+            print(f"::warning::Video is {total:.0f}s, longer than the {FB_MAX_SECONDS}s Facebook Reel limit, skipping Facebook for this one.")
+            fb_enabled = False
           yt_id = fb_id = None; errors = []
           if yt_enabled:
             try:
@@ -592,7 +634,7 @@ jobs:
               errors.append(f"Facebook: {e}"); print(f"::error::Facebook failed: {e}")
 
           if yt_id or fb_id:
-            hist.append({"id": info["id"], "kind": info["kind"], "cat": meta.get("cat"), "date": today, "yt_id": yt_id, "fb_id": fb_id, "tts": ENGINES_USED})
+            hist.append({"id": info["id"], "kind": info["kind"], "cat": meta.get("cat"), "mode": "long" if is_long else "short", "format": info.get("format"), "voice": (KOKORO_VOICE if (ENGINES_USED and ENGINES_USED[0] == "kokoro") else EDGE_VOICE), "date": today, "yt_id": yt_id, "fb_id": fb_id, "tts": ENGINES_USED})
             save_hist(hist)
             print("Remembered topic in posted_farm.json.")
           if errors:
@@ -609,6 +651,7 @@ jobs:
           FB_PAGE_TOKEN:    ${{ secrets.FB_PAGE_TOKEN }}
           YT_PRIVACY:       ${{ inputs.yt_privacy }}
           FORCE_TOPIC:      ${{ inputs.topic }}
+          LENGTH:           ${{ inputs.length }}
           TARGETS:          ${{ inputs.targets }}
           TTS_ENGINE:       ${{ inputs.tts }}
           TTS_VOICE:        ${{ inputs.voice }}
