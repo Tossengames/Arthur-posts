@@ -10,6 +10,17 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "worm",
+      "kind": "homestead",
+      "cat": "26",
+      "date": "2026-11-25",
+      "yt_id": "RRb_znTYeA8",
+      "fb_id": "1623661009442487",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
