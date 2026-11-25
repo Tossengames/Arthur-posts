@@ -35,6 +35,20 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "wormfix",
+      "kind": "homestead",
+      "cat": "26",
+      "mode": "long",
+      "format": "full",
+      "voice": "am_adam",
+      "date": "2026-11-25",
+      "yt_id": "6nXirPpxsxQ",
+      "fb_id": "1339905838242934",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
