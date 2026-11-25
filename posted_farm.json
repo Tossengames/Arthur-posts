@@ -21,6 +21,20 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "chard",
+      "kind": "grow",
+      "cat": "26",
+      "mode": "short",
+      "format": "quick",
+      "voice": "am_onyx",
+      "date": "2026-11-25",
+      "yt_id": "94-Y3uVSzrk",
+      "fb_id": "1148500567914843",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
