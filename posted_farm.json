@@ -49,6 +49,20 @@
       "tts": [
         "kokoro"
       ]
+    },
+    {
+      "id": "chives",
+      "kind": "grow",
+      "cat": "26",
+      "mode": "short",
+      "format": "tips",
+      "voice": "am_onyx",
+      "date": "2026-11-26",
+      "yt_id": "tcLyPQNHQXI",
+      "fb_id": "1500961938617317",
+      "tts": [
+        "kokoro"
+      ]
     }
   ]
 }
